@@ -9,39 +9,29 @@ services:
     startCommand: "node dist/src/main.js"
     envVars:
       - key: NODE_VERSION
-        sync: false
         value: "20.18.0"
-        description: "Versión Node.js LTS (Render respeta la variable NODE_VERSION en runtime Node)"
+        description: "Versión Node.js LTS (Render usa NODE_VERSION en runtime Node)"
       - key: DATABASE_URL
-        sync: false
         value: "postgresql://catering_user:TEKbgI8CFZhHMDhy1wa0z0jjHA6glEsu@dpg-daopu6h42hec73fmugag-a.oregon-postgres.render.com/catering_db_97na?schema=public&pgbouncer=true"
-        description: "Conexión Pooled (PgBouncer) Interna Render. Región Oregon. schema=public&pgbouncer=true OBLIGATORIOS Prisma."
+        description: "Pooled PgBouncer Interna Render. Params schema=public&pgbouncer=true OBLIGATORIOS Prisma"
       - key: DIRECT_URL
-        sync: false
         value: "postgresql://catering_user:TEKbgI8CFZhHMDhy1wa0z0jjHA6glEsu@dpg-daopu6h42hec73fmugag-a.oregon-postgres.render.com/catering_db_97na?schema=public"
-        description: "Conexión Directa (sin PgBouncer) Interna Render. Usada solo para migraciones Prisma. schema=public OBLIGATORIO."
+        description: "Conexion Directa (sin PgBouncer) Interna Render. Usada solo para migraciones Prisma. schema=public OBLIGATORIO."
       - key: JWT_SECRET
-        sync: false
         generateValue: true
-        description: "Firma tokens JWT. Pulsa Generate en Render."
+        description: "Firma tokens JWT. Genera 64 chars. NO compartir."
       - key: JWT_EXPIRES_IN
-        sync: false
         value: "7d"
       - key: PORT
-        sync: false
         value: "3000"
       - key: NODE_ENV
-        sync: false
         value: "production"
       - key: CORS_ORIGIN
-        sync: false
         value: "https://incandescent-paprenjak-78b703.netlify.app"
-        description: "Dominio Frontend Netlify. NO añadir / final."
+        description: "Dominio Frontend Netlify. NO barra final."
       - key: TARIFA_PROMEDIO_DEFAULT
-        sync: false
         value: "3500"
       - key: UMBRAL_MARGEN
-        sync: false
         value: "30"
     autoDeploy: true
     pullRequestPreviewsEnabled: false
