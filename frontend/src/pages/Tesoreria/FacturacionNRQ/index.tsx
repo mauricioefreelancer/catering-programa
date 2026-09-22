@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -14,32 +14,35 @@ import {
   Tag,
   Form,
   Alert,
+  Spin,
 } from 'antd'
-import { SearchOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined } from '@ant-design/icons'
+import { SearchOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
+import { apiService } from '../../../api/services/api'
 
 const { Title } = Typography
 const { Option } = Select
 const { RangePicker } = DatePicker
 
-const CLIENTES = [
-  { id: 1, nombre: 'Alimentos S.A.S.' },
-  { id: 2, nombre: 'Empresa Servicios Ltda.' },
-  { id: 3, nombre: 'Industrias Alimenticias' },
-]
+interface ClienteNRQ {
+  id: number
+  nombre: string
+  razonSocial?: string
+}
 
-const PRODUCTOS_DOSIFICADOS = [
-  { id: 4, nombre: 'Café Negro 12oz', precio: 3500 },
-  { id: 5, nombre: 'Café con Leche', precio: 4000 },
-  { id: 6, nombre: 'Chocolate Caliente', precio: 4200 },
-  { id: 7, nombre: 'Té Negro', precio: 3200 },
-]
+interface ProductoDosificado {
+  id: number
+  nombre: string
+  precio: number
+  tipoProducto?: string
+}
 
-const MAQUINAS_CAFE = [
-  { id: 2, serial: 'CAF-00456', zona: 'Recepción Principal', clienteId: 2 },
-  { id: 5, serial: 'CAF-00789', zona: 'Piso 5 - Lounge', clienteId: 1 },
-  { id: 6, serial: 'CAF-00999', zona: 'Restaurante', clienteId: 3 },
-]
+interface MaquinaCafe {
+  id: number
+  serial: string
+  zona: string
+  clienteId: number
+}
 
 interface RegistroNRQ {
   key: string
@@ -52,34 +55,6 @@ interface RegistroNRQ {
   nrq_final: number
   nrq_diferencia: number
   total: number
-}
-
-const genMock = (start: Dayjs, end: Dayjs, clienteId?: number | null, productoId?: number | null): RegistroNRQ[] => {
-  const result: RegistroNRQ[] = []
-  let k = 0
-  const dias = Math.max(1, end.diff(start, 'day') + 1)
-  MAQUINAS_CAFE.forEach((m) => {
-    if (clienteId && m.clienteId !== clienteId) return
-    PRODUCTOS_DOSIFICADOS.forEach((p) => {
-      if (productoId && p.id !== productoId) return
-      const baseInit = Math.floor(Math.random() * 20000) + 50000
-      const consumo = Math.floor((Math.random() * 80 + 20) * dias)
-      const diff = consumo
-      result.push({
-        key: String(k++),
-        maquinaSerial: m.serial,
-        zona: m.zona,
-        clienteNombre: CLIENTES.find((c) => c.id === m.clienteId)?.nombre || '',
-        productoNombre: p.nombre,
-        precio: p.precio,
-        nrq_inicial: baseInit,
-        nrq_final: baseInit + diff,
-        nrq_diferencia: diff,
-        total: diff * p.precio,
-      })
-    })
-  })
-  return result
 }
 
 const toCSV = (rows: RegistroNRQ[]) => {
@@ -118,6 +93,70 @@ const FacturacionNRQ = () => {
   const [consultado, setConsultado] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  const [clientes, setClientes] = useState<ClienteNRQ[]>([])
+  const [productosDosificados, setProductosDosificados] = useState<ProductoDosificado[]>([])
+  const [maquinasCafe, setMaquinasCafe] = useState<MaquinaCafe[]>([])
+  const [fetching, setFetching] = useState<boolean>(true)
+  const [initialLoading, setInitialLoading] = useState<boolean>(true)
+
+  const loadData = useCallback(async () => {
+    setFetching(true)
+    try {
+      const [clientesRes, productosRes, maquinasRes] = await Promise.all([
+        apiService.get<any>('/clientes').catch(() => ({ data: [] })),
+        apiService.get<any>('/productos').catch(() => ({ data: [] })),
+        apiService.get<any>('/maquinas').catch(() => ({ data: [] })),
+      ])
+
+      const clientesList = Array.isArray(clientesRes) ? clientesRes : clientesRes?.data ?? []
+      const productosList = Array.isArray(productosRes) ? productosRes : productosRes?.data ?? []
+      const maquinasList = Array.isArray(maquinasRes) ? maquinasRes : maquinasRes?.data ?? []
+
+      const clientesMapeados: ClienteNRQ[] = clientesList.map((c: any) => ({
+        id: c.idCliente ?? c.id,
+        nombre: c.razonSocial ?? c.nombre ?? '',
+        razonSocial: c.razonSocial,
+      }))
+
+      const productosMapeados: ProductoDosificado[] = productosList
+        .filter((p: any) => {
+          const tipo = String(p.Tipo_Producto ?? p.tipoProducto ?? p.tipo ?? '').toUpperCase()
+          return tipo === 'DOSIFICADO' || tipo === 'DOSIFICADA' || tipo === 'DOSIFICADOS'
+        })
+        .map((p: any) => ({
+          id: p.idProducto ?? p.id,
+          nombre: p.nombreProducto ?? p.nombre ?? '',
+          precio: p.precioVenta ?? p.precio_venta ?? p.costoTotal ?? p.costo_total ?? 0,
+          tipoProducto: p.Tipo_Producto ?? p.tipoProducto,
+        }))
+
+      const maquinasMapeadas: MaquinaCafe[] = maquinasList
+        .filter((m: any) => {
+          const tipo = String(m.Tipo_Maquina ?? m.tipo ?? '').toUpperCase()
+          return tipo === 'CAFE' || tipo === 'CAFÉ'
+        })
+        .map((m: any) => ({
+          id: m.idMaquina ?? m.id,
+          serial: m.serial ?? '',
+          zona: m.ubicacionEsp ?? m.zona ?? '',
+          clienteId: m.idCliente ?? m.clienteId,
+        }))
+
+      setClientes(clientesMapeados)
+      setProductosDosificados(productosMapeados)
+      setMaquinasCafe(maquinasMapeadas)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al cargar catálogos')
+    } finally {
+      setFetching(false)
+      setInitialLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
   const totales = useMemo(() => {
     return {
       unidades: resultados.reduce((s, r) => s + r.nrq_diferencia, 0),
@@ -126,6 +165,35 @@ const FacturacionNRQ = () => {
     }
   }, [resultados])
 
+  const mapearResultados = (rawList: any[]): RegistroNRQ[] => {
+    return rawList.map((r: any, i: number) => {
+      const maquinaId = r.idMaquina ?? r.maquinaId
+      const maquina = maquinasCafe.find((m) => m.id === maquinaId)
+      const clienteId = r.idCliente ?? r.clienteId ?? maquina?.clienteId
+      const cliente = clientes.find((c) => c.id === clienteId)
+      const productoId = r.idProducto ?? r.productoId
+      const producto = productosDosificados.find((p) => p.id === productoId)
+
+      const precio = Number(r.precio ?? r.precioUnitario ?? producto?.precio ?? 0)
+      const ni = Number(r.nrq_inicial ?? r.nrInicial ?? r.inicial ?? 0)
+      const nf = Number(r.nrq_final ?? r.nrFinal ?? r.final ?? 0)
+      const diff = Number(r.nrq_diferencia ?? r.diferencia ?? (nf - ni) ?? 0)
+
+      return {
+        key: String(i),
+        maquinaSerial: r.maquina?.serial ?? r.maquinaSerial ?? maquina?.serial ?? '',
+        zona: r.zona ?? maquina?.zona ?? '',
+        clienteNombre: r.cliente?.razonSocial ?? r.clienteNombre ?? cliente?.nombre ?? '',
+        productoNombre: r.producto?.nombre ?? r.productoNombre ?? producto?.nombre ?? '',
+        precio,
+        nrq_inicial: ni,
+        nrq_final: nf,
+        nrq_diferencia: diff,
+        total: Number(r.total ?? diff * precio),
+      }
+    })
+  }
+
   const consultar = async (values: any) => {
     if (!values.fechas || values.fechas.length < 2) {
       message.error('Rango de fechas es requerido')
@@ -133,11 +201,58 @@ const FacturacionNRQ = () => {
     }
     setLoading(true)
     try {
-      await new Promise((r) => setTimeout(r, 600))
-      const data = genMock(values.fechas[0], values.fechas[1], values.clienteId, values.productoId)
-      setResultados(data)
+      const params: Record<string, any> = {
+        fechaInicio: dayjs(values.fechas[0]).format('YYYY-MM-DD'),
+        fechaFin: dayjs(values.fechas[1]).format('YYYY-MM-DD'),
+      }
+      if (values.clienteId) params.idCliente = values.clienteId
+      if (values.productoId) params.idProducto = values.productoId
+
+      let rawData: any[] = []
+      let encontroDatos = false
+
+      try {
+        const res: any = await apiService.get('/tesoreria/facturacion-nrq', params)
+        const lista = Array.isArray(res) ? res : res?.data ?? []
+        if (Array.isArray(lista) && lista.length > 0) {
+          rawData = lista
+          encontroDatos = true
+        }
+      } catch {
+        encontroDatos = false
+      }
+
+      if (!encontroDatos) {
+        try {
+          const dashRes: any = await apiService.get('/dashboard/tesoreria', params)
+          const charts = dashRes?.charts ?? dashRes?.data?.charts ?? []
+          if (Array.isArray(charts) && charts.length > 0) {
+            const todos: any[] = []
+            charts.forEach((ch: any) => {
+              const datos = ch?.datos ?? []
+              if (Array.isArray(datos)) todos.push(...datos)
+            })
+            if (todos.length > 0) {
+              rawData = todos
+              encontroDatos = true
+            }
+          }
+        } catch {
+          encontroDatos = false
+        }
+      }
+
+      if (!encontroDatos || rawData.length === 0) {
+        setResultados([])
+        setConsultado(true)
+        message.warning('No hay datos facturación NRQ para los filtros')
+        return
+      }
+
+      const filaMapeada = mapearResultados(rawData)
+      setResultados(filaMapeada)
       setConsultado(true)
-      message.success(`${data.length} registros encontrados`)
+      message.success(`${filaMapeada.length} registros encontrados`)
     } finally {
       setLoading(false)
     }
@@ -176,7 +291,7 @@ const FacturacionNRQ = () => {
         const color = ratio > 0.7 ? '#ff4d4f' : ratio > 0.4 ? '#faad14' : '#52c41a'
         return <Tag color={color} style={{ fontWeight: 'bold', fontSize: 14 }}>{v} unid.</Tag>
       },
-      sorter: (a, b) => a.nrq_diferencia - b.nrq_diferencia,
+      sorter: (a: RegistroNRQ, b: RegistroNRQ) => a.nrq_diferencia - b.nrq_diferencia,
     },
     {
       title: 'Total $ Facturar',
@@ -185,7 +300,7 @@ const FacturacionNRQ = () => {
       align: 'right' as const,
       fixed: 'right' as const,
       render: (v: number) => <strong style={{ fontSize: 15, color: '#1677ff' }}>$ {v.toLocaleString('es-CO')}</strong>,
-      sorter: (a, b) => a.total - b.total,
+      sorter: (a: RegistroNRQ, b: RegistroNRQ) => a.total - b.total,
     },
   ]
 
@@ -195,39 +310,44 @@ const FacturacionNRQ = () => {
         <FileTextOutlined /> Facturación por Contadores NRQ (Dosificadoras Café)
       </Title>
 
-      <Card title="🔎 Filtros de Consulta (Avanzados)" style={{ marginBottom: 16 }}>
-        <Form form={form} layout="vertical" onFinish={consultar} initialValues={{ fechas: [dayjs().startOf('month'), dayjs()] }}>
-          <Row gutter={16}>
-            <Col xs={24} md={10}>
-              <Form.Item name="fechas" label="Rango de Fechas (Requerido)" rules={[{ required: true, message: 'Seleccione rango' }]}>
-                <RangePicker style={{ width: '100%' }} size="large" format="DD/MM/YYYY" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={7}>
-              <Form.Item name="clienteId" label="Filtrar por Cliente">
-                <Select allowClear placeholder="Todos los clientes" size="large">
-                  {CLIENTES.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={7}>
-              <Form.Item name="productoId" label="Filtrar Producto Dosificado">
-                <Select allowClear placeholder="Todos los productos" size="large">
-                  {PRODUCTOS_DOSIFICADOS.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
-          <div style={{ textAlign: 'right' }}>
-            <Space>
-              <Button onClick={() => { setResultados([]); setConsultado(false); form.resetFields() }}>Limpiar</Button>
-              <Button type="primary" size="large" htmlType="submit" loading={loading} icon={<SearchOutlined />}>
-                Consultar
-              </Button>
-            </Space>
-          </div>
-        </Form>
-      </Card>
+      <Spin spinning={initialLoading} tip="Cargando catálogos...">
+        <Card title="🔎 Filtros de Consulta (Avanzados)" style={{ marginBottom: 16 }}>
+          <Form form={form} layout="vertical" onFinish={consultar} initialValues={{ fechas: [dayjs().startOf('month'), dayjs()] }}>
+            <Row gutter={16}>
+              <Col xs={24} md={10}>
+                <Form.Item name="fechas" label="Rango de Fechas (Requerido)" rules={[{ required: true, message: 'Seleccione rango' }]}>
+                  <RangePicker style={{ width: '100%' }} size="large" format="DD/MM/YYYY" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={7}>
+                <Form.Item name="clienteId" label="Filtrar por Cliente">
+                  <Select allowClear placeholder="Todos los clientes" size="large">
+                    {clientes.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={7}>
+                <Form.Item name="productoId" label="Filtrar Producto Dosificado">
+                  <Select allowClear placeholder="Todos los productos" size="large">
+                    {productosDosificados.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+            <div style={{ textAlign: 'right' }}>
+              <Space>
+                <Button onClick={() => { setResultados([]); setConsultado(false); form.resetFields() }}>Limpiar</Button>
+                <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>
+                  Recargar Catálogo
+                </Button>
+                <Button type="primary" size="large" htmlType="submit" loading={loading} icon={<SearchOutlined />}>
+                  Consultar
+                </Button>
+              </Space>
+            </div>
+          </Form>
+        </Card>
+      </Spin>
 
       {consultado && (
         <>

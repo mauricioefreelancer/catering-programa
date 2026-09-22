@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Form,
   Button,
@@ -15,27 +15,16 @@ import {
   Row,
   Col,
   Statistic,
+  Spin,
 } from 'antd'
-import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined } from '@ant-design/icons'
+import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { usePermissions } from '../../hooks/usePermissions'
+import { apiService } from '../../api/services/api'
 
 const { Title, Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
-
-const PROVEEDORES = [
-  { id: 1, nombre: 'Distribuidora de Alimentos' },
-  { id: 2, nombre: 'Bebidas Nacionales' },
-  { id: 3, nombre: 'Snacks y Confitería' },
-]
-
-const PRODUCTOS = [
-  { id: 1, nombre: 'Coca-Cola 350ml', costo: 2500 },
-  { id: 2, nombre: 'Agua Cristal 500ml', costo: 1200 },
-  { id: 3, nombre: 'Jugo Hit Manzana', costo: 2000 },
-  { id: 4, nombre: 'Galleta Oreo', costo: 1400 },
-]
 
 interface ItemIngreso {
   id: number
@@ -51,20 +40,61 @@ const Ingresos = () => {
   const [form] = Form.useForm()
   const [items, setItems] = useState<ItemIngreso[]>([])
   const [loading, setLoading] = useState(false)
+  const [proveedores, setProveedores] = useState<any[]>([])
+  const [productos, setProductos] = useState<any[]>([])
+  const [fetching, setFetching] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const perm = usePermissions('ingresos')
+
+  const loadData = useCallback(async () => {
+    setFetching(true)
+    try {
+      const [proveedoresRes, productosRes] = await Promise.all([
+        apiService.get('/proveedores'),
+        apiService.get('/productos'),
+      ])
+
+      const proveedoresList = Array.isArray(proveedoresRes) ? proveedoresRes : (proveedoresRes?.data || [])
+      const productosList = Array.isArray(productosRes) ? productosRes : (productosRes?.data || [])
+
+      const proveedoresMapeados = proveedoresList.map((p: any) => ({
+        id: p.idProveedor ?? p.id,
+        nombre: p.razonSocial ?? p.nombre ?? '',
+      }))
+
+      const productosMapeados = productosList.map((p: any) => ({
+        id: p.idProducto ?? p.id,
+        nombre: p.nombreProducto ?? p.nombre ?? '',
+        costo: p.costoBase ?? p.costo ?? 0,
+      }))
+
+      setProveedores(proveedoresMapeados)
+      setProductos(productosMapeados)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al cargar datos')
+    } finally {
+      setFetching(false)
+      setInitialLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const addItem = () => {
     const newId = Math.max(0, ...items.map((i) => i.id), 0) + 1
+    const productoDefault = productos.length > 0 ? productos[0] : { id: 0, nombre: '', costo: 0 }
     setItems([
       ...items,
       {
         id: newId,
-        productoId: PRODUCTOS[0].id,
-        productoNombre: PRODUCTOS[0].nombre,
+        productoId: productoDefault.id,
+        productoNombre: productoDefault.nombre,
         cantidad: 1,
-        costo: PRODUCTOS[0].costo,
+        costo: productoDefault.costo,
         vencimiento: dayjs().add(6, 'month').format('YYYY-MM-DD'),
-        subtotal: PRODUCTOS[0].costo,
+        subtotal: productoDefault.costo,
       },
     ])
   }
@@ -82,16 +112,37 @@ const Ingresos = () => {
 
   const handleConfirm = async () => {
     try {
-      await form.validateFields()
+      const values = await form.validateFields()
       if (items.length === 0) {
         message.error('Debe agregar al menos un producto')
         return
       }
       setLoading(true)
-      await new Promise((r) => setTimeout(r, 700))
-      message.success(`Ingreso #${Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
-      form.resetFields()
-      setItems([])
+      try {
+        const body = {
+          idProveedor: values.proveedorId,
+          numeroFactura: values.factura,
+          fechaIngreso: values.fecha ? dayjs(values.fecha).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+          observaciones: values.observaciones,
+          items: items.map((i) => ({
+            idProducto: i.productoId,
+            cantidad: i.cantidad,
+            costoUnitario: i.costo,
+            fechaVencimiento: i.vencimiento,
+          })),
+        }
+        const res: any = await apiService.post('/inventory/ingresos', body)
+        message.success(`Ingreso #${res?.idIngreso ?? res?.id ?? Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
+        form.resetFields()
+        setItems([])
+      } catch (err: any) {
+        const status = err?.response?.status
+        if (status === 404 || status === undefined) {
+          message.error('Endpoint no implementado')
+        } else {
+          message.error(err?.response?.data?.message || 'Error al guardar ingreso')
+        }
+      }
     } catch {} finally {
       setLoading(false)
     }
@@ -108,11 +159,11 @@ const Ingresos = () => {
           value={r.productoId}
           style={{ width: '100%' }}
           onChange={(v: any) => {
-            const p = PRODUCTOS.find((x) => x.id === v)!
+            const p = productos.find((x) => x.id === v)!
             updateItem(i, { productoId: v, productoNombre: p.nombre, costo: p.costo })
           }}
         >
-          {PRODUCTOS.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
+          {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
         </Select>
       ),
     },
@@ -162,62 +213,67 @@ const Ingresos = () => {
 
   return (
     <div>
-      <Title level={4} style={{ marginTop: 0 }}>
-        <InboxOutlined style={{ marginRight: 8 }} /> Ingresos a Bodega
-      </Title>
+      <Space style={{ marginBottom: 16 }} align="center">
+        <Title level={4} style={{ marginTop: 0, marginBottom: 0 }}>
+          <InboxOutlined style={{ marginRight: 8 }} /> Ingresos a Bodega
+        </Title>
+        <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>Recargar</Button>
+      </Space>
 
-      <Card title="Encabezado del Ingreso" style={{ marginBottom: 16 }}>
-        <Form form={form} layout="vertical" initialValues={{ fecha: dayjs() }}>
-          <Row gutter={16}>
-            <Col xs={24} md={8}>
-              <Form.Item label="Proveedor" name="proveedorId" rules={[{ required: true, message: 'Seleccione proveedor' }]}>
-                <Select placeholder="Seleccione proveedor" showSearch>
-                  {PROVEEDORES.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item label="N° Factura Compra" name="factura" rules={[{ required: true }]}>
-                <Input placeholder="FAC-2024-00123" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item label="Fecha Ingreso" name="fecha" rules={[{ required: true }]}>
-                <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item label="Observaciones" name="observaciones" rules={[{ required: true, message: 'Ingrese observaciones' }]}>
-            <TextArea rows={2} placeholder="Detalle del ingreso, lote, transportador, etc (requerido)" />
-          </Form.Item>
-        </Form>
-      </Card>
-
-      <Card
-        title="Items (Productos Recibidos)"
-        extra={<Button icon={<PlusSquareOutlined />} type="primary" onClick={addItem}>Agregar Producto</Button>}
-      >
-        <Table
-          rowKey="id"
-          dataSource={items}
-          columns={columns}
-          pagination={false}
-          locale={{ emptyText: 'No hay productos agregados. Haga clic en "Agregar Producto".' }}
-          scroll={{ x: 900 }}
-        />
-        {items.length > 0 && (
-          <>
-            <Divider />
-            <Row justify="end" gutter={16}>
+      <Spin spinning={initialLoading}>
+        <Card title="Encabezado del Ingreso" style={{ marginBottom: 16 }}>
+          <Form form={form} layout="vertical" initialValues={{ fecha: dayjs() }}>
+            <Row gutter={16}>
               <Col xs={24} md={8}>
-                <Card size="small" style={{ background: '#f0f5ff' }}>
-                  <Statistic title={<Text strong>TOTAL INGRESO</Text>} value={total} prefix={<DollarOutlined />} valueStyle={{ color: '#1677ff', fontSize: 28 }} formatter={(v) => `$ ${Number(v).toLocaleString('es-CO')}`} />
-                </Card>
+                <Form.Item label="Proveedor" name="proveedorId" rules={[{ required: true, message: 'Seleccione proveedor' }]}>
+                  <Select placeholder="Seleccione proveedor" showSearch>
+                    {proveedores.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
+                  </Select>
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item label="N° Factura Compra" name="factura" rules={[{ required: true }]}>
+                  <Input placeholder="FAC-2024-00123" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item label="Fecha Ingreso" name="fecha" rules={[{ required: true }]}>
+                  <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+                </Form.Item>
               </Col>
             </Row>
-          </>
-        )}
-      </Card>
+            <Form.Item label="Observaciones" name="observaciones" rules={[{ required: true, message: 'Ingrese observaciones' }]}>
+              <TextArea rows={2} placeholder="Detalle del ingreso, lote, transportador, etc (requerido)" />
+            </Form.Item>
+          </Form>
+        </Card>
+
+        <Card
+          title="Items (Productos Recibidos)"
+          extra={<Button icon={<PlusSquareOutlined />} type="primary" onClick={addItem}>Agregar Producto</Button>}
+        >
+          <Table
+            rowKey="id"
+            dataSource={items}
+            columns={columns}
+            pagination={false}
+            locale={{ emptyText: 'No hay productos agregados. Haga clic en "Agregar Producto".' }}
+            scroll={{ x: 900 }}
+          />
+          {items.length > 0 && (
+            <>
+              <Divider />
+              <Row justify="end" gutter={16}>
+                <Col xs={24} md={8}>
+                  <Card size="small" style={{ background: '#f0f5ff' }}>
+                    <Statistic title={<Text strong>TOTAL INGRESO</Text>} value={total} prefix={<DollarOutlined />} valueStyle={{ color: '#1677ff', fontSize: 28 }} formatter={(v) => `$ ${Number(v).toLocaleString('es-CO')}`} />
+                  </Card>
+                </Col>
+              </Row>
+            </>
+          )}
+        </Card>
+      </Spin>
 
       <div style={{ textAlign: 'right', marginTop: 16 }}>
         <Space>

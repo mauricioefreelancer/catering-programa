@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -14,10 +14,11 @@ import {
   Divider,
   Alert,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined, SafetyOutlined, SettingOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, SafetyOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../../components/common/ModalDrawer'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { Permisos } from '../../../store/auth.store'
+import { get } from '../../../api/services/api'
 
 const { Title } = Typography
 
@@ -101,7 +102,46 @@ const Roles = () => {
   const [editing, setEditing] = useState<Rol | null>(null)
   const [permisosForm, setPermisosForm] = useState<Permisos>(fullPermisos())
   const [loading, setLoading] = useState(false)
+  const [endpointNoImplementado, setEndpointNoImplementado] = useState(false)
+  const [loadingTable, setLoadingTable] = useState(false)
   const perm = usePermissions('admin')
+
+  const loadData = useCallback(async () => {
+    setLoadingTable(true)
+    try {
+      const resp: any = await get('/admin/roles')
+      const raw = resp?.data || []
+      if (Array.isArray(raw) && raw.length > 0) {
+        const mapped: Rol[] = raw.map((r: any) => {
+          let permisosParsed: Permisos = fullPermisos()
+          try {
+            if (r.permisos) {
+              permisosParsed = typeof r.permisos === 'string' ? JSON.parse(r.permisos) : r.permisos
+            }
+          } catch { permisosParsed = fullPermisos() }
+          return {
+            id: Number(r.idRol ?? r.id),
+            nombre: r.nombreRol || r.nombre || '',
+            estado: (r.estado || 'ACTIVO') as 'ACTIVO' | 'INACTIVO',
+            permisos: permisosParsed,
+          }
+        })
+        setData(mapped)
+      } else {
+        setData(initialData)
+      }
+      setEndpointNoImplementado(false)
+    } catch (e: any) {
+      setEndpointNoImplementado(true)
+      setData(initialData)
+    } finally {
+      setLoadingTable(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const reset = () => {
     setEditing(null)
@@ -225,8 +265,21 @@ const Roles = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}><SafetyOutlined /> Roles y Matriz de Permisos</Title>
-        {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo Rol</Button>}
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={loadingTable}>Recargar</Button>
+          {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo Rol</Button>}
+        </Space>
       </div>
+
+      {endpointNoImplementado && (
+        <Alert
+          type="error"
+          showIcon
+          message="🛑 Endpoint /admin/roles NO implementado en Backend"
+          description="La lista de roles mostrada es provisional hardcodeada. Crear el endpoint en NestJS para persistencia real. Los cambios en el drawer se guardan solo localmente y se pierden al refrescar."
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
       <Table rowKey="id" dataSource={data} columns={columns} pagination={{ pageSize: 8 }} />
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -10,16 +10,19 @@ import {
   Typography,
   Form,
   Select,
+  Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, UserOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, UserOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
+import { get, post, patch, remove } from '../../api/services/api'
 
 const { Title } = Typography
 const { Option } = Select
 
 interface Operador {
   id: number
+  idOperador?: number | string
   documento: string
   nombre: string
   telefono: string
@@ -27,21 +30,48 @@ interface Operador {
   usuario_login: string
   zona: string
   estado: 'ACTIVO' | 'INACTIVO'
+  idUsuario?: number | string
+  usuario?: any
 }
 
-const initialData: Operador[] = [
-  { id: 1, documento: '12345678', nombre: 'Andrés Felipe Herrera', telefono: '3101112222', email: 'andres@catering.com', usuario_login: 'aherrera', zona: 'Zona Norte', estado: 'ACTIVO' },
-  { id: 2, documento: '23456789', nombre: 'Laura Valentina Rojas', telefono: '3112223333', email: 'laura@catering.com', usuario_login: 'lrojas', zona: 'Zona Sur', estado: 'ACTIVO' },
-  { id: 3, documento: '34567890', nombre: 'Camilo Andrés Mora', telefono: '3153334444', email: 'camilo@catering.com', usuario_login: 'cmora', zona: 'Zona Centro', estado: 'ACTIVO' },
-]
-
 const Operadores = () => {
-  const [data, setData] = useState<Operador[]>(initialData)
+  const [data, setData] = useState<Operador[]>([])
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Operador | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingTable, setLoadingTable] = useState(false)
   const perm = usePermissions('operadores')
+
+  const loadData = useCallback(async () => {
+    setLoadingTable(true)
+    try {
+      const resp: any = await get('/operadores')
+      const raw = resp?.data || []
+      const mapped: Operador[] = raw.map((o: any) => ({
+        id: Number(o.idOperador),
+        idOperador: o.idOperador,
+        documento: o.numeroDocumento || '',
+        nombre: o.nombreCompleto || o.usuario?.nombreCompleto || '',
+        telefono: o.telefono || '',
+        email: o.email || o.usuario?.email || '',
+        usuario_login: o.usuarioLogin || o.usuario?.usuarioLogin || '',
+        zona: o.zonaAsignada || '',
+        estado: (o.estado || o.usuario?.estado || 'ACTIVO') as 'ACTIVO' | 'INACTIVO',
+        idUsuario: o.usuario?.idUsuario || o.idUsuario,
+        usuario: o.usuario,
+      }))
+      setData(mapped)
+    } catch (e: any) {
+      message.error('Error cargando operadores: ' + (e?.message || e))
+    } finally {
+      setLoadingTable(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const filtered = useMemo(() => {
     if (!search) return data
@@ -55,27 +85,107 @@ const Operadores = () => {
     )
   }, [data, search])
 
+  const obtenerRolOperadorId = async (): Promise<number | string | undefined> => {
+    try {
+      const resp: any = await get('/admin/roles')
+      const roles = resp?.data || []
+      const rolOp = roles.find((r: any) =>
+        (r.nombreRol || r.nombre || '').toUpperCase().includes('OPERADOR')
+      )
+      return rolOp?.idRol || rolOp?.id
+    } catch {
+      return undefined
+    }
+  }
+
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
       if (editing) {
-        setData(data.map((c) => (c.id === editing.id ? { ...c, ...values } : c)))
+        const idUsuario = editing.idOperador || editing.id
+        const payloadOperador = {
+          numeroDocumento: values.documento,
+          nombreCompleto: values.nombre,
+          telefono: values.telefono,
+          email: values.email,
+          usuarioLogin: values.usuario_login,
+          zonaAsignada: values.zona,
+          estado: values.estado || editing.estado || 'ACTIVO',
+        }
+        try {
+          await patch(`/operadores/${id}`, payloadOperador)
+        } catch (e: any) {
+          message.error('Error actualizando operador: ' + (e?.message || e))
+          return
+        }
+
+        const idUsuarioFk = editing.idUsuario || editing.usuario?.idUsuario
+        if (idUsuarioFk) {
+          try {
+            const payloadUsuario = {
+              nombreCompleto: values.nombre,
+              email: values.email,
+              usuarioLogin: values.usuario_login,
+              estado: values.estado || editing.estado || 'ACTIVO',
+            }
+            await patch(`/admin/usuarios/${idUsuarioFk}`, payloadUsuario)
+          } catch (errUsr: any) {
+            message.warning('Operador actualizado, pero error actualizando usuario vinculado: ' + (errUsr?.message || errUsr))
+          }
+        }
         message.success('Operador actualizado (y usuario vinculado)')
       } else {
-        const newId = Math.max(0, ...data.map((d) => d.id)) + 1
-        setData([...data, { id: newId, estado: 'ACTIVO', ...values }])
-        message.success('Operador y usuario creados exitosamente')
+          const idRolOperador = await obtenerRolOperadorId()
+          let idUsuarioCreado: any
+          try {
+            const payloadUsuario: any = {
+              nombreCompleto: values.nombre,
+              email: values.email,
+              usuarioLogin: values.usuario_login,
+              estado: values.estado || 'ACTIVO',
+              password: values.password,
+            }
+            if (idRolOperador) payloadUsuario.idRol = idRolOperador
+            const respUsr: any = await post('/admin/usuarios', payloadUsuario)
+            idUsuarioCreado = respUsr?.data?.idUsuario || respUsr?.idUsuario || respUsr?.data?.id || respUsr?.id
+          } catch (e: any) {
+            message.error('Error creando usuario vinculado: ' + (e?.message || e))
+            return
+          }
+
+          try {
+            const payloadOperador = {
+            numeroDocumento: values.documento,
+            nombreCompleto: values.nombre,
+            telefono: values.telefono,
+            email: values.email,
+            usuarioLogin: values.usuario_login,
+            zonaAsignada: values.zona,
+            idUsuario: idUsuarioCreado,
+          }
+          await post('/operadores', payloadOperador)
+          message.success('Operador y usuario creados exitosamente')
+        } catch (e: any) {
+          message.error('Error creando operador: ' + (e?.message || e))
+          return
+        }
       }
       setOpen(false)
       setEditing(null)
+      await loadData()
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = (id: number) => {
-    setData(data.filter((c) => c.id !== id))
-    message.success('Operador eliminado')
+  const handleDelete = async (id: number) => {
+    try {
+      await remove(`/operadores/${id}`)
+      setData(data.filter((c) => c.id !== id))
+      message.success('Operador eliminado')
+    } catch (e: any) {
+      message.error('Error eliminando operador: ' + (e?.message || e))
+    }
   }
 
   const columns = [
@@ -111,6 +221,7 @@ const Operadores = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}>Operadores</Title>
         <Space>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={loadingTable}>Recargar</Button>
           <Input allowClear prefix={<SearchOutlined />} placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
           {perm.crear && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setOpen(true) }}>
@@ -119,7 +230,9 @@ const Operadores = () => {
           )}
         </Space>
       </div>
-      <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} operadores` }} scroll={{ x: 1000 }} />
+      <Spin spinning={loadingTable}>
+        <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} operadores` }} scroll={{ x: 1000 }} />
+      </Spin>
       <ModalDrawer
         title={editing ? 'Editar Operador' : 'Nuevo Operador (crea usuario)'} open={open} onClose={() => { setOpen(false); setEditing(null) }}
         onSubmit={handleSubmit} initialValues={editing || undefined} loading={loading}

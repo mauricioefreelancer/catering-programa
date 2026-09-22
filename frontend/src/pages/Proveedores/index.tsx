@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Table,
   Button,
@@ -11,10 +11,12 @@ import {
   Form,
   Select,
   InputNumber,
+  Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
+import { get, post, patch, remove } from '../../api/services/api'
 
 const { Title } = Typography
 const { Option } = Select
@@ -31,20 +33,42 @@ interface Proveedor {
   estado: 'ACTIVO' | 'INACTIVO'
 }
 
-const initialData: Proveedor[] = [
-  { id: 1, nit: '890.123.456-7', razon_social: 'Distribuidora de Alimentos', asesor: 'Juan Diaz', condiciones_pago: 'CREDITO', dias_credito: 30, banco: 'Bancolombia', cuenta_bancaria: '0123456789', estado: 'ACTIVO' },
-  { id: 2, nit: '901.456.789-0', razon_social: 'Bebidas Nacionales', asesor: 'Sofia Lopez', condiciones_pago: 'CONTADO', banco: 'Davivienda', cuenta_bancaria: '9876543210', estado: 'ACTIVO' },
-  { id: 3, nit: '860.789.012-2', razon_social: 'Snacks y Confiteria', asesor: 'Pedro Ruiz', condiciones_pago: 'CREDITO', dias_credito: 15, banco: 'Bogota', cuenta_bancaria: '4567890123', estado: 'ACTIVO' },
-]
-
 const Proveedores = () => {
-  const [data, setData] = useState<Proveedor[]>(initialData)
+  const [data, setData] = useState<Proveedor[]>([])
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Proveedor | null>(null)
   const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(true)
   const [condPago, setCondPago] = useState<string>('CONTADO')
   const perm = usePermissions('proveedores')
+
+  const loadData = useCallback(async () => {
+    setFetching(true)
+    try {
+      const res = await get<any>('/proveedores', { skip: 0, take: 200 })
+      const rows = (res.data || []).map((p: any) => ({
+        id: Number(p.idProveedor || p.id) || 0,
+        nit: p.nit || '',
+        razon_social: p.razonSocial || p.razon_social || '',
+        asesor: p.asesorNombre || p.asesor || '',
+        condiciones_pago: (p.condicionesPago || p.condiciones_pago || 'CONTADO') as 'CONTADO' | 'CREDITO',
+        dias_credito: p.diasCredito ?? p.dias_credito,
+        banco: p.banco || '',
+        cuenta_bancaria: p.cuentaBancaria || p.cuenta_bancaria || '',
+        estado: p.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+      }))
+      setData(rows)
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Error al cargar proveedores')
+    } finally {
+      setFetching(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const filtered = useMemo(() => {
     if (!search) return data
@@ -61,27 +85,64 @@ const Proveedores = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
+      const payload: any = {
+        nit: values.nit,
+        razonSocial: values.razon_social,
+        asesorNombre: values.asesor,
+        condicionesPago: values.condiciones_pago,
+        diasCredito: values.dias_credito,
+        banco: values.banco,
+        cuentaBancaria: values.cuenta_bancaria,
+        estado: 'ACTIVO',
+      }
       if (editing) {
-        const next = data.map((c) => {
-          return c.id === editing.id ? { ...c, ...values } : c
-        })
-        setData(next)
+        const resp = await patch<any>(`/proveedores/${editing.id}`, payload)
+        const nr: Proveedor = {
+          id: Number(resp.idProveedor || editing.id) || editing.id,
+          nit: resp.nit || payload.nit,
+          razon_social: resp.razonSocial || payload.razonSocial,
+          asesor: resp.asesorNombre || payload.asesorNombre,
+          condiciones_pago: (resp.condicionesPago || payload.condicionesPago) as 'CONTADO' | 'CREDITO',
+          dias_credito: resp.diasCredito ?? payload.diasCredito,
+          banco: resp.banco || payload.banco,
+          cuenta_bancaria: resp.cuentaBancaria || payload.cuentaBancaria,
+          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        }
+        setData(data.map((c) => (c.id === editing.id ? { ...c, ...nr } : c)))
         message.success('Proveedor actualizado')
       } else {
-        const newId = Math.max(0, ...data.map((d) => d.id)) + 1
-        setData([...data, { id: newId, estado: 'ACTIVO', ...values }])
+        const resp = await post<any>('/proveedores', payload)
+        const nr: Proveedor = {
+          id: Number(resp.idProveedor) || 0,
+          nit: resp.nit || payload.nit,
+          razon_social: resp.razonSocial || payload.razonSocial,
+          asesor: resp.asesorNombre || payload.asesorNombre,
+          condiciones_pago: (resp.condicionesPago || payload.condicionesPago) as 'CONTADO' | 'CREDITO',
+          dias_credito: resp.diasCredito ?? payload.diasCredito,
+          banco: resp.banco || payload.banco,
+          cuenta_bancaria: resp.cuentaBancaria || payload.cuentaBancaria,
+          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        }
+        setData([nr, ...data])
         message.success('Proveedor creado')
       }
       setOpen(false)
       setEditing(null)
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || e?.message || 'Error al guardar proveedor')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = (id: number) => {
-    setData(data.filter((c) => c.id !== id))
-    message.success('Proveedor eliminado')
+  const handleDelete = async (id: number) => {
+    try {
+      await remove(`/proveedores/${id}`)
+      setData(data.filter((c) => c.id !== id))
+      message.success('Proveedor eliminado')
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || e?.message || 'Error al eliminar proveedor')
+    }
   }
 
   const columns = [
@@ -158,6 +219,7 @@ const Proveedores = () => {
           Proveedores
         </Title>
         <Space>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>Recargar</Button>
           <Input
             allowClear
             prefix={<SearchOutlined />}
@@ -182,13 +244,17 @@ const Proveedores = () => {
         </Space>
       </div>
 
-      <Table
-        rowKey="id"
-        dataSource={filtered}
-        columns={columns}
-        pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} proveedores` }}
-        scroll={{ x: 1000 }}
-      />
+      {fetching ? (
+        <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" tip="Cargando proveedores..." /></div>
+      ) : (
+        <Table
+          rowKey="id"
+          dataSource={filtered}
+          columns={columns}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} proveedores` }}
+          scroll={{ x: 1000 }}
+        />
+      )}
 
       <ModalDrawer
         title={editing ? 'Editar Proveedor' : 'Nuevo Proveedor'}
@@ -198,7 +264,15 @@ const Proveedores = () => {
           setEditing(null)
         }}
         onSubmit={handleSubmit}
-        initialValues={editing || undefined}
+        initialValues={editing ? {
+          nit: editing.nit,
+          razon_social: editing.razon_social,
+          asesor: editing.asesor,
+          condiciones_pago: editing.condiciones_pago,
+          dias_credito: editing.dias_credito,
+          banco: editing.banco,
+          cuenta_bancaria: editing.cuenta_bancaria,
+        } : undefined}
         loading={loading}
       >
         <Form.Item name="nit" label="NIT" rules={[{ required: true }]}>

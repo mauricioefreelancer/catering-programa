@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Table,
   Button,
@@ -9,11 +9,13 @@ import {
   Tag,
   Typography,
   Form,
+  Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
+import { get, post, patch, remove } from '../../api/services/api'
 
 const { Title } = Typography
 
@@ -28,20 +30,40 @@ interface Cliente {
   estado: 'ACTIVO' | 'INACTIVO'
 }
 
-const initialData: Cliente[] = [
-  { id: 1, nit: '901.234.567-8', razon_social: 'Alimentos S.A.S.', contacto: 'Carlos Pérez', telefono: '3101234567', ciudad: 'Bogotá', fecha_contrato: '2024-01-15', estado: 'ACTIVO' },
-  { id: 2, nit: '890.456.789-1', razon_social: 'Empresa de Servicios Ltda.', contacto: 'María Gómez', telefono: '3119876543', ciudad: 'Medellín', fecha_contrato: '2024-02-20', estado: 'ACTIVO' },
-  { id: 3, nit: '900.789.012-3', razon_social: 'Industrias Alimenticias', contacto: 'Luis Torres', telefono: '3154567890', ciudad: 'Cali', fecha_contrato: '2023-11-10', estado: 'ACTIVO' },
-  { id: 4, nit: '860.123.789-0', razon_social: 'Corporativo Nacional', contacto: 'Ana Rodríguez', telefono: '3207890123', ciudad: 'Barranquilla', fecha_contrato: '2024-05-01', estado: 'INACTIVO' },
-]
-
 const Clientes = () => {
-  const [data, setData] = useState<Cliente[]>(initialData)
+  const [data, setData] = useState<Cliente[]>([])
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Cliente | null>(null)
   const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(true)
   const perm = usePermissions('clientes')
+
+  const loadData = useCallback(async () => {
+    setFetching(true)
+    try {
+      const res = await get<any>('/clientes', { skip: 0, take: 200 })
+      const rows = (res.data || []).map((c: any) => ({
+        id: Number(c.idCliente || c.id) || 0,
+        nit: c.nit || '',
+        razon_social: c.razonSocial || c.razon_social || '',
+        contacto: c.contactoNombre || c.contacto || '',
+        telefono: c.telefono || '',
+        ciudad: c.ciudad || '',
+        fecha_contrato: c.fechaContrato || c.fecha_contrato || '',
+        estado: c.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+      }))
+      setData(rows)
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || 'Error al cargar clientes')
+    } finally {
+      setFetching(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const filtered = useMemo(() => {
     if (!search) return data
@@ -58,24 +80,61 @@ const Clientes = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
+      const payload = {
+        nit: values.nit,
+        razonSocial: values.razon_social,
+        contactoNombre: values.contacto,
+        telefono: values.telefono,
+        ciudad: values.ciudad,
+        fechaContrato: values.fecha_contrato,
+        estado: 'ACTIVO',
+      }
       if (editing) {
-      setData(data.map((c) => (c.id === editing.id ? { ...c, ...values } : c)))
-      message.success('Cliente actualizado')
+        const resp = await patch<any>(`/clientes/${editing.id}`, payload)
+        const nr: Cliente = {
+          id: Number(resp.idCliente || editing.id) || editing.id,
+          nit: resp.nit || payload.nit,
+          razon_social: resp.razonSocial || payload.razonSocial,
+          contacto: resp.contactoNombre || payload.contactoNombre,
+          telefono: resp.telefono || payload.telefono,
+          ciudad: resp.ciudad || payload.ciudad,
+          fecha_contrato: resp.fechaContrato || payload.fechaContrato,
+          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        }
+        setData(data.map((c) => (c.id === editing.id ? { ...c, ...nr } : c)))
+        message.success('Cliente actualizado')
       } else {
-        const newId = Math.max(0, ...data.map((d) => d.id)) + 1
-        setData([...data, { id: newId, estado: 'ACTIVO', ...values }])
+        const resp = await post<any>('/clientes', payload)
+        const nr: Cliente = {
+          id: Number(resp.idCliente) || 0,
+          nit: resp.nit || payload.nit,
+          razon_social: resp.razonSocial || payload.razonSocial,
+          contacto: resp.contactoNombre || payload.contactoNombre,
+          telefono: resp.telefono || payload.telefono,
+          ciudad: resp.ciudad || payload.ciudad,
+          fecha_contrato: resp.fechaContrato || payload.fechaContrato,
+          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        }
+        setData([nr, ...data])
         message.success('Cliente creado')
       }
       setOpen(false)
       setEditing(null)
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || e?.message || 'Error al guardar cliente')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = (id: number) => {
-    setData(data.filter((c) => c.id !== id))
-    message.success('Cliente eliminado')
+  const handleDelete = async (id: number) => {
+    try {
+      await remove(`/clientes/${id}`)
+      setData(data.filter((c) => c.id !== id))
+      message.success('Cliente eliminado')
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || e?.message || 'Error al eliminar cliente')
+    }
   }
 
   const columns = [
@@ -120,6 +179,7 @@ const Clientes = () => {
           Clientes
         </Title>
         <Space>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>Recargar</Button>
           <Input
             allowClear
             prefix={<SearchOutlined />}
@@ -143,13 +203,17 @@ const Clientes = () => {
         </Space>
       </div>
 
-      <Table
-        rowKey="id"
-        dataSource={filtered}
-        columns={columns}
-        pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t: any) => `Total ${t} clientes` }}
-        scroll={{ x: 1000 }}
-      />
+      {fetching ? (
+        <div style={{ textAlign: 'center', padding: 40 }}><Spin size="large" tip="Cargando clientes..." /></div>
+      ) : (
+        <Table
+          rowKey="id"
+          dataSource={filtered}
+          columns={columns}
+          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t: any) => `Total ${t} clientes` }}
+          scroll={{ x: 1000 }}
+        />
+      )}
 
       <ModalDrawer
         title={editing ? 'Editar Cliente' : 'Nuevo Cliente'}
@@ -159,7 +223,14 @@ const Clientes = () => {
           setEditing(null)
         }}
         onSubmit={handleSubmit}
-        initialValues={editing || undefined}
+        initialValues={editing ? {
+          nit: editing.nit,
+          razon_social: editing.razon_social,
+          contacto: editing.contacto,
+          telefono: editing.telefono,
+          ciudad: editing.ciudad,
+          fecha_contrato: editing.fecha_contrato,
+        } : undefined}
         loading={loading}
       >
         <Form.Item name="nit" label="NIT" rules={[{ required: true, message: 'Ingrese NIT' }]}>

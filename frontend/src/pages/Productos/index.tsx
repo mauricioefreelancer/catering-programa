@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -15,10 +15,12 @@ import {
   Select,
   Card,
   Switch,
+  Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined, PlusSquareOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined, PlusSquareOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
+import { get, post, patch, remove } from '../../api/services/api'
 
 const { Title } = Typography
 const { Option } = Select
@@ -47,23 +49,56 @@ interface Producto {
   receta?: Ingrediente[]
 }
 
-const initialData: Producto[] = [
-  { id: 1, codigo_barras: '7701001001001', nombre: 'Coca-Cola 350ml', tipo: 'ESTANDAR', unidad_compra: 'CAJA 24', unidad_consumo: 'UND', equivalencia: 24, costo_base: 2500, iva: 0.19, costo_total: 2975, stock_actual: 120, stock_min: 48, stock_max: 240 },
-  { id: 2, codigo_barras: '7702002002002', nombre: 'Agua Cristal 500ml', tipo: 'ESTANDAR', unidad_compra: 'CAJA 12', unidad_consumo: 'UND', equivalencia: 12, costo_base: 1200, iva: 0, costo_total: 1200, stock_actual: 35, stock_min: 60, stock_max: 180 },
-  { id: 3, codigo_barras: '7703003003003', nombre: 'Café Tostado Molido 500g', tipo: 'MATERIA_PRIMA', unidad_compra: 'BOLSA', unidad_consumo: 'g', equivalencia: 500, costo_base: 18000, iva: 0.19, costo_total: 21420, stock_actual: 45, stock_min: 10, stock_max: 100 },
-  { id: 4, codigo_barras: 'DOS001', nombre: 'Café Negro 12oz', tipo: 'DOSIFICADO', unidad_compra: 'PORCION', unidad_consumo: 'UND', equivalencia: 1, costo_base: 0, iva: 0.19, costo_total: 1800, stock_actual: 999, stock_min: 0, stock_max: 9999, receta: [{ id: 1, productoId: 3, cantidad: 12, nombre: 'Café Tostado Molido 500g' }] },
-]
+const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const
 
 const Productos = () => {
-  const [data, setData] = useState<Producto[]>(initialData)
+  const [data, setData] = useState<Producto[]>([])
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Producto | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingTable, setLoadingTable] = useState(false)
   const [tipoSel, setTipoSel] = useState<'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'>(editing?.tipo || 'ESTANDAR')
   const [tabKey, setTabKey] = useState<'GENERAL' | 'RECETA'>('GENERAL')
   const [receta, setReceta] = useState<Ingrediente[]>([])
   const perm = usePermissions('productos')
+
+  const normalizeTipo = (t: any): 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO' => {
+    if (TIPOS_VALIDOS.includes(t)) return t
+    return 'ESTANDAR'
+  }
+
+  const loadData = useCallback(async () => {
+    setLoadingTable(true)
+    try {
+      const resp: any = await get('/productos')
+      const raw = resp?.data || []
+      const mapped: Producto[] = raw.map((p: any) => ({
+        id: Number(p.idProducto),
+        codigo_barras: p.codigoBarras || '',
+        nombre: p.nombre || '',
+        tipo: normalizeTipo(p.Tipo_Producto),
+        unidad_compra: p.unidadCompra || 'UND',
+        unidad_consumo: p.unidadConsumo || 'UND',
+        equivalencia: Number(p.equivalencia || 1),
+        costo_base: Number(p.costoBase || 0),
+        iva: Number(p.IVA || 0),
+        costo_total: Number(p.costoTotal || 0),
+        stock_actual: Number(p.stockActual || 0),
+        stock_min: Number(p.stockMin || 0),
+        stock_max: Number(p.stockMax || 0),
+      }))
+      setData(mapped)
+    } catch (e: any) {
+      message.error('Error cargando productos: ' + (e?.message || e))
+    } finally {
+      setLoadingTable(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const materiasPrimas = useMemo(() => data.filter((p) => p.tipo === 'MATERIA_PRIMA'), [data])
   const filtered = useMemo(() => {
@@ -88,39 +123,89 @@ const Productos = () => {
     setLoading(true)
     try {
       const costoTotal = Number(values.costo_base || 0) * (1 + Number(values.iva || 0))
-      const payload = { ...values, costo_total: Math.round(costoTotal) }
-      if (values.tipo === 'DOSIFICADO') {
-        payload.receta = receta
-      } else {
-        payload.receta = undefined
+      const payloadBackend = {
+        codigoBarras: values.codigo_barras,
+        nombre: values.nombre,
+        Tipo_Producto: values.tipo,
+        unidadCompra: values.unidad_compra,
+        unidadConsumo: values.unidad_consumo,
+        equivalencia: Number(values.equivalencia || 1),
+        costoBase: Number(values.costo_base || 0),
+        IVA: Number(values.iva || 0),
+        costoTotal: Math.round(costoTotal),
+        stockActual: Number(values.stock_actual || 0),
+        stockMin: Number(values.stock_min || 0),
+        stockMax: Number(values.stock_max || 0),
       }
+      const recetaPayload = values.tipo === 'DOSIFICADO'
+        ? (receta || []).map((r: Ingrediente) => ({
+            idProductoIngrediente: Number(r.productoId),
+            cantidad: Number(r.cantidad),
+          }))
+        : undefined
+
       if (editing) {
-        setData(data.map((c) => (c.id === editing.id ? { ...c, ...payload } : c)))
-        message.success('Producto actualizado')
+        try {
+          await patch(`/productos/${editing.id}`, payloadBackend)
+          if (values.tipo === 'DOSIFICADO' && recetaPayload) {
+            try {
+              await post(`/productos/${editing.id}/receta`, { receta: recetaPayload })
+            } catch (errReceta: any) {
+              message.warning('Producto actualizado, pero error guardando receta (endpoint no implementado?): ' + (errReceta?.message || errReceta))
+            }
+          }
+          message.success('Producto actualizado')
+        } catch (e: any) {
+          message.error('Error actualizando producto: ' + (e?.message || e))
+          return
+        }
       } else {
-        const newId = Math.max(0, ...data.map((d) => d.id)) + 1
-        setData([...data, { id: newId, ...payload }])
-        message.success('Producto creado')
+        try {
+          const resp: any = await post('/productos', payloadBackend)
+          const nuevoId = resp?.data?.idProducto || resp?.idProducto
+          if (values.tipo === 'DOSIFICADO' && recetaPayload && nuevoId) {
+            try {
+              await post(`/productos/${nuevoId}/receta`, { receta: recetaPayload })
+            } catch (errReceta: any) {
+              message.warning('Producto creado, pero error guardando receta (endpoint no implementado?): ' + (errReceta?.message || errReceta))
+            }
+          }
+          message.success('Producto creado')
+        } catch (e: any) {
+          message.error('Error creando producto: ' + (e?.message || e))
+          return
+        }
       }
       resetDrawer()
+      await loadData()
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = (id: number) => {
-    setData(data.filter((c) => c.id !== id))
-    message.success('Producto eliminado')
+  const handleDelete = async (id: number) => {
+    try {
+      await remove(`/productos/${id}`)
+      setData(data.filter((c) => c.id !== id))
+      message.success('Producto eliminado')
+    } catch (e: any) {
+      message.error('Error eliminando producto: ' + (e?.message || e))
+    }
   }
 
-  const handleToggleMp = (p: Producto, checked: boolean) => {
+  const handleToggleMp = async (p: Producto, checked: boolean) => {
     if (p.tipo === 'DOSIFICADO') {
       message.warning('Un producto DOSIFICADO (receta) no puede cambiarse a Materia Prima')
       return
     }
     const nuevoTipo: 'ESTANDAR' | 'MATERIA_PRIMA' = checked ? 'MATERIA_PRIMA' : 'ESTANDAR'
-    setData(data.map((c) => (c.id === p.id ? { ...c, tipo: nuevoTipo } : c)))
-    message.success(checked ? 'Marcado como Insumo (Materia Prima)' : 'Volvió a Estándar')
+    try {
+      await patch(`/productos/${p.id}`, { Tipo_Producto: nuevoTipo })
+      setData(data.map((c) => (c.id === p.id ? { ...c, tipo: nuevoTipo } : c)))
+      message.success(checked ? 'Marcado como Insumo (Materia Prima)' : 'Volvió a Estándar')
+    } catch (e: any) {
+      message.error('Error actualizando tipo: ' + (e?.message || e))
+    }
   }
 
   const openEdit = (p: Producto) => {
@@ -220,12 +305,15 @@ const Productos = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}>Productos</Title>
         <Space>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={loadingTable}>Recargar</Button>
           <Input allowClear prefix={<SearchOutlined />} placeholder="Buscar nombre, código..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
           {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo Producto</Button>}
         </Space>
       </div>
 
-      <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} productos` }} scroll={{ x: 1280 }} />
+      <Spin spinning={loadingTable}>
+        <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} productos` }} scroll={{ x: 1280 }} />
+      </Spin>
 
       <ModalDrawer
         title={editing ? 'Editar Producto' : 'Nuevo Producto'}

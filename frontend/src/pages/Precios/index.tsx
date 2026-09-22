@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -15,9 +15,11 @@ import {
   Tag,
   Alert,
   Divider,
+  Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, SaveOutlined, RiseOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, SaveOutlined, RiseOutlined, ReloadOutlined } from '@ant-design/icons'
 import { usePermissions } from '../../hooks/usePermissions'
+import { apiService } from '../../api/services/api'
 
 const { Title } = Typography
 const { Option } = Select
@@ -32,42 +34,24 @@ interface Precio {
   precio_venta: number
 }
 
-const CLIENTES = [
-  { id: 1, nombre: 'Alimentos S.A.S.' },
-  { id: 2, nombre: 'Empresa Servicios Ltda.' },
-  { id: 3, nombre: 'Industrias Alimenticias' },
-]
+interface Cliente {
+  id: number
+  razonSocial?: string
+  nombre?: string
+}
 
-const PRODUCTOS = [
-  { id: 1, nombre: 'Coca-Cola 350ml', costo: 2975 },
-  { id: 2, nombre: 'Agua Cristal 500ml', costo: 1200 },
-  { id: 3, nombre: 'Jugo Hit Manzana 300ml', costo: 2380 },
-  { id: 4, nombre: 'Galleta Oreo 6und', costo: 1666 },
-]
-
-const genInitial = (): Precio[] => {
-  const arr: Precio[] = []
-  let id = 1
-  CLIENTES.forEach((c) => {
-    PRODUCTOS.forEach((p) => {
-      const margen = 0.25 + Math.random() * 0.25
-      const pv = Math.round(p.costo * (1 + margen))
-      arr.push({
-        id: id++,
-        clienteId: c.id,
-        clienteNombre: c.nombre,
-        productoId: p.id,
-        productoNombre: p.nombre,
-        costo_total: p.costo,
-        precio_venta: pv,
-      })
-    })
-  })
-  return arr
+interface Producto {
+  id: number
+  nombreProducto?: string
+  nombre?: string
 }
 
 const Precios = () => {
-  const [data, setData] = useState<Precio[]>(genInitial())
+  const [data, setData] = useState<Precio[]>([])
+  const [clientes, setClientes] = useState<Cliente[]>([])
+  const [productos, setProductos] = useState<Producto[]>([])
+  const [fetching, setFetching] = useState<boolean>(true)
+  const [initialLoading, setInitialLoading] = useState<boolean>(true)
   const [fCliente, setFCliente] = useState<number | null>(null)
   const [fProducto, setFProducto] = useState<number | null>(null)
   const [search, setSearch] = useState('')
@@ -77,6 +61,45 @@ const Precios = () => {
   const [ipcForm] = Form.useForm()
   const [preview, setPreview] = useState<Precio[] | null>(null)
   const perm = usePermissions('precios')
+
+  const loadData = useCallback(async () => {
+    setFetching(true)
+    try {
+      const [preciosRes, clientesRes, productosRes] = await Promise.all([
+        apiService.get<any>('/precios-cliente'),
+        apiService.get<any>('/clientes'),
+        apiService.get<any>('/productos'),
+      ])
+
+      const preciosData = preciosRes?.data ?? preciosRes ?? []
+      const clientesData = clientesRes?.data ?? clientesRes ?? []
+      const productosData = productosRes?.data ?? productosRes ?? []
+
+      setClientes(clientesData)
+      setProductos(productosData)
+
+      const mapped: Precio[] = preciosData.map((p: any) => ({
+        id: p.idPrecioCliente ?? p.id,
+        clienteId: p.idCliente,
+        clienteNombre: clientesData.find((c: any) => c.id === p.idCliente)?.razonSocial ?? clientesData.find((c: any) => c.id === p.idCliente)?.nombre ?? '',
+        productoId: p.idProducto,
+        productoNombre: productosData.find((pr: any) => pr.id === p.idProducto)?.nombreProducto ?? productosData.find((pr: any) => pr.id === p.idProducto)?.nombre ?? '',
+        costo_total: p.costoTotal ?? p.costo_total ?? 0,
+        precio_venta: p.precioVenta ?? p.precio_venta ?? 0,
+      }))
+
+      setData(mapped)
+    } catch (err: any) {
+      message.error('Error al cargar los datos: ' + (err?.message || err))
+    } finally {
+      setFetching(false)
+      setInitialLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const filtered = useMemo(() => {
     return data.filter((p) => {
@@ -93,9 +116,19 @@ const Precios = () => {
     setData(data.map((p) => (p.id === id ? { ...p, precio_venta: newVal } : p)))
   }
 
-  const saveAll = () => {
-    message.success(`Precios actualizados (${Object.keys(editMap).length} cambios)`)
-    setEditMap({})
+  const saveAll = async () => {
+    const cambios = Object.entries(editMap).map(([id, precio_venta]) => ({
+      id: Number(id),
+      precio_venta,
+    }))
+    try {
+      await apiService.patch('/precios-cliente/bulk', { cambios })
+      message.success(`Precios actualizados (${cambios.length} cambios)`)
+      setEditMap({})
+    } catch (err: any) {
+      const is404 = err?.response?.status === 404 || err?.status === 404
+      message.error(is404 ? 'Endpoint bulk no disponible (404). Cambios mantenidos localmente.' : 'Error al guardar: ' + (err?.message || err) + '. Cambios mantenidos localmente.')
+    }
   }
 
   const margenColor = (pv: number, ct: number) => {
@@ -133,13 +166,29 @@ const Precios = () => {
     }
   }
 
-  const confirmIPC = () => {
+  const confirmIPC = async () => {
     if (!preview) return
     setData(preview)
+    const cambios = preview
+      .filter((p, i) => data[i] && p.precio_venta !== data[i].precio_venta)
+      .map((p) => ({
+        id: p.id,
+        precio_venta: p.precio_venta,
+      }))
+    if (cambios.length > 0) {
+      try {
+        await apiService.patch('/precios-cliente/bulk', { cambios })
+        message.success(`Aumento IPC aplicado exitosamente (${cambios.length} cambios)`)
+      } catch (err: any) {
+        const is404 = err?.response?.status === 404 || err?.status === 404
+        message.error(is404 ? 'Endpoint bulk no disponible (404). Cambios mantenidos localmente.' : 'Error al guardar IPC: ' + (err?.message || err) + '. Cambios mantenidos localmente.')
+      }
+    } else {
+      message.success('Aumento IPC aplicado (sin cambios detectados)')
+    }
     setPreview(null)
     setOpenIPC(false)
     ipcForm.resetFields()
-    message.success('Aumento IPC aplicado exitosamente')
   }
 
   const columns = [
@@ -177,12 +226,13 @@ const Precios = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}>Precios por Cliente</Title>
         <Space wrap>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>Recargar</Button>
           <Input allowClear prefix={<SearchOutlined />} placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
           <Select allowClear placeholder="Filtrar Cliente" value={fCliente} onChange={(v) => setFCliente(v)} style={{ width: 220 }}>
-            {CLIENTES.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+            {clientes.map((c) => <Option key={c.id} value={c.id}>{c.razonSocial || c.nombre || `Cliente #${c.id}`}</Option>)}
           </Select>
           <Select allowClear placeholder="Filtrar Producto" value={fProducto} onChange={(v) => setFProducto(v)} style={{ width: 240 }}>
-            {PRODUCTOS.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+            {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombreProducto || p.nombre || `Producto #${p.id}`}</Option>)}
           </Select>
           {perm.crear && (
             <Button icon={<RiseOutlined />} onClick={() => setOpenIPC(true)}>
@@ -197,28 +247,30 @@ const Precios = () => {
         </Space>
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        message="Leyenda márgenes:"
-        description={
-          <Space>
-            <Tag color="green">≥ 15% (Saludable)</Tag>
-            <Tag color="gold">5% - 15% (Bajo)</Tag>
-            <Tag color="red">{`< 5% (Crítico - fila resaltada)`}</Tag>
-          </Space>
-        }
-        style={{ marginBottom: 12 }}
-      />
+      <Spin spinning={initialLoading}>
+        <Alert
+          type="info"
+          showIcon
+          message="Leyenda márgenes:"
+          description={
+            <Space>
+              <Tag color="green">≥ 15% (Saludable)</Tag>
+              <Tag color="gold">5% - 15% (Bajo)</Tag>
+              <Tag color="red">{`< 5% (Crítico - fila resaltada)`}</Tag>
+            </Space>
+          }
+          style={{ marginBottom: 12 }}
+        />
 
-      <Table
-        rowKey="id"
-        dataSource={filtered}
-        columns={columns}
-        pagination={{ pageSize: 12, showTotal: (t) => `Total ${t} precios` }}
-        onRow={(r) => ({ style: rowBg(r.precio_venta, r.costo_total) })}
-        scroll={{ x: 900 }}
-      />
+        <Table
+          rowKey="id"
+          dataSource={filtered}
+          columns={columns}
+          pagination={{ pageSize: 12, showTotal: (t) => `Total ${t} precios` }}
+          onRow={(r) => ({ style: rowBg(r.precio_venta, r.costo_total) })}
+          scroll={{ x: 900 }}
+        />
+      </Spin>
 
       <Modal
         title="Aumento IPC Masivo"
@@ -247,7 +299,7 @@ const Precios = () => {
                     return (
                       <Form.Item name="idCliente" label="Seleccionar Cliente" rules={[{ required: true }]}>
                         <Select placeholder="Seleccione cliente">
-                          {CLIENTES.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+                          {clientes.map((c) => <Option key={c.id} value={c.id}>{c.razonSocial || c.nombre || `Cliente #${c.id}`}</Option>)}
                         </Select>
                       </Form.Item>
                     )
@@ -256,7 +308,7 @@ const Precios = () => {
                     return (
                       <Form.Item name="idProducto" label="Seleccionar Producto" rules={[{ required: true }]}>
                         <Select placeholder="Seleccione producto">
-                          {PRODUCTOS.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+                          {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombreProducto || p.nombre || `Producto #${p.id}`}</Option>)}
                         </Select>
                       </Form.Item>
                     )

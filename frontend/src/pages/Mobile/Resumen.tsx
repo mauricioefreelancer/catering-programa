@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Card,
   Button,
@@ -11,6 +11,8 @@ import {
   Divider,
   Result,
   message,
+  Spin,
+  Alert,
 } from 'antd'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -19,10 +21,27 @@ import {
   SyncOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons'
-import { post } from '../../api/services/api'
+import { apiService } from '../../../api/services/api'
 import { offlineStore } from './offline.store'
 
 const { Text } = Typography
+
+interface NRQRow {
+  key: string
+  boton: string
+  productoNombre: string
+  valor: number
+}
+
+interface EspiralPayload {
+  espiral: string
+  fisico: number
+  sugerida: number
+  idMapaMp?: number
+  idProducto?: number
+  productoNombre?: string
+  capacidad_max?: number
+}
 
 interface MaquinaCfg {
   id: number
@@ -35,26 +54,143 @@ interface MaquinaCfg {
   ultimoNR: number
   nrActual: number
   totalNRQ: number
+  espirales: EspiralPayload[]
 }
 
-const MOCK_DB: Record<number, MaquinaCfg> = {
-  1: { id: 1, serial: 'SNK-00123', zona: 'Piso 3 - Cafetería', clienteNombre: 'Alimentos S.A.S.', tipo: 'COMBINADA', totalEspirales: 10, totalSugeridas: 45, ultimoNR: 45210, nrActual: 45380, totalNRQ: 0 },
-  3: { id: 3, serial: 'BEB-00789', zona: 'Edificio B', clienteNombre: 'Alimentos S.A.S.', tipo: 'BEBIDA', totalEspirales: 8, totalSugeridas: 29, ultimoNR: 21480, nrActual: 21590, totalNRQ: 0 },
-  2: { id: 2, serial: 'CAF-00456', zona: 'Recepción Principal', clienteNombre: 'Empresa Servicios Ltda.', tipo: 'CAFE', totalEspirales: 0, totalSugeridas: 0, ultimoNR: 89320, nrActual: 89520, totalNRQ: 250 },
-  5: { id: 5, serial: 'CAF-00789', zona: 'Piso 5 - Lounge', clienteNombre: 'Alimentos S.A.S.', tipo: 'CAFE', totalEspirales: 0, totalSugeridas: 0, ultimoNR: 62100, nrActual: 62250, totalNRQ: 180 },
-  6: { id: 6, serial: 'SNK-00555', zona: 'Centro Comercial L101', clienteNombre: 'Industrias Alimenticias', tipo: 'SNACK', totalEspirales: 8, totalSugeridas: 67, ultimoNR: 33180, nrActual: 33340, totalNRQ: 0 },
+interface DatosContadores {
+  nrActual: number | null
+  botones: NRQRow[]
+  savedAt?: number
+}
+
+const normalizarTipo = (t: string): MaquinaCfg['tipo'] => {
+  const up = String(t || '').toUpperCase()
+  if (up.includes('CAFE') || up.includes('CAFÉ')) return 'CAFE'
+  if (up.includes('BEBID')) return 'BEBIDA'
+  if (up.includes('SNACK') || up.includes('SNACKS')) return 'SNACK'
+  if (up.includes('COMBIN') || up.includes('MIXTO')) return 'COMBINADA'
+  return 'SNACK'
 }
 
 const ResumenMobile = () => {
   const { idMaquina } = useParams()
   const navigate = useNavigate()
   const id = Number(idMaquina) || 1
-  const maq = MOCK_DB[id] || MOCK_DB[1]
 
-  const diffNR = maq.nrActual - maq.ultimoNR
+  const [loading, setLoading] = useState(true)
+  const [maquina, setMaquina] = useState<MaquinaCfg | null>(null)
+  const [datosContadores, setDatosContadores] = useState<DatosContadores | null>(null)
+
   const [saving, setSaving] = useState(false)
   const [savedOk, setSavedOk] = useState(false)
   const [offlineSaved, setOfflineSaved] = useState(false)
+
+  const cargarDatos = useCallback(async () => {
+    try {
+      setLoading(true)
+
+      let datos: DatosContadores | null = null
+      try {
+        const raw = sessionStorage.getItem(`contadores_${id}`)
+        if (raw) {
+          datos = JSON.parse(raw)
+        }
+      } catch (e) {
+        console.warn('Error leyendo sessionStorage contadores', e)
+      }
+      if (!datos) {
+        datos = { nrActual: null, botones: [] }
+      }
+      setDatosContadores(datos)
+
+      let espiralesInventario: any[] = []
+      try {
+        const rawInv = sessionStorage.getItem(`inventario_${id}`)
+        if (rawInv) {
+          const inv = JSON.parse(rawInv)
+          espiralesInventario = inv.espirales || []
+        }
+      } catch (e) {
+        console.warn('Error leyendo sessionStorage inventario', e)
+      }
+
+      const [maquinaRes, mapaMpRes] = await Promise.all([
+        apiService.get<any>(`/maquinas/${id}?include=mapa_cafe_nrq`).catch(() => null),
+        apiService.get<any[]>(`/maquinas/${id}/mapa-mp`).catch(() => []),
+      ])
+
+      const rawMaq = maquinaRes?.data ?? maquinaRes
+      if (!rawMaq) {
+        setMaquina(null)
+        return
+      }
+
+      const mapaNrq = rawMaq.mapa_cafe_nrq || rawMaq.mapaCafeNrq || rawMaq.mapa_nrq || rawMaq.mapaNrq || null
+      const ultimoNR = Number(
+        mapaNrq?.ultimoNR ??
+        mapaNrq?.ultimo_nr ??
+        rawMaq.ultimo_nr ??
+        rawMaq.ultimoContadorNR ??
+        rawMaq.ultimoNr ??
+        rawMaq.contadorNR ??
+        0
+      )
+
+      const mapaMp = Array.isArray(mapaMpRes) ? mapaMpRes : (mapaMpRes?.data ?? [])
+      const espiralesProcesadas: EspiralPayload[] = mapaMp.map((m: any) => {
+        const prod = m.producto ?? m.productoMP ?? m.Producto ?? {}
+        const capacidad = Number(m.capacidadMax ?? m.capacidad_max ?? 15)
+        const matchInv = espiralesInventario.find((e: any) =>
+          String(e.idMapaMp ?? e.id ?? e.espiral) === String(m.idMapaMP ?? m.id ?? m.espiralCodigo)
+        )
+        const fisico = matchInv ? Number(matchInv.fisico ?? matchInv.fisico_digitado ?? 0) : 0
+        const sugerida = matchInv ? Number(matchInv.sugerida ?? matchInv.cant_sugerida ?? Math.max(0, capacidad - fisico)) : Math.max(0, capacidad - fisico)
+        return {
+          espiral: m.espiralCodigo ?? m.codigo ?? m.espiral ?? '?',
+          fisico,
+          sugerida,
+          idMapaMp: Number(m.idMapaMP ?? m.id) || undefined,
+          idProducto: Number(prod.idProducto ?? prod.id) || undefined,
+          productoNombre: prod.nombreProducto ?? prod.nombre ?? 'Producto',
+          capacidad_max: capacidad,
+        }
+      })
+
+      const totalEspirales = espiralesProcesadas.length
+      const totalSugeridas = espiralesProcesadas.reduce((s, e) => s + (e.sugerida || 0), 0)
+
+      const nrDesdeContadores = datos?.nrActual ?? null
+      const nrFinal = nrDesdeContadores !== null ? Number(nrDesdeContadores) : (ultimoNR || 0)
+      const totalNRQ = (datos?.botones || []).reduce((s, b) => s + (b.valor || 0), 0) || 0
+
+      const maquinaMapeada: MaquinaCfg = {
+        id: Number(rawMaq.idMaquina ?? rawMaq.id ?? id),
+        serial: rawMaq.serial ?? `MAQ-${id}`,
+        zona: rawMaq.ubicacionEsp ?? rawMaq.zona ?? rawMaq.ubicacion ?? 'Sin zona',
+        clienteNombre: rawMaq.cliente?.razonSocial ?? rawMaq.clienteNombre ?? rawMaq.cliente?.nombre ?? 'Sin cliente',
+        tipo: normalizarTipo(rawMaq.Tipo_Maquina ?? rawMaq.tipo ?? rawMaq.tipoMaquina ?? 'SNACK'),
+        totalEspirales,
+        totalSugeridas,
+        ultimoNR,
+        nrActual: nrFinal,
+        totalNRQ,
+        espirales: espiralesProcesadas,
+      }
+
+      setMaquina(maquinaMapeada)
+    } catch (e) {
+      console.error('Error cargando resumen', e)
+      setMaquina(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    cargarDatos()
+  }, [cargarDatos])
+
+  const diffNR = (maquina?.nrActual || 0) - (maquina?.ultimoNR || 0)
 
   const save = async (forceOffline = false) => {
     setSaving(true)
@@ -62,33 +198,85 @@ const ResumenMobile = () => {
     try {
       const payload = {
         maquinaId: id,
-        maquinaSerial: maq.serial,
-        espirales: [],
-        nr_actual: maq.nrActual,
-        nrq: [],
+        maquinaSerial: maquina?.serial,
+        espirales: (maquina?.espirales || []).map((e) => ({
+          espiral: e.espiral,
+          fisico: e.fisico,
+          sugerida: e.sugerida,
+          idMapaMp: e.idMapaMp,
+          idProducto: e.idProducto,
+        })),
+        nr_actual: datosContadores?.nrActual ?? maquina?.nrActual ?? 0,
+        nrq: (datosContadores?.botones || []).map((b) => ({
+          boton: b.boton,
+          productoNombre: b.productoNombre,
+          valor: b.valor,
+        })),
         savedAt: Date.now(),
       }
+
       if (!forceOffline) {
-        await post('/inventarios/operario', payload)
+        await apiService.post('/inventarios/operario', payload as any)
       } else {
         throw new Error('FORCE_OFFLINE')
       }
       setSavedOk(true)
       message.success('✅ Inventario enviado correctamente')
     } catch (e: any) {
-      await offlineStore.addPending({
-        maquinaId: id,
-        maquinaSerial: maq.serial,
-        espirales: [],
-        nr_actual: maq.nrActual,
-        nrq: [],
-      } as any)
+      try {
+        await offlineStore.addPending({
+          maquinaId: id,
+          maquinaSerial: maquina?.serial ?? `MAQ-${id}`,
+          espirales: (maquina?.espirales || []).map((e) => ({
+            espiral: e.espiral,
+            fisico: e.fisico,
+            sugerida: e.sugerida,
+            idMapaMp: e.idMapaMp,
+            idProducto: e.idProducto,
+          })),
+          nr_actual: datosContadores?.nrActual ?? maquina?.nrActual ?? 0,
+          nrq: (datosContadores?.botones || []).map((b) => ({
+            boton: b.boton,
+            productoNombre: b.productoNombre,
+            valor: b.valor,
+          })),
+          savedAt: Date.now(),
+        } as any)
+      } catch (err) {
+        console.error('Error guardando offline', err)
+      }
       setOfflineSaved(true)
       setSavedOk(true)
       message.warning('📴 Sin conexión: Guardado OFFLINE. Sincronizará luego.')
     } finally {
       setSaving(false)
     }
+  }
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <Spin size="large" tip="Cargando resumen..." />
+      </div>
+    )
+  }
+
+  if (!maquina) {
+    return (
+      <div style={{ padding: 16 }}>
+        <Alert
+          type="warning"
+          showIcon
+          message="No hay datos de máquina, regrese a Contadores"
+          description="No se pudo cargar la información de resumen. Por favor regrese y complete los pasos anteriores."
+          action={
+            <Button size="small" onClick={() => navigate(`/mobile/contadores/${id}`)}>
+              Ir a Contadores
+            </Button>
+          }
+        />
+      </div>
+    )
   }
 
   if (savedOk) {
@@ -100,7 +288,7 @@ const ResumenMobile = () => {
         subTitle={
           offlineSaved
             ? 'El dispositivo no tenía conexión. Datos almacenados localmente. Presiona "Sincronizar" en el Topbar cuando haya red.'
-            : `Inventario para ${maq.serial} procesado. ${maq.totalSugeridas} unidades sugeridas para despacho.`
+            : `Inventario para ${maquina?.serial} procesado. ${maquina?.totalSugeridas} unidades sugeridas para despacho.`
         }
         extra={[
           <Button type="primary" size="large" icon={<ArrowLeftOutlined />} onClick={() => navigate('/mobile/home')}>
@@ -120,12 +308,12 @@ const ResumenMobile = () => {
       <Card size="small" style={{ marginBottom: 10, background: '#f0f5ff' }}>
         <Row gutter={12}>
           <Col xs={12}>
-            <Text strong style={{ fontSize: 17 }}>{maq.serial}</Text>
-            <div style={{ fontSize: 12, color: '#555' }}>📍 {maq.zona}</div>
-            <div style={{ fontSize: 12, color: '#555' }}>🏢 {maq.clienteNombre}</div>
+            <Text strong style={{ fontSize: 17 }}>{maquina?.serial}</Text>
+            <div style={{ fontSize: 12, color: '#555' }}>📍 {maquina?.zona}</div>
+            <div style={{ fontSize: 12, color: '#555' }}>🏢 {maquina?.clienteNombre}</div>
           </Col>
           <Col xs={12} style={{ textAlign: 'right' }}>
-            <Tag color="geekblue" style={{ fontSize: 13 }}>{maq.tipo}</Tag>
+            <Tag color="geekblue" style={{ fontSize: 13 }}>{maquina?.tipo}</Tag>
           </Col>
         </Row>
       </Card>
@@ -135,12 +323,12 @@ const ResumenMobile = () => {
           <Row gutter={8}>
             <Col xs={12}>
               <Card size="small">
-                <Statistic title="Espirales Revisadas" value={maq.totalEspirales} suffix="unid." />
+                <Statistic title="Espirales Revisadas" value={maquina?.totalEspirales} suffix="unid." />
               </Card>
             </Col>
             <Col xs={12}>
               <Card size="small">
-                <Statistic title="Unid. Sugeridas" value={maq.totalSugeridas} valueStyle={{ color: '#1677ff' }} suffix="pzs" />
+                <Statistic title="Unid. Sugeridas" value={maquina?.totalSugeridas} valueStyle={{ color: '#1677ff' }} suffix="pzs" />
               </Card>
             </Col>
           </Row>
@@ -150,12 +338,12 @@ const ResumenMobile = () => {
           <Row gutter={8}>
             <Col xs={12}>
               <Card size="small">
-                <Statistic title="NR Anterior" value={maq.ultimoNR} />
+                <Statistic title="NR Anterior" value={maquina?.ultimoNR} />
               </Card>
             </Col>
             <Col xs={12}>
               <Card size="small">
-                <Statistic title="NR Actual" value={maq.nrActual} />
+                <Statistic title="NR Actual" value={maquina?.nrActual} />
               </Card>
             </Col>
           </Row>
@@ -173,7 +361,7 @@ const ResumenMobile = () => {
             </Col>
           </Row>
 
-          {maq.tipo === 'CAFE' && (
+          {maquina?.tipo === 'CAFE' && (
             <>
               <Divider />
               <Row>
@@ -181,7 +369,7 @@ const ResumenMobile = () => {
                   <Card size="small" style={{ background: '#f9f0ff' }}>
                     <Statistic
                       title="☕ Total Dosificaciones NRQ"
-                      value={maq.totalNRQ}
+                      value={maquina?.totalNRQ}
                       valueStyle={{ color: '#722ed1' }}
                       suffix="vasos"
                     />

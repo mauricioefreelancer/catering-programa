@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
   Table,
   Button,
@@ -17,9 +17,10 @@ import {
   Drawer,
   Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
+import { apiService } from '../../api/services/api'
 
 const { Title } = Typography
 const { Option } = Select
@@ -55,59 +56,34 @@ interface Maquina {
   botonesNRQ?: BotonNRQ[]
 }
 
-const CLIENTES = [
-  { id: 1, nombre: 'Alimentos S.A.S.' },
-  { id: 2, nombre: 'Empresa Servicios Ltda.' },
-]
-
-const OPERADORES = [
-  { id: 1, nombre: 'Andrés Herrera' },
-  { id: 2, nombre: 'Laura Rojas' },
-]
-
-const PRODUCTOS = [
-  { id: 1, nombre: 'Coca-Cola 350ml' },
-  { id: 2, nombre: 'Agua 500ml' },
-  { id: 3, nombre: 'Jugo Hit Manzana' },
-  { id: 4, nombre: 'Café Negro 12oz' },
-  { id: 5, nombre: 'Café con Leche' },
-]
-
 const genEspiralesVacio = (): Espiral[] => []
 const genBotonesVacio = (): BotonNRQ[] => []
 
-const initialData: Maquina[] = [
-  {
-    id: 1, serial: 'SNK-00123', marca: 'Necta', tipo: 'COMBINADA',
-    clienteId: 1, clienteNombre: 'Alimentos S.A.S.',
-    operadorId: 1, operadorNombre: 'Andrés Herrera',
-    zona: 'Piso 3 - Cafetería',
-    estado: 'OPERANDO',
-    espirales: genEspiralesVacio(),
-    botonesNRQ: [],
-  },
-  {
-    id: 2, serial: 'CAF-00456', marca: 'Saeco', tipo: 'CAFE',
-    clienteId: 2, clienteNombre: 'Empresa Servicios Ltda.',
-    operadorId: 2, operadorNombre: 'Laura Rojas',
-    zona: 'Recepción Principal',
-    estado: 'OPERANDO',
-    espirales: [],
-    botonesNRQ: genBotonesVacio(),
-  },
-  {
-    id: 3, serial: 'BEB-00789', marca: 'Azkoyen', tipo: 'BEBIDA',
-    clienteId: 1, clienteNombre: 'Alimentos S.A.S.',
-    operadorId: 1, operadorNombre: 'Andrés Herrera',
-    zona: 'Edificio B',
-    estado: 'MANTENIMIENTO',
-    espirales: genEspiralesVacio(),
-    botonesNRQ: [],
-  },
-]
+const normalizarTipo = (t: any): 'SNACK' | 'BEBIDA' | 'CAFE' | 'COMBINADA' => {
+  const s = String(t || '').toUpperCase()
+  if (s === 'SNACK' || s === 'BEBIDA' || s === 'CAFE' || s === 'CAFÉ' || s === 'COMBINADA') {
+    if (s === 'CAFÉ') return 'CAFE'
+    return s as any
+  }
+  return 'SNACK'
+}
+
+const normalizarEstado = (e: any): 'OPERANDO' | 'FUERA_SERVICIO' | 'MANTENIMIENTO' => {
+  const s = String(e || '').toUpperCase()
+  if (s === 'OPERANDO' || s === 'FUERA_SERVICIO' || s === 'FUERA SERVICIO' || s === 'MANTENIMIENTO') {
+    if (s === 'FUERA SERVICIO') return 'FUERA_SERVICIO'
+    return s as any
+  }
+  return 'OPERANDO'
+}
 
 const Maquinas = () => {
-  const [data, setData] = useState<Maquina[]>(initialData)
+  const [data, setData] = useState<Maquina[]>([])
+  const [clientes, setClientes] = useState<any[]>([])
+  const [operadores, setOperadores] = useState<any[]>([])
+  const [productos, setProductos] = useState<any[]>([])
+  const [fetching, setFetching] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Maquina | null>(null)
@@ -123,6 +99,52 @@ const Maquinas = () => {
   const [openBtnModal, setOpenBtnModal] = useState(false)
   const [editBtnIdx, setEditBtnIdx] = useState<number | null>(null)
   const [formBtn] = Form.useForm()
+
+  const loadData = useCallback(async () => {
+    setFetching(true)
+    try {
+      const [maquinasRes, clientesRes, operadoresRes, productosRes] = await Promise.all([
+        apiService.get('/maquinas?include=cliente,operador'),
+        apiService.get('/clientes'),
+        apiService.get('/operadores'),
+        apiService.get('/productos'),
+      ])
+
+      const maquinasList = Array.isArray(maquinasRes) ? maquinasRes : (maquinasRes?.data || [])
+      const clientesList = Array.isArray(clientesRes) ? clientesRes : (clientesRes?.data || [])
+      const operadoresList = Array.isArray(operadoresRes) ? operadoresRes : (operadoresRes?.data || [])
+      const productosList = Array.isArray(productosRes) ? productosRes : (productosRes?.data || [])
+
+      const maquinasMapeadas: Maquina[] = maquinasList.map((m: any) => ({
+        id: m.idMaquina ?? m.id,
+        serial: m.serial ?? '',
+        marca: m.marca ?? '',
+        tipo: normalizarTipo(m.Tipo_Maquina),
+        clienteId: m.idCliente ?? m.clienteId,
+        clienteNombre: m.cliente?.razonSocial ?? m.clienteNombre ?? '',
+        operadorId: m.idOperador ?? m.operadorId,
+        operadorNombre: m.operador?.nombreCompleto ?? m.operador?.usuario?.nombre ?? m.operadorNombre ?? '',
+        zona: m.ubicacionEsp ?? m.zona ?? '',
+        estado: normalizarEstado(m.estado_operacion),
+        espirales: m.espirales ?? genEspiralesVacio(),
+        botonesNRQ: m.botonesNRQ ?? genBotonesVacio(),
+      }))
+
+      setData(maquinasMapeadas)
+      setClientes(clientesList)
+      setOperadores(operadoresList)
+      setProductos(productosList)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al cargar datos')
+    } finally {
+      setFetching(false)
+      setInitialLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const filtered = useMemo(() => {
     if (!search) return data
@@ -153,36 +175,55 @@ const Maquinas = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
-      const cliente = CLIENTES.find((c) => c.id === values.clienteId)
-      const oper = OPERADORES.find((c) => c.id === values.operadorId)
-      const payload = {
-        ...values,
-        clienteNombre: cliente?.nombre || '',
-        operadorNombre: oper?.nombre || '',
+      const body: any = {
+        serial: values.serial,
+        marca: values.marca,
+        Tipo_Maquina: values.tipo,
+        idCliente: values.clienteId,
+        idOperador: values.operadorId,
+        ubicacionEsp: values.zona,
+        estado_operacion: values.estado || 'OPERANDO',
       }
-      if (payload.tipo !== 'CAFE') {
-        payload.espirales = espirales
-      }
-      if (payload.tipo === 'CAFE') {
-        payload.botonesNRQ = botones
-      }
+
+      let savedMaquina: any
       if (editing) {
-        setData(data.map((c) => (c.id === editing.id ? { ...c, ...payload } : c)))
+        savedMaquina = await apiService.patch(`/maquinas/${editing.id}`, body)
         message.success('Máquina actualizada')
       } else {
-        const newId = Math.max(0, ...data.map((d) => d.id), 0) + 1
-        setData([...data, { id: newId, estado: 'OPERANDO', ...payload }])
+        savedMaquina = await apiService.post('/maquinas', body)
         message.success('Máquina creada')
       }
+
+      if (espirales.length > 0 || botones.length > 0) {
+        try {
+          if (espirales.length > 0) {
+            await apiService.post(`/maquinas/${savedMaquina?.idMaquina ?? savedMaquina?.id ?? editing?.id}/espirales`, { espirales })
+          }
+          if (botones.length > 0) {
+            await apiService.post(`/maquinas/${savedMaquina?.idMaquina ?? savedMaquina?.id ?? editing?.id}/botones`, { botones })
+          }
+        } catch {
+          message.warning('Espirales/Botones guardados localmente (endpoint no disponible en API')
+        }
+      }
+
+      await loadData()
       resetDrawer()
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al guardar máquina')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleDelete = (id: number) => {
-    setData(data.filter((c) => c.id !== id))
-    message.success('Máquina eliminada')
+  const handleDelete = async (id: number) => {
+    try {
+      await apiService.remove(`/maquinas/${id}`)
+      setData(data.filter((c) => c.id !== id))
+      message.success('Máquina eliminada')
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al eliminar máquina')
+    }
   }
 
   const estadoColor = (e: string) => (e === 'OPERANDO' ? 'green' : e === 'MANTENIMIENTO' ? 'gold' : 'red')
@@ -221,7 +262,8 @@ const Maquinas = () => {
   const saveEspiral = async () => {
     try {
       const values = await formEsp.validateFields()
-      const prodName = PRODUCTOS.find((p) => p.id === values.productoId)?.nombre
+      const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
+      const prodName = prod?.nombreProducto ?? prod?.nombre
 
       if (editEspIdx === null) {
         const newId = Math.max(0, ...espirales.map((e) => e.id), 0) + 1
@@ -290,7 +332,8 @@ const Maquinas = () => {
   const saveBoton = async () => {
     try {
       const values = await formBtn.validateFields()
-      const prodName = PRODUCTOS.find((p) => p.id === values.productoId)?.nombre
+      const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
+      const prodName = prod?.nombreProducto ?? prod?.nombre
 
       if (editBtnIdx === null) {
         const newId = Math.max(0, ...botones.map((b) => b.id), 0) + 1
@@ -363,11 +406,14 @@ const Maquinas = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}>Máquinas Vending</Title>
         <Space>
+          <Button icon={<ReloadOutlined spin={fetching} onClick={loadData}>Recargar</Button>
           <Input allowClear prefix={<SearchOutlined />} placeholder="Buscar serial, marca..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
           {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nueva Máquina</Button>}
         </Space>
       </div>
-      <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} máquinas` }} scroll={{ x: 1100 }} />
+      <Spin spinning={initialLoading}>
+        <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} máquinas` }} scroll={{ x: 1100 }} />
+      </Spin>
       <ModalDrawer
         title={editing ? 'Editar Máquina' : 'Nueva Máquina'} open={open} onClose={resetDrawer} onSubmit={handleSubmit}
         initialValues={editing || { tipo: 'SNACK', estado: 'OPERANDO' }} loading={loading} width={920}
@@ -403,12 +449,12 @@ const Maquinas = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="clienteId" label="Cliente" rules={[{ required: true }]}>
                       <Select placeholder="Seleccione cliente">
-                        {CLIENTES.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+                        {clientes.map((c) => <Option key={c.idCliente ?? c.id} value={c.idCliente ?? c.id}>{c.razonSocial ?? c.nombre}</Option>)}
                       </Select>
                     </Form.Item>
                     <Form.Item name="operadorId" label="Operador a Cargo" rules={[{ required: true }]}>
                       <Select placeholder="Seleccione operador">
-                        {OPERADORES.map((c) => <Option key={c.id} value={c.id}>{c.nombre}</Option>)}
+                        {operadores.map((o) => <Option key={o.idOperador ?? o.id} value={o.idOperador ?? o.id}>{o.nombreCompleto ?? o.usuario?.nombre ?? o.nombre}</Option>)}
                       </Select>
                     </Form.Item>
                   </div>
@@ -599,7 +645,7 @@ const Maquinas = () => {
             </Form.Item>
             <Form.Item label="Producto Asignado" name="productoId">
               <Select allowClear placeholder="Seleccione el producto para esta espiral">
-                {PRODUCTOS.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
+                {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
               </Select>
             </Form.Item>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -669,7 +715,7 @@ const Maquinas = () => {
             </Form.Item>
             <Form.Item label="Producto Dosificado" name="productoId">
               <Select allowClear placeholder="Seleccione el producto DOSIFICADO para este botón">
-                {PRODUCTOS.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
+                {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
               </Select>
             </Form.Item>
           </Form>
