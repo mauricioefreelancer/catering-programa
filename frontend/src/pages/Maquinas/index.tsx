@@ -406,7 +406,7 @@ const Maquinas = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}>Máquinas Vending</Title>
         <Space>
-          <Button icon={<ReloadOutlined spin={fetching} onClick={loadData}>Recargar</Button>
+          <Button icon={<ReloadOutlined spin={fetching} />} onClick={loadData}>Recargar</Button>
           <Input allowClear prefix={<SearchOutlined />} placeholder="Buscar serial, marca..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
           {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nueva Máquina</Button>}
         </Space>

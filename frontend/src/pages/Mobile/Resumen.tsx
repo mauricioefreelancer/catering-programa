@@ -21,7 +21,7 @@ import {
   SyncOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons'
-import { apiService } from '../../../api/services/api'
+import { apiService } from '../../api/services/api'
 import { offlineStore } from './offline.store'
 
 const { Text } = Typography

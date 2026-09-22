@@ -16,7 +16,7 @@ import {
 } from 'antd'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeftOutlined, ArrowRightOutlined } from '@ant-design/icons'
-import { apiService } from '../../../api/services/api'
+import { apiService } from '../../api/services/api'
 
 const { Text } = Typography
 
