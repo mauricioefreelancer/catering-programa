@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1677ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0958d9;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#g)"/>
+  <g fill="white">
+    <rect x="130" y="100" width="252" height="330" rx="18" fill="#ffffff" opacity="0.12"/>
+    <rect x="150" y="120" width="212" height="60" rx="10" fill="#ffffff" opacity="0.9"/>
+    <circle cx="205" cy="150" r="18" fill="#1677ff"/>
+    <rect x="235" y="138" width="110" height="24" rx="6" fill="#1677ff"/>
+    <rect x="150" y="200" width="212" height="40" rx="8" fill="#ffffff" opacity="0.25"/>
+    <rect x="150" y="252" width="160" height="40" rx="8" fill="#ffffff" opacity="0.25"/>
+    <rect x="320" y="252" width="42" height="40" rx="8" fill="#52c41a" opacity="0.85"/>
+    <rect x="150" y="304" width="212" height="40" rx="8" fill="#ffffff" opacity="0.25"/>
+    <rect x="150" y="356" width="120" height="40" rx="8" fill="#ffffff" opacity="0.25"/>
+    <rect x="280" y="356" width="82" height="40" rx="8" fill="#faad14" opacity="0.85"/>
+    <rect x="190" y="410" width="132" height="10" rx="5" fill="#ffffff" opacity="0.5"/>
+  </g>
+  <text x="256" y="492" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="bold" fill="white">V&amp;C</text>
+</svg>

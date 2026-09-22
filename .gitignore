@@ -1,0 +1,38 @@
+# ========== RAÍZ PROYECTO CATERING ERP ==========
+# NUNCA subir:
+**/.env
+**/.env.local
+**/.env.*.local
+# Archivos sensibles (passwords / dumps SQL) NUNCA subir a GitHub
+*.dump
+*.sql
+*.sql.gz
+*.bak
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+# Screenshots / tmp
+/screenshots/
+diag_*.ps1
+debug_*.ps1
+tmp/
+temp/
+# Monorepo: node_modules y dist cada carpeta
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.npm-cache/
+**/.npm-cache/
+coverage/
+.trae/

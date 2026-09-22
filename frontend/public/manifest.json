@@ -1,0 +1,20 @@
+{
+  "name": "ERP Vending & Catering",
+  "short_name": "ERP V&C",
+  "description": "Sistema ERP completo para Vending y Catering",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1677ff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "finance"],
+  "lang": "es-CO"
+}

@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: catering-backend
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: backend
+    buildCommand: "npm install && npm run build && npx prisma generate && npx prisma migrate deploy"
+    startCommand: "node dist/src/main.js"
+    nodeVersion: 20.18.0
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+        value: "postgresql://USER:PASSWORD@dpg-daopu6h42hec73fmugag-a.oregon-postgres.render.com/catering_db_97na?schema=public&pgbouncer=true"
+        description: "⚠️ REEMPLAZA USER y PASSWORD por tu PostgreSQL Render (pooled internal). Añadir ?schema=public&pgbouncer=true siempre."
+      - key: DIRECT_URL
+        sync: false
+        value: "postgresql://USER:PASSWORD@dpg-daopu6h42hec73fmugag-a.oregon-postgres.render.com/catering_db_97na?schema=public"
+        description: "⚠️ REEMPLAZA USER y PASSWORD por tu PostgreSQL Render (direct internal). Añadir ?schema=public siempre."
+      - key: JWT_SECRET
+        sync: false
+        generateValue: true
+        description: "Firma tokens JWT (64 chars aleatorios). Generar con: node -e console.log(require('crypto').randomBytes(64).toString('hex'))"
+      - key: JWT_EXPIRES_IN
+        sync: false
+        value: "7d"
+      - key: PORT
+        sync: false
+        value: "3000"
+      - key: NODE_ENV
+        sync: false
+        value: "production"
+      - key: CORS_ORIGIN
+        sync: false
+        value: "https://TU-FRONTEND.netlify.app"
+        description: "Dominio NETLIFY (sin barra final). Desplegar Netlify PRIMERO para saber la URL exacta."
+    autoDeploy: true
+    pullRequestPreviewsEnabled: false
+    healthCheckPath: "/api/auth/providers"
+    numInstances: 1

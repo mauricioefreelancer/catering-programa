@@ -1,0 +1,368 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model RolesPerfiles {
+  idRol          Int                       @id @default(autoincrement()) @map("ID_Rol")
+  nombreRol      String                    @unique @map("Nombre_Rol") @db.VarChar(120)
+  permisosCrud Json                    @map("Permisos_CRUD") @db.JsonB
+  fechaCreacion DateTime                  @default(now()) @map("Fecha_Creacion")
+  estado         Boolean                   @default(true) @map("Estado")
+
+  usuariosSistema UsuariosSistema[]
+
+  @@map("ROLES_PERFILES")
+}
+
+model UsuariosSistema {
+  idUsuario          Int                       @id @default(autoincrement()) @map("ID_Usuario")
+  idRol              Int                       @map("ID_Rol")
+  nombreCompleto     String                    @map("Nombre_Completo") @db.VarChar(200)
+  usuarioLogin       String                    @unique @map("Usuario_Login") @db.VarChar(100)
+  email            String                    @unique @map("Email") @db.VarChar(200)
+  passwordHash     String                    @map("Password_Hash") @db.VarChar(255)
+  permisosExcepcion Json?                     @map("Permisos_Excepcion") @db.JsonB
+  estado           Boolean                   @default(true) @map("Estado")
+  fechaCreacion    DateTime                  @default(now()) @map("Fecha_Creacion")
+  ultimoAcceso     DateTime?                 @map("Ultimo_Acceso")
+
+  rol           RolesPerfiles             @relation(fields: [idRol], references: [idRol], onDelete: Restrict, onUpdate: Cascade)
+  operador      Operadores?
+  ingresosBodega IngresosBodega[]
+  despachosBodega DespachosBodega[]
+  tesoreriaEfectivoNr TesoreriaEfectivoNr[]
+  tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+  saldosDigitales SaldosDigitales[]
+  auditoriaLog   AuditoriaLog[]
+
+  @@map("USUARIOS_SISTEMA")
+}
+
+model Clientes {
+  idCliente           Int                       @id @default(autoincrement()) @map("ID_Cliente")
+  fechaCreacion       DateTime                  @default(now()) @map("Fecha_Creacion")
+  fechaContrato      DateTime                  @map("Fecha_Contrato") @db.Date
+  nit                String                    @unique @map("NIT") @db.VarChar(30)
+  razonSocial        String                    @map("Razon_Social") @db.VarChar(250)
+  contactoNombre     String?                   @map("Contacto_Nombre") @db.VarChar(200)
+  contactoTelefono   String?                   @map("Contacto_Telefono") @db.VarChar(50)
+  contactoCorreo     String?                   @map("Contacto_Correo") @db.VarChar(200)
+  contactoDireccion  String?                   @map("Contacto_Direccion") @db.VarChar(300)
+  contactoCiudad     String?                   @map("Contacto_Ciudad") @db.VarChar(100)
+  estado             Boolean                   @default(true) @map("Estado")
+
+  preciosCliente   PreciosCliente[]
+  maquinasYTiendas  MaquinasYTiendas[]
+  tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+
+  @@map("CLIENTES")
+}
+
+model Proveedores {
+  idProveedor          Int                       @id @default(autoincrement()) @map("ID_Proveedor")
+  fechaCreacion        DateTime                  @default(now()) @map("Fecha_Creacion")
+  nit                  String                    @unique @map("NIT") @db.VarChar(30)
+  razonSocial          String                    @map("Razon_Social") @db.VarChar(250)
+  asesorNombre         String?                   @map("Asesor_Nombre") @db.VarChar(200)
+  asesorTelefono       String?                   @map("Asesor_Telefono") @db.VarChar(50)
+  asesorCorreo         String?                   @map("Asesor_Correo") @db.VarChar(200)
+  condicionPagoTipo    String                    @default("CONTADO") @map("Condicion_Pago_Tipo") @db.VarChar(20)
+  condicionPagoDias   Int                       @default(0) @map("Condicion_Pago_Dias")
+  bancoNombre          String?                   @map("Banco_Nombre") @db.VarChar(150)
+  bancoTipoCuenta     String?                   @map("Banco_Tipo_Cuenta") @db.VarChar(50)
+  bancoNumeroCuenta    String?                   @map("Banco_Numero_Cuenta") @db.VarChar(100)
+  bancoTitular        String?                   @map("Banco_Titular") @db.VarChar(200)
+  estado               Boolean                   @default(true) @map("Estado")
+
+  productos          Productos[]
+  ingresosBodega IngresosBodega[]
+
+  @@map("PROVEEDORES")
+}
+
+model Operadores {
+  idOperador        Int                       @id @default(autoincrement()) @map("ID_Operador")
+  idUsuario         Int                       @unique @map("ID_Usuario")
+  nombreCompleto   String                    @map("Nombre_Completo") @db.VarChar(200)
+  telefono          String?                   @map("Telefono") @db.VarChar(50)
+  zonaAsignada     String?                   @map("Zona_Asignada") @db.VarChar(200)
+  fechaIngreso      DateTime                  @default(now()) @map("Fecha_Ingreso") @db.Date
+  estado            Boolean                   @default(true) @map("Estado")
+
+  usuario          UsuariosSistema         @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+  maquinasYTiendas  MaquinasYTiendas[]
+  pedidosOperador  PedidosOperador[]
+  tesoreriaEfectivoNr TesoreriaEfectivoNr[]
+
+  @@map("OPERADORES")
+}
+
+model Productos {
+  idProducto          Int                       @id @default(autoincrement()) @map("ID_Producto")
+  idProveedor        Int?                      @map("ID_Proveedor")
+  codigoBarras       String                    @unique @map("Codigo_Barras") @db.VarChar(100)
+  nombreProducto     String                    @map("Nombre_Producto") @db.VarChar(250)
+  tipoProducto      String                    @default("ESTANDAR") @map("Tipo_Producto") @db.VarChar(30)
+  unidadCompra      String                    @default("Unidad") @map("Unidad_Compra") @db.VarChar(50)
+  unidadConsumo     String                    @default("Unidad") @map("Unidad_Consumo") @db.VarChar(50)
+  equivalencia       Decimal                   @default(1.0000) @map("Equivalencia") @db.Decimal(18, 4)
+  costoBase         Decimal                   @default(0) @map("Costo_Base") @db.Decimal(18, 2)
+  porcentajeImp     Decimal                   @default(0) @map("Porcentaje_Imp") @db.Decimal(8, 4)
+  costoTotal        Decimal                   @default(0) @map("Costo_Total") @db.Decimal(18, 2)
+  stockMin          Int                       @default(0) @map("Stock_Min")
+  stockMax          Int                       @default(0) @map("Stock_Max")
+  stockActual       Int                       @default(0) @map("Stock_Actual")
+  fechaCreacion    DateTime                  @default(now()) @map("Fecha_Creacion")
+  estado            Boolean                   @default(true) @map("Estado")
+
+  proveedor       Proveedores?            @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
+  recetasProdTerm RecetasDosificados[] @relation("ProductoTerminado")
+  recetasMatPrima RecetasDosificados[] @relation("MateriaPrima")
+  preciosCliente  PreciosCliente[]
+  mapaMateriaPrima MapaMateriaPrima[]
+  mapaCafeNrq     MapaCafeNrq[]
+  detalleIngresos DetalleIngresos[]
+  pedidosOperador PedidosOperador[]
+  tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+
+  @@map("PRODUCTOS")
+}
+
+model RecetasDosificados {
+  idReceta          Int                       @id @default(autoincrement()) @map("ID_Receta")
+  idProdTerm       Int                       @map("ID_Prod_Term")
+  idMatPrima       Int                       @map("ID_Mat_Prima")
+  cantidadDosis    Decimal                   @map("Cantidad_Dosis") @db.Decimal(18, 4)
+  unidadDosis      String                    @map("Unidad_Dosis") @db.VarChar(50)
+  costoProporcional Decimal                   @default(0) @map("Costo_Proporcional") @db.Decimal(18, 2)
+  fechaCreacion    DateTime                  @default(now()) @map("Fecha_Creacion")
+
+  productoTerminado Productos @relation("ProductoTerminado", fields: [idProdTerm], references: [idProducto], onDelete: Cascade, onUpdate: Cascade)
+  materiaPrima     Productos @relation("MateriaPrima", fields: [idMatPrima], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([idProdTerm, idMatPrima], map: "uq_receta_unica")
+  @@map("RECETAS_DOSIFICADOS")
+}
+
+model PreciosCliente {
+  idPrecio           Int                       @id @default(autoincrement()) @map("ID_Precio")
+  idCliente        Int                       @map("ID_Cliente")
+  idProducto       Int                       @map("ID_Producto")
+  precioVenta     Decimal                   @map("Precio_Venta") @db.Decimal(18, 2)
+  margenActual    Decimal                   @default(0) @map("Margen_Actual") @db.Decimal(8, 4)
+  aumentoIpc      Decimal                   @default(0) @map("Aumento_IPC") @db.Decimal(8, 4)
+  alertaMargen    Boolean                   @default(false) @map("Alerta_Margen")
+  fechaCreacion   DateTime                  @default(now()) @map("Fecha_Creacion")
+  fechaUltimaActualizacion DateTime @default(now()) @map("Fecha_Ultima_Actualizacion")
+
+  cliente   Clientes  @relation(fields: [idCliente], references: [idCliente], onDelete: Restrict, onUpdate: Cascade)
+  producto Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([idCliente, idProducto], map: "uq_precio_cliente_producto")
+  @@map("PRECIOS_CLIENTE")
+}
+
+model MaquinasYTiendas {
+  idMaquina              Int                       @id @default(autoincrement()) @map("ID_Maquina")
+  idCliente             Int?                      @map("ID_Cliente")
+  idOperador            Int?                      @map("ID_Operador")
+  serial                String                    @unique @map("Serial") @db.VarChar(100)
+  marca                 String?                   @map("Marca") @db.VarChar(150)
+  tipo                  String                    @default("SNACKS") @map("Tipo") @db.VarChar(30)
+  ubicacionEsp          String?                   @map("Ubicacion_Esp") @db.VarChar(300)
+  mediosPago           Json?                     @map("Medios_Pago") @db.JsonB
+  tarifaPromedioOverride Decimal?                @map("Tarifa_Promedio_Override") @db.Decimal(18, 2)
+  fechaInstalacion      DateTime?                 @map("Fecha_Instalacion") @db.Date
+  estado                Boolean                   @default(true) @map("Estado")
+  fechaCreacion         DateTime                  @default(now()) @map("Fecha_Creacion")
+
+  cliente    Clientes?     @relation(fields: [idCliente], references: [idCliente], onDelete: Restrict, onUpdate: Cascade)
+  operador  Operadores?  @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
+  mapaMateriaPrima MapaMateriaPrima[]
+  mapaCafeNrq MapaCafeNrq[]
+  pedidosOperador PedidosOperador[]
+  tesoreriaEfectivoNr TesoreriaEfectivoNr[]
+  tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+  saldosDigitales SaldosDigitales[]
+
+  @@map("MAQUINAS_Y_TIENDAS")
+}
+
+model MapaMateriaPrima {
+  idMapaMp        Int                       @id @default(autoincrement()) @map("ID_Mapa_MP")
+  idMaquina       Int                       @map("ID_Maquina")
+  idProducto      Int                       @map("ID_Producto")
+  espiralCodigo   String                    @map("Espiral_Codigo") @db.VarChar(20)
+  capacidadMax    Int                       @default(0) @map("Capacidad_Max")
+  fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
+  producto Productos        @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  pedidosOperador PedidosOperador[]
+
+  @@unique([idMaquina, espiralCodigo], map: "uq_espiral_maquina")
+  @@map("MAPA_MATERIA_PRIMA")
+}
+
+model MapaCafeNrq {
+  idMapaNrq       Int                       @id @default(autoincrement()) @map("ID_Mapa_NRQ")
+  idMaquina      Int                       @map("ID_Maquina")
+  idProdTerm     Int                       @map("ID_Prod_Term")
+  opcionBoton    String                    @map("Opcion_Boton") @db.VarChar(50)
+  fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
+  productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([idMaquina, opcionBoton], map: "uq_nrq_boton_maquina")
+  @@map("MAPA_CAFE_NRQ")
+}
+
+model IngresosBodega {
+  idIngreso       Int                       @id @default(autoincrement()) @map("ID_Ingreso")
+  idProveedor    Int                       @map("ID_Proveedor")
+  fechaHora      DateTime                  @default(now()) @map("Fecha_Hora")
+  facturaNum    String                    @map("Factura_Num") @db.VarChar(100)
+  observaciones String                    @map("Observaciones") @db.Text
+  idUsuario      Int                       @map("ID_Usuario")
+
+  proveedor Proveedores @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
+  usuario   UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+  detalleIngresos DetalleIngresos[]
+
+  @@map("INGRESOS_BODEGA")
+}
+
+model DetalleIngresos {
+  idDetIngreso      Int                       @id @default(autoincrement()) @map("ID_Det_Ingreso")
+  idIngreso       Int                       @map("ID_Ingreso")
+  idProducto      Int                       @map("ID_Producto")
+  cantidadRecib Int                       @map("Cantidad_Recib")
+  costoUnitarioCompra Decimal @default(0) @map("Costo_Unitario_Compra") @db.Decimal(18, 2)
+  fechaVenc    DateTime?                 @map("Fecha_Venc") @db.Date
+
+  ingreso   IngresosBodega @relation(fields: [idIngreso], references: [idIngreso], onDelete: Cascade, onUpdate: Cascade)
+  producto  Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("DETALLE_INGRESOS")
+}
+
+model PedidosOperador {
+  idPedido          Int                       @id @default(autoincrement()) @map("ID_Pedido")
+  idMaquina         Int                       @map("ID_Maquina")
+  idOperador        Int                       @map("ID_Operador")
+  idProducto       Int                       @map("ID_Producto")
+  idMapaMp         Int?                      @map("ID_Mapa_MP")
+  fechaHora        DateTime                  @default(now()) @map("Fecha_Hora")
+  fisicoDigitado   Int                       @default(0) @map("Fisico_Digitado")
+  cantSugerida    Int                       @default(0) @map("Cant_Sugerida")
+  nrActualMedido BigInt?                   @map("NR_Actual_Medido")
+  nrqActualLectura BigInt?                 @map("NRQ_Actual_Lectura")
+  estado            String                    @default("PENDIENTE") @map("Estado") @db.VarChar(20)
+
+  maquina      MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
+  operador     Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
+  producto     Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  mapaMp       MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull, onUpdate: Cascade)
+  despachosBodega DespachosBodega[]
+
+  @@map("PEDIDOS_OPERADOR")
+}
+
+model DespachosBodega {
+  idDespacho       Int                       @id @default(autoincrement()) @map("ID_Despacho")
+  idPedido         Int                       @map("ID_Pedido")
+  idUsuario        Int                       @map("ID_Usuario")
+  fechaHora      DateTime                  @default(now()) @map("Fecha_Hora")
+  cantDespachada Int                       @default(0) @map("Cant_Despachada")
+  pendienteDesp  Int                       @default(0) @map("Pendiente_Desp")
+  observaciones String?                   @map("Observaciones") @db.Text
+
+  pedido  PedidosOperador @relation(fields: [idPedido], references: [idPedido], onDelete: Restrict, onUpdate: Cascade)
+  usuario UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("DESPACHOS_BODEGA")
+}
+
+model TesoreriaEfectivoNr {
+  idRecaudo       Int                       @id @default(autoincrement()) @map("ID_Recaudo")
+  idMaquina      Int                       @map("ID_Maquina")
+  idOperador     Int                       @map("ID_Operador")
+  idUsuario      Int                       @map("ID_Usuario")
+  fechaHora    DateTime                  @default(now()) @map("Fecha_Hora")
+  nrAnterior     BigInt                    @default(0) @map("NR_Anterior")
+  nrActual       BigInt                    @default(0) @map("NR_Actual")
+  diferenciaNr   BigInt                    @default(0) @map("Diferencia_NR")
+  tarifaAplicada Decimal                   @default(0) @map("Tarifa_Aplicada") @db.Decimal(18, 2)
+  efectivoTeorico Decimal                   @default(0) @map("Efectivo_Teorico") @db.Decimal(18, 2)
+  efectivoRecog Decimal                   @default(0) @map("Efectivo_Recog") @db.Decimal(18, 2)
+  diferenciaRec Decimal                   @default(0) @map("Diferencia_Rec") @db.Decimal(18, 2)
+  estado         String                    @default("CERRADO") @map("Estado") @db.VarChar(20)
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
+  operador Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
+  usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([idMaquina, fechaHora], map: "uq_recaudo_maquina_fecha")
+  @@map("TESORERIA_EFECTIVO_NR")
+}
+
+model TesoreriaFacturacionNrq {
+  idFactNrq         Int                       @id @default(autoincrement()) @map("ID_Fact_NRQ")
+  idMaquina          Int                       @map("ID_Maquina")
+  idCliente          Int                       @map("ID_Cliente")
+  idProdTerm         Int                       @map("ID_Prod_Term")
+  fechaInicio      DateTime                  @map("Fecha_Inicio") @db.Date
+  fechaFin         DateTime                  @map("Fecha_Fin") @db.Date
+  nrqInicial       BigInt                    @default(0) @map("NRQ_Inicial")
+  nrqFinal        BigInt                    @default(0) @map("NRQ_Final")
+  nrqDiferencia   BigInt                    @default(0) @map("NRQ_Diferencia")
+  precioUnitarioVenta Decimal @default(0) @map("Precio_Unitario_Venta") @db.Decimal(18, 2)
+  totalFacturar   Decimal                   @default(0) @map("Total_Facturar") @db.Decimal(18, 2)
+  fechaCreacion   DateTime                  @default(now()) @map("Fecha_Creacion")
+  idUsuario         Int                       @map("ID_Usuario")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
+  cliente  Clientes @relation(fields: [idCliente], references: [idCliente], onDelete: Restrict, onUpdate: Cascade)
+  productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("TESORERIA_FACTURACION_NRQ")
+}
+
+model SaldosDigitales {
+  idSaldo           Int                       @id @default(autoincrement()) @map("ID_Saldo")
+  idMaquina         Int                       @map("ID_Maquina")
+  plataforma        String                    @map("Plataforma") @db.VarChar(50)
+  montoTransaccion Decimal                   @map("Monto_Transaccion") @db.Decimal(18, 2)
+  fechaTransaccion DateTime                  @default(now()) @map("Fecha_Transaccion")
+  referencia       String?                   @map("Referencia") @db.VarChar(200)
+  idUsuario         Int                       @map("ID_Usuario")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
+  usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+
+  @@map("SALDOS_DIGITALES")
+}
+
+model AuditoriaLog {
+  idLog              BigInt                    @id @default(autoincrement()) @map("ID_Log")
+  idUsuario          Int?                      @map("ID_Usuario")
+  fechaHora        DateTime                  @default(now()) @map("Fecha_Hora")
+  moduloAfectado   String                    @map("Modulo_Afectado") @db.VarChar(100)
+  accion           String                    @map("Accion") @db.VarChar(50)
+  tablaAfectada    String?                   @map("Tabla_Afectada") @db.VarChar(100)
+  idRegistroAfectado String?                 @map("ID_Registro_Afectado") @db.Text
+  detalleCambios  Json?                     @map("Detalle_Cambios") @db.JsonB
+  ipOrigen         String?                   @map("IP_Origen") @db.VarChar(50)
+
+  usuario UsuariosSistema? @relation(fields: [idUsuario], references: [idUsuario], onDelete: SetNull, onUpdate: Cascade)
+
+  @@map("AUDITORIA_LOG")
+}
