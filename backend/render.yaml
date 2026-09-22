@@ -35,5 +35,7 @@ services:
         value: "30"
     autoDeploy: true
     pullRequestPreviewsEnabled: false
-    healthCheckPath: "/api/auth/providers"
+    healthCheckPath: "/health"
+    initialDeployHealthCheckTimeoutSeconds: 300
+    healthCheckIntervalSeconds: 30
     numInstances: 1

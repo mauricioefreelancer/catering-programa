@@ -26,8 +26,20 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: new Logger(),
   });
-  app.use(helmet());
-  app.enableCors({ origin: '*', credentials: true });
+  app.use(helmet({
+    contentSecurityPolicy: false,
+  }));
+  const rawServer = app.getHttpAdapter().getInstance();
+  rawServer.get('/health', (_req: any, res: any) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime() });
+  });
+  const corsOrigin = process.env.CORS_ORIGIN ?? '*';
+  app.enableCors({
+    origin: corsOrigin === '*' ? true : corsOrigin.split(',').map(s => s.trim()),
+    credentials: true,
+    methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With'],
+  });
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
@@ -41,8 +53,8 @@ async function bootstrap() {
     res.json = (body: any) => origJson(BigIntSerializer(body));
     next();
   });
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-  console.log(`🚀 Backend corriendo en http://localhost:${port}/api`);
+  const port = Number(process.env.PORT ?? 3000);
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 Backend corriendo en http://0.0.0.0:${port}/api (CORS=${corsOrigin})`);
 }
 bootstrap();
