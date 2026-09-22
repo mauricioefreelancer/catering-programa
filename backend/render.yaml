@@ -7,20 +7,23 @@ services:
     rootDir: backend
     buildCommand: "npm install && npm run build && npx prisma generate && npx prisma migrate deploy"
     startCommand: "node dist/src/main.js"
-    nodeVersion: 20.18.0
     envVars:
+      - key: NODE_VERSION
+        sync: false
+        value: "20.18.0"
+        description: "Versión Node.js LTS (Render respeta la variable NODE_VERSION en runtime Node)"
       - key: DATABASE_URL
         sync: false
         value: "postgresql://catering_user:TEKbgI8CFZhHMDhy1wa0z0jjHA6glEsu@dpg-daopu6h42hec73fmugag-a.oregon-postgres.render.com/catering_db_97na?schema=public&pgbouncer=true"
-        description: "Conexión Pooled (PgBouncer) Interna Render. Región Oregon. Parámetros schema=public&pgbouncer=true OBLIGATORIOS Prisma."
+        description: "Conexión Pooled (PgBouncer) Interna Render. Región Oregon. schema=public&pgbouncer=true OBLIGATORIOS Prisma."
       - key: DIRECT_URL
         sync: false
         value: "postgresql://catering_user:TEKbgI8CFZhHMDhy1wa0z0jjHA6glEsu@dpg-daopu6h42hec73fmugag-a.oregon-postgres.render.com/catering_db_97na?schema=public"
-        description: "Conexión Directa (sin PgBouncer) Interna Render. Usada solo para migraciones Prisma. Parámetro schema=public OBLIGATORIO."
+        description: "Conexión Directa (sin PgBouncer) Interna Render. Usada solo para migraciones Prisma. schema=public OBLIGATORIO."
       - key: JWT_SECRET
         sync: false
         generateValue: true
-        description: "Firma tokens JWT. Generar 64 chars seguros AES-256. NO compartir con nadie."
+        description: "Firma tokens JWT. Pulsa Generate en Render."
       - key: JWT_EXPIRES_IN
         sync: false
         value: "7d"
@@ -33,7 +36,7 @@ services:
       - key: CORS_ORIGIN
         sync: false
         value: "https://incandescent-paprenjak-78b703.netlify.app"
-        description: "Dominio Frontend Netlify Mauricio. NO añadir / al final. Permitir CORS solo a este origen."
+        description: "Dominio Frontend Netlify. NO añadir / final."
       - key: TARIFA_PROMEDIO_DEFAULT
         sync: false
         value: "3500"
