@@ -27,12 +27,13 @@ const PORT = Number(process.env.PORT ?? 3000);
 //    - Render Health Check recibe 200 OK SIN esperar Nest/Prisma
 // ============================================================
 const healthOnlyHandler = (req: http.IncomingMessage, res: http.ServerResponse) => {
-  if (req.method === 'GET' && (req.url === '/health' || (req.url?.startsWith('/health?') ?? false))) {
+  const url = (req.url ?? '/').split('?')[0];
+  if (req.method === 'GET' && (url === '/health' || url === '/')) {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Connection', 'close');
-    res.end('OK');
+    res.end(url === '/' ? 'Catering Backend OK (Live)' : 'OK');
     return true;
   }
   return false;
@@ -55,7 +56,7 @@ server.listen(PORT, '0.0.0.0', 511, () => {
   const addr = server.address();
   const addrStr = typeof addr === 'string' ? addr : `${addr?.address ?? '0.0.0.0'}:${addr?.port ?? PORT}`;
   console.log(`\n[BOOTSTRAP RAW HTTP] Servidor HTTP Base escuchando en ${addrStr} ✅`);
-  console.log(`[BOOTSTRAP RAW HTTP] /health ya responde OK desde el milisegundo 100`);
+  console.log(`[BOOTSTRAP RAW HTTP] '/'  y '/health' ya responden 200 OK desde el milisegundo 100`);
   console.log(`[BOOTSTRAP RAW HTTP] Render Health Check NO podrá hacer Timed Out ahora.\n`);
 });
 
