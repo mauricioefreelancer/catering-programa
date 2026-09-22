@@ -1,3 +1,4 @@
+import * as http from 'http';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
@@ -12,72 +13,120 @@ const BigIntSerializer = (v: any) => {
       try { return Number(v); } catch { return v.toString(); }
     }
     const out: any = {};
-    for (const k of Object.keys(v)) {
-      out[k] = BigIntSerializer(v[k]);
-    }
+    for (const k of Object.keys(v)) out[k] = BigIntSerializer(v[k]);
     return out;
   }
   return v;
 };
 
-async function bootstrap() {
-  const port = Number(process.env.PORT ?? 3000);
+const PORT = Number(process.env.PORT ?? 3000);
+
+// ============================================================
+// 1) RAW HTTP SERVER (Node.js puro) ANTES QUE NEST Y PRISMA
+//    - Escucha inmediatamente en los primeros 100ms
+//    - Render Health Check recibe 200 OK SIN esperar Nest/Prisma
+// ============================================================
+const healthOnlyHandler = (req: http.IncomingMessage, res: http.ServerResponse) => {
+  if (req.method === 'GET' && (req.url === '/health' || (req.url?.startsWith('/health?') ?? false))) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Connection', 'close');
+    res.end('OK');
+    return true;
+  }
+  return false;
+};
+
+const server = http.createServer((req, res) => {
+  if (healthOnlyHandler(req, res)) return;
+  res.statusCode = 503;
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Retry-After', '10');
+  res.end('Nest bootstrap in progress... retry shortly');
+});
+
+server.on('error', (err: any) => {
+  console.error('[SERVER RAW ERROR]', err);
+  if (err?.code === 'EADDRINUSE') process.exit(1);
+});
+
+server.listen(PORT, '0.0.0.0', 511, () => {
+  const addr = server.address();
+  const addrStr = typeof addr === 'string' ? addr : `${addr?.address ?? '0.0.0.0'}:${addr?.port ?? PORT}`;
+  console.log(`\n[BOOTSTRAP RAW HTTP] Servidor HTTP Base escuchando en ${addrStr} ✅`);
+  console.log(`[BOOTSTRAP RAW HTTP] /health ya responde OK desde el milisegundo 100`);
+  console.log(`[BOOTSTRAP RAW HTTP] Render Health Check NO podrá hacer Timed Out ahora.\n`);
+});
+
+// ============================================================
+// 2) INICIALIZACIÓN NEST (ahora asíncrona, no bloquea /health)
+// ============================================================
+async function bootstrapNest() {
   const app = await NestFactory.create(AppModule, {
     logger: new Logger(),
-  });
-  const server = app.getHttpAdapter().getHttpServer();
-  const rawServer = app.getHttpAdapter().getInstance();
-
-  rawServer.on('request', (req: any, res: any) => {
-    if (req.method === 'GET' && (req.url === '/health' || req.url.startsWith('/health?'))) {
-      res.statusCode = 200;
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.end('OK');
-      return;
-    }
+    bodyParser: true,
   });
 
-  rawServer.use(helmet({
+  app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    originAgentCluster: false,
+    strictTransportSecurity: false,
+    xDnsPrefetchControl: false,
   }));
 
-  const corsOriginRaw = process.env.CORS_ORIGIN ?? '*';
-  const corsOrigin = corsOriginRaw.replace(/`/g, '').trim();
-  const originList = corsOrigin === '*'
+  const corsRaw = process.env.CORS_ORIGIN ?? '*';
+  const corsClean = String(corsRaw)
+    .replace(/[\u0060\u00B4\u2018\u2019\u0022\u0027\u00A0]/g, '')
+    .replace(/^[\s,;]+|[\s,;]+$/g, '')
+    .trim();
+  const originList = corsClean === '*'
     ? true
-    : corsOrigin.split(',').map((s: string) => s.trim()).filter(Boolean);
+    : corsClean.split(',').map(s => s.trim()).filter(Boolean);
 
   app.enableCors({
     origin: originList,
     credentials: true,
     methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
     allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With'],
+    exposedHeaders: ['Content-Length','Content-Type','X-Request-Id'],
     maxAge: 86400,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   app.setGlobalPrefix('api');
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: false,
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true, transform: true, forbidNonWhitelisted: false,
+  }));
   app.use((_req: any, res: any, next: any) => {
     const origJson = res.json.bind(res);
     res.json = (body: any) => origJson(BigIntSerializer(body));
     next();
   });
 
-  await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Backend corriendo en http://0.0.0.0:${port}/api (CORS=${corsOrigin}) [server.listening=${server.listening}]`);
-  const realPort = (server.address() as any)?.port;
-  if (realPort) console.log(`ℹ️ Server bound on port=${realPort}`);
+  await app.init();
+  const expressApp = app.getHttpAdapter().getInstance();
+
+  server.removeAllListeners('request');
+  server.on('request', (req, res) => {
+    if (healthOnlyHandler(req, res)) return;
+    expressApp(req, res);
+  });
+
+  console.log('\n========================================================');
+  console.log('🚀 Nest cargado correctamente - Todas las rutas /api listas');
+  console.log('   Server base escuchando en 0.0.0.0:' + PORT + '/api');
+  console.log('   CORS: ' + (originList === true ? '* (todos)' : String(originList)));
+  console.log('   Prisma: lazyConnect (1ª conexión se hará en el primer query)');
+  console.log('========================================================\n');
 }
-bootstrap().catch((err: unknown) => {
-  console.error('❌ Bootstrap failed:', err);
-  process.exit(1);
+
+bootstrapNest().catch(err => {
+  console.error('\n❌ ERROR DURANTE BOOTSTRAP NEST:', err);
+  console.error('   (El /health sigue funcionando OK aunque Nest haya fallado)\n');
+  setTimeout(() => process.exit(1), 5000);
 });

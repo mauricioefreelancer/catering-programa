@@ -1,10 +1,25 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
-  async onModuleInit() {
-    await this.$connect();
+export class PrismaService extends PrismaClient {
+  constructor() {
+    super({
+      errorFormat: 'minimal',
+      log: ['warn','error'],
+      __internal: {
+        lazyConnect: true,
+      } as any,
+    });
+  }
+
+  async ensureConnected() {
+    try {
+      await this.$connect();
+    } catch (err) {
+      console.error('[Prisma] Error al intentar conectar (lazy):', err);
+      throw err;
+    }
   }
 
   async setCurrentUser(userId: number | null, ip?: string | null) {
