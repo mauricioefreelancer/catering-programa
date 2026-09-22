@@ -26,9 +26,12 @@ services:
         value: "3000"
       - key: NODE_ENV
         value: "production"
+      - key: NODE_OPTIONS
+        value: "--dns-result-order=ipv4first --no-warnings"
+        description: "Render IPv6 DNS a veces falla. Forzar IPv4 primero (evita ECONNREFUSED health check). Silenciar warnings experimentales JSON modules."
       - key: CORS_ORIGIN
         value: "https://incandescent-paprenjak-78b703.netlify.app"
-        description: "Dominio Frontend Netlify. NO barra final."
+        description: "⚠️ NO USAR COMILLAS NI BACKTICKS. Dominio Frontend Netlify exacto SIN barra final. Multiple dominios separar coma. Render NO inserta comillas automaticas: ESCRIBE VALOR PLANO."
       - key: TARIFA_PROMEDIO_DEFAULT
         value: "3500"
       - key: UMBRAL_MARGEN
