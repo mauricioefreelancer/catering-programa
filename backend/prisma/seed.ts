@@ -535,11 +535,13 @@ async function main() {
   });
   console.log('✅ Cliente demo creado');
 
-  const operadorPassword = await bcrypt.hash('Op1234*', 10);
+  const operadorPassword = await bcrypt.hash('Operador123*', 10);
 
   const operadorUsuario1 = await prisma.usuariosSistema.upsert({
     where: { email: 'operador1@example.com' },
-    update: {},
+    update: {
+      passwordHash: operadorPassword,
+    },
     create: {
       idRol: operadorRol.idRol,
       nombreCompleto: 'Juan Pérez (Operador 1 · Zona Norte)',
@@ -562,7 +564,9 @@ async function main() {
 
   const operadorUsuario2 = await prisma.usuariosSistema.upsert({
     where: { email: 'operador2@example.com' },
-    update: {},
+    update: {
+      passwordHash: operadorPassword,
+    },
     create: {
       idRol: operadorRol.idRol,
       nombreCompleto: 'Pedro Gómez (Operador 2 · Zona Sur)',
@@ -585,7 +589,9 @@ async function main() {
 
   const operadorUsuario3 = await prisma.usuariosSistema.upsert({
     where: { email: 'operador3@example.com' },
-    update: {},
+    update: {
+      passwordHash: operadorPassword,
+    },
     create: {
       idRol: operadorRol.idRol,
       nombreCompleto: 'Luisa Martínez (Operador 3 · Zona Centro)',
@@ -605,7 +611,7 @@ async function main() {
       fechaIngreso: new Date('2025-05-20'),
     },
   });
-  console.log('✅ 3 Operadores creados (Zonas: Norte / Sur / Centro) · Contraseña común: Op1234*');
+  console.log('✅ 3 Operadores creados (Zonas: Norte / Sur / Centro) · Contraseña común: Operador123*');
 
   const op1 = await prisma.operadores.findUnique({ where: { idUsuario: operadorUsuario1.idUsuario } });
   const op2 = await prisma.operadores.findUnique({ where: { idUsuario: operadorUsuario2.idUsuario } });
