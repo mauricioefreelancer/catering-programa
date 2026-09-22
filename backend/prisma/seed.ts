@@ -139,11 +139,13 @@ async function main() {
   console.log('✅ 6 Roles creados: Desarrollador, Bodega, Tesorería, Operador, Megacuadro');
 
   const desarrolladorPassword = await bcrypt.hash('Admin123*', 10);
+  const adminPassword = desarrolladorPassword;
   const desarrolladorUsuario = await prisma.usuariosSistema.upsert({
     where: { email: 'admin@example.com' },
     update: {
       idRol: desarrolladorRol.idRol,
       nombreCompleto: 'Desarrollador ERP',
+      passwordHash: desarrolladorPassword,
     },
     create: {
       idRol: desarrolladorRol.idRol,
@@ -155,47 +157,44 @@ async function main() {
   });
   console.log('✅ Usuario Desarrollador creado (admin@example.com / Admin123*)');
 
-  const jefePassword = await bcrypt.hash('Jefe123*', 10);
   const jefeUsuario = await prisma.usuariosSistema.upsert({
     where: { email: 'jefe@example.com' },
-    update: {},
+    update: { passwordHash: adminPassword },
     create: {
       idRol: megacuadroRol.idRol,
       nombreCompleto: 'Jefe / Gerente General',
       usuarioLogin: 'jefe',
       email: 'jefe@example.com',
-      passwordHash: jefePassword,
+      passwordHash: adminPassword,
     },
   });
-  console.log('✅ Usuario Jefe Megacuadro creado (jefe@example.com / Jefe123*)');
+  console.log('✅ Usuario Jefe Megacuadro creado (jefe@example.com / Admin123*)');
 
-  const bodegaPassword = await bcrypt.hash('Bodega123*', 10);
   const bodegaUsuario = await prisma.usuariosSistema.upsert({
     where: { email: 'bodega@example.com' },
-    update: {},
+    update: { passwordHash: adminPassword },
     create: {
       idRol: bodegaRol.idRol,
       nombreCompleto: 'Carlos Bodeguero',
       usuarioLogin: 'bodega1',
       email: 'bodega@example.com',
-      passwordHash: bodegaPassword,
+      passwordHash: adminPassword,
     },
   });
-  console.log('✅ Usuario Bodega creado (bodega@example.com / Bodega123*)');
+  console.log('✅ Usuario Bodega creado (bodega@example.com / Admin123*)');
 
-  const tesoreriaPassword = await bcrypt.hash('Tesoreria123*', 10);
   const tesoreriaUsuario = await prisma.usuariosSistema.upsert({
     where: { email: 'tesoreria@example.com' },
-    update: {},
+    update: { passwordHash: adminPassword },
     create: {
       idRol: tesoreriaRol.idRol,
       nombreCompleto: 'Ana Tesorera',
       usuarioLogin: 'tesoreria1',
       email: 'tesoreria@example.com',
-      passwordHash: tesoreriaPassword,
+      passwordHash: adminPassword,
     },
   });
-  console.log('✅ Usuario Tesorería creado (tesoreria@example.com / Tesoreria123*)');
+  console.log('✅ Usuario Tesorería creado (tesoreria@example.com / Admin123*)');
 
   const proveedorDemo = await prisma.proveedores.upsert({
     where: { nit: '900.000.000-1' },
