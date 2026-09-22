@@ -11,6 +11,7 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'icon.svg', 'icons.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
       manifest: {
         name: 'ERP Vending & Catering',
