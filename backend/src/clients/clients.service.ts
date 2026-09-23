@@ -19,7 +19,7 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto) {
   const contactoCorreo = firstNonEmpty(dto.contactoCorreo, dto.email);
   const contactoDireccion = firstNonEmpty(dto.contactoDireccion, dto.direccion);
   const contactoCiudad = firstNonEmpty(dto.contactoCiudad, dto.ciudad);
-  const fechaContratoRaw = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato, dto.fecha);
+  const fechaContratoRaw = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato, (dto as any).fecha);
   let fechaContrato: Date | undefined = undefined;
   if (fechaContratoRaw !== undefined && fechaContratoRaw !== null && String(fechaContratoRaw).trim() !== '') {
     try {
