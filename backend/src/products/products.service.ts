@@ -40,9 +40,9 @@ function normalizeProductoInput(dto: CreateProductoDto | UpdateProductoDto) {
   if (porcImp !== undefined && !isNaN(Number(porcImp))) result.porcentajeImp = Number(porcImp);
   const costoTotal = firstNonEmpty(dto.costoTotal, dto.costo_total, dto.precio_publico);
   if (costoTotal !== undefined && !isNaN(Number(costoTotal))) result.costoTotal = Number(costoTotal);
-  const sMin = firstNonEmpty(dto.stockMin, dto.stock_minimo, dto.stockMinMinimo);
+  const sMin = firstNonEmpty(dto.stockMin, dto.stock_minimo);
   if (sMin !== undefined && !isNaN(Number(sMin))) result.stockMin = Number(sMin);
-  const sMax = firstNonEmpty(dto.stockMax);
+  const sMax = firstNonEmpty(dto.stockMax, dto.stock_maximo);
   if (sMax !== undefined && !isNaN(Number(sMax))) result.stockMax = Number(sMax);
   const sAct = firstNonEmpty(dto.stockActual, dto.stock_actual);
   if (sAct !== undefined && !isNaN(Number(sAct))) result.stockActual = Number(sAct);

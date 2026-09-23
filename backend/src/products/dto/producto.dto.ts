@@ -49,6 +49,7 @@ export class CreateProductoDto {
   @IsOptional() @IsString() categoria?: string;
   @IsOptional() @IsString() unidad_medida?: string;
   @IsOptional() @IsInt() @Min(0) stock_minimo?: number;
+  @IsOptional() @IsInt() @Min(0) stock_maximo?: number;
   @IsOptional() @IsInt() @Min(0) stock_actual?: number;
 }
 
@@ -88,6 +89,7 @@ export class UpdateProductoDto {
   @IsOptional() @IsString() categoria?: string;
   @IsOptional() @IsString() unidad_medida?: string;
   @IsOptional() @IsInt() @Min(0) stock_minimo?: number;
+  @IsOptional() @IsInt() @Min(0) stock_maximo?: number;
   @IsOptional() @IsInt() @Min(0) stock_actual?: number;
 }
 
