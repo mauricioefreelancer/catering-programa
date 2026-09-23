@@ -27,6 +27,7 @@ const HomeMobile = () => {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [maquinas, setMaquinas] = useState<MaquinaRow[]>([])
+  const [perfilOperador, setPerfilOperador] = useState<any>(null)
   const navigate = useNavigate()
   const { usuario } = useAuth()
 
@@ -41,12 +42,14 @@ const HomeMobile = () => {
         ])
         const maqList = Array.isArray(maquinasRaw) ? maquinasRaw : (maquinasRaw?.data ?? [])
         const opList = Array.isArray(operadoresRaw) ? operadoresRaw : (operadoresRaw?.data ?? [])
-        const idUsuario = usuario?.id
+        const idUsuario = usuario?.idUsuario ?? usuario?.id
 
         let idOperadorActual: number | null = null
+        let opActual: any = null
         const matchOp = opList.find((o: any) => o.idUsuario === idUsuario || o.usuario?.idUsuario === idUsuario || Number(o.idUsuario) === Number(idUsuario))
         if (matchOp?.idOperador) {
           idOperadorActual = Number(matchOp.idOperador)
+          opActual = matchOp
         } else {
           const matchMaq = maqList.find((m: any) =>
             m.operador?.idUsuario === idUsuario ||
@@ -58,6 +61,31 @@ const HomeMobile = () => {
           } else if ((usuario as any)?.perfil === 'OPERADOR' && maqList.length > 0 && maqList.every((m: any) => Number(m.idOperador) === Number(maqList[0].idOperador))) {
             idOperadorActual = Number(maqList[0].idOperador)
           }
+        }
+
+        if (opActual && active) {
+          setPerfilOperador({
+            nombre: opActual.nombreCompleto || usuario?.nombreCompleto || usuario?.nombre || 'Operador',
+            email: opActual.email || opActual.usuario?.email || usuario?.email || '',
+            usuarioLogin: opActual.usuarioLogin || opActual.usuario?.usuarioLogin || usuario?.usuario_login || usuario?.usuarioLogin || '',
+            zona: opActual.zonaAsignada || '',
+            documento: opActual.numeroDocumento || opActual.usuario?.numeroDocumento || '',
+            telefono: opActual.telefono || '',
+            estado: (opActual.estado === false || opActual.usuario?.estado === false) ? 'INACTIVO' : 'ACTIVO',
+            fechaIngreso: opActual.fechaIngreso,
+            idOperador: idOperadorActual,
+          })
+        } else if (active) {
+          setPerfilOperador({
+            nombre: usuario?.nombreCompleto || usuario?.nombre || 'Operador',
+            email: usuario?.email || '',
+            usuarioLogin: usuario?.usuario_login || usuario?.usuarioLogin || '',
+            zona: '',
+            documento: '',
+            telefono: '',
+            estado: 'ACTIVO',
+            idOperador: idOperadorActual,
+          })
         }
 
         const rows: MaquinaRow[] = maqList
@@ -82,7 +110,7 @@ const HomeMobile = () => {
     cargar()
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usuario?.id])
+  }, [usuario?.id, usuario?.idUsuario])
 
   const filtered = useMemo(
     () =>
@@ -107,6 +135,46 @@ const HomeMobile = () => {
       width: '100%',
       boxSizing: 'border-box',
     }}>
+      {perfilOperador && (
+        <Card size="small" style={{ marginBottom: 10, borderRadius: 12, border: '1px solid #e6f4ff', background: '#f0f7ff' }}>
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+              <Avatar size={44} style={{ backgroundColor: '#1677ff', fontWeight: 'bold', fontSize: 18 }}>
+                {(String(perfilOperador.nombre || 'OP').trim().charAt(0) || 'O').toUpperCase()}
+              </Avatar>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Title level={5} style={{ margin: 0 }}>{perfilOperador.nombre}</Title>
+                <Space size={4} wrap style={{ marginTop: 2 }}>
+                  {perfilOperador.zona ? (
+                    <Tag color="blue" style={{ margin: 0 }}><EnvironmentOutlined /> {perfilOperador.zona}</Tag>
+                  ) : null}
+                  <Tag color={perfilOperador.estado === 'ACTIVO' ? 'green' : 'red'} style={{ margin: 0 }}>
+                    {perfilOperador.estado === 'ACTIVO' ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />} {perfilOperador.estado}
+                  </Tag>
+                </Space>
+              </div>
+            </div>
+            <Space size={6} wrap style={{ marginTop: 2 }}>
+              {perfilOperador.usuarioLogin ? (
+                <Tag color="geekblue" style={{ fontSize: 11, margin: 0 }}>👤 Usuario: {perfilOperador.usuarioLogin}</Tag>
+              ) : null}
+              {perfilOperador.email ? (
+                <Tag style={{ fontSize: 11, margin: 0 }}>✉️ {perfilOperador.email}</Tag>
+              ) : null}
+              {perfilOperador.documento ? (
+                <Tag style={{ fontSize: 11, margin: 0 }}>🆔 {perfilOperador.documento}</Tag>
+              ) : null}
+              {perfilOperador.telefono ? (
+                <Tag style={{ fontSize: 11, margin: 0 }}>📞 {perfilOperador.telefono}</Tag>
+              ) : null}
+              {perfilOperador.idOperador ? (
+                <Tag color="purple" style={{ fontSize: 11, margin: 0 }}>#Op {perfilOperador.idOperador}</Tag>
+              ) : null}
+            </Space>
+          </Space>
+        </Card>
+      )}
+
       <Title level={4} style={{ margin: 0, marginBottom: 10, fontSize: 18 }}>
         <DesktopOutlined /> Mis Máquinas Asignadas
       </Title>

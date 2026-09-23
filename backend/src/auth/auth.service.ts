@@ -18,8 +18,12 @@ export class AuthService {
   }
 
   async login(email: string, password: string) {
-    const usuario = await this.prisma.usuariosSistema.findUnique({
-      where: { email },
+    const whereEmailOUsuario = [
+      { email: email },
+      { usuarioLogin: email },
+    ];
+    const usuario = await this.prisma.usuariosSistema.findFirst({
+      where: { OR: whereEmailOUsuario },
       include: { rol: true },
     });
     if (!usuario) {

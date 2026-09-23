@@ -14,11 +14,16 @@ export interface Permisos {
 
 export interface Usuario {
   id?: number
+  idUsuario?: number
   nombre?: string
+  nombreCompleto?: string
   email?: string
   usuario_login?: string
+  usuarioLogin?: string
   rol?: string
+  rolNombre?: string
   rolId?: number
+  idRol?: number
   perfil?: string
   permisos?: Permisos
   excepciones_permisos?: Permisos

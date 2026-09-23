@@ -136,7 +136,7 @@ const Operadores = () => {
         message.success('Operador actualizado (y usuario vinculado)')
       } else {
         const idRolOperador = await obtenerRolOperadorId()
-        let idUsuarioCreado: any
+        let idUsuarioCreado: number | string | undefined
         try {
           const payloadUsuario: any = {
             nombreCompleto: values.nombre,
@@ -147,12 +147,16 @@ const Operadores = () => {
           }
           if (idRolOperador) payloadUsuario.idRol = idRolOperador
           const respUsr: any = await post('/admin/usuarios', payloadUsuario)
-          idUsuarioCreado = respUsr?.data?.idUsuario || respUsr?.idUsuario || respUsr?.data?.id || respUsr?.id
+          idUsuarioCreado = respUsr?.idUsuario ?? respUsr?.data?.idUsuario ?? respUsr?.id ?? respUsr?.data?.id
+          if (!idUsuarioCreado) {
+            throw new Error('Respuesta inválida creando usuario vinculado (faltaba idUsuario)')
+          }
         } catch (e: any) {
           message.error('Error creando usuario vinculado: ' + (e?.message || e))
           return
         }
 
+        let opCreadoOK = false
         try {
           const payloadOperador = {
             numeroDocumento: values.documento,
@@ -163,10 +167,23 @@ const Operadores = () => {
             zonaAsignada: values.zona,
             idUsuario: idUsuarioCreado,
           }
-          await post('/operadores', payloadOperador)
-          message.success('Operador y usuario creados exitosamente')
+          const respOp: any = await post('/operadores', payloadOperador)
+          const idOpOK = respOp?.operador?.idOperador ?? respOp?.idOperador ?? respOp?.data?.idOperador
+          opCreadoOK = !!idOpOK
+          if (!idOpOK) {
+            throw new Error('Respuesta inválida creando operador (faltaba idOperador)')
+          }
+          message.success('Operador y usuario creados exitosamente. Credenciales: email="' + values.email + '" ó usuario="' + values.usuario_login + '" con la clave elegida.')
         } catch (e: any) {
-          message.error('Error creando operador: ' + (e?.message || e))
+          message.error('Error creando operador (se eliminará usuario huérfano vinculado): ' + (e?.message || e))
+          if (idUsuarioCreado) {
+            try {
+              await remove(`/admin/usuarios/${idUsuarioCreado}`)
+              message.warning('Usuario huérfano eliminado automáticamente para evitar bloqueos de email/usuario duplicados')
+            } catch (errClean: any) {
+              message.warning('No se pudo limpiar usuario huérfano (favor revisar Admin / Usuarios): ' + (errClean?.message || errClean))
+            }
+          }
           return
         }
       }
