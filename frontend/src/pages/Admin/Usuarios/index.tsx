@@ -15,8 +15,9 @@ import {
   Alert,
   Tabs,
   Spin,
+  Modal,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, UserOutlined, UserSwitchOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, UserOutlined, UserSwitchOutlined, ReloadOutlined, LinkOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../../components/common/ModalDrawer'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { Permisos } from '../../../store/auth.store'
@@ -51,6 +52,8 @@ interface UsuarioRow {
   excepciones_permisos?: Permisos
   zonaAsignada?: string | null
   telefono?: string | null
+  operadorId?: number | null
+  esOperador?: boolean
 }
 
 const todoFalse = () => ({ ver: false, crear: false, editar: false, eliminar: false })
@@ -66,6 +69,8 @@ const Usuarios = () => {
   const [exc, setExc] = useState<Permisos>(emptyExc())
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(true)
+  const [openVinculo, setOpenVinculo] = useState<{ idUsuario: number; nombre: string; login: string } | null>(null)
+  const [loadingVinculo, setLoadingVinculo] = useState(false)
   const perm = usePermissions('admin')
 
   const loadData = useCallback(async () => {
@@ -86,6 +91,8 @@ const Usuarios = () => {
         excepciones_permisos: u.excepcionesPermisos || u.excepciones_permisos || undefined,
         zonaAsignada: u.operador?.zonaAsignada || u.zonaAsignada || null,
         telefono: u.operador?.telefono || u.telefono || null,
+        operadorId: u.operador?.idOperador ?? u.operadorId ?? null,
+        esOperador: Number(u.idRol || u.rol?.idRol) === 4 || String(u.rol?.nombreRol || '').toUpperCase().includes('OPERADOR'),
       }))
       setData(rows)
       setRolList(rolesRes.data || [])
@@ -182,6 +189,29 @@ const Usuarios = () => {
     }
   }
 
+  const handleSubmitVinculo = async (values: any) => {
+    if (!openVinculo) return
+    setLoadingVinculo(true)
+    try {
+      await post<any>('/operadores', {
+        idUsuario: openVinculo.idUsuario,
+        nombreCompleto: values.nombreV || openVinculo.nombre,
+        telefono: values.telefonoV || null,
+        zonaAsignada: values.zonaV,
+        numeroDocumento: values.documentoV || null,
+      })
+      message.success('Operador vinculado exitosamente al usuario. Ahora aparece en Operadores.')
+      setOpenVinculo(null)
+      await loadData()
+    } catch (e: any) {
+      const m = e?.response?.data?.message
+      const msg = Array.isArray(m) ? m.join(' · ') : typeof m === 'string' ? m : String(e?.message || e || 'Error')
+      message.error('Error vinculando operador: ' + msg)
+    } finally {
+      setLoadingVinculo(false)
+    }
+  }
+
   const columns = [
     { title: 'Nombre', dataIndex: 'nombre', key: 'n', render: (v: any) => <strong>{v}</strong> },
     { title: 'Email', dataIndex: 'email', key: 'e' },
@@ -189,6 +219,30 @@ const Usuarios = () => {
     { title: 'Rol', dataIndex: 'rolNombre', key: 'r', render: (v: any) => <Tag color="purple">{v || '—'}</Tag> },
     { title: 'Zona Asignada', dataIndex: 'zonaAsignada', key: 'zona', render: (v: any) => v ? <Tag color="blue">{v}</Tag> : <span style={{color:'#bfbfbf'}}>—</span> },
     { title: 'Teléfono', dataIndex: 'telefono', key: 'tel', render: (v: any) => v || <span style={{color:'#bfbfbf'}}>—</span> },
+    {
+      title: 'Vinculación Operador',
+      key: 'vinculo',
+      render: (_: any, r: UsuarioRow) => {
+        if (!r.esOperador) return <Tag style={{color:'#8c8c8c', background:'#fafafa'}}>No aplica (otro rol)</Tag>
+        if (r.operadorId) return <Tag color="green" icon={<LinkOutlined />}>✅ Operador OK · #{r.operadorId}</Tag>
+        return (
+          <Space size={6}>
+            <Tag color="orange" icon={<UserOutlined />}>⚠️ Huérfano (sin operador)</Tag>
+            {perm.crear && (
+              <Button
+                type="link"
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={() => setOpenVinculo({ idUsuario: r.id, nombre: r.nombre, login: r.usuario_login })}
+                style={{ padding: 0 }}
+              >
+                Crear vínculo
+              </Button>
+            )}
+          </Space>
+        )
+      },
+    },
     {
       title: 'Excepciones',
       key: 'exc',
@@ -344,6 +398,49 @@ const Usuarios = () => {
           ]}
         />
       </ModalDrawer>
+
+      <Modal
+        title={openVinculo ? `🔗 Crear Vínculo Operador (para ${openVinculo.nombre} · @${openVinculo.login})` : ''}
+        open={!!openVinculo}
+        onCancel={() => setOpenVinculo(null)}
+        onOk={() => document.getElementById('__vinculo_form_submit_btn__')?.click?.()}
+        confirmLoading={loadingVinculo}
+        okText="Vincular"
+        cancelText="Cancelar"
+        destroyOnClose
+      >
+        <Form layout="vertical" onFinish={handleSubmitVinculo} preserve={false}>
+          <Alert
+            type="info"
+            showIcon
+            message="Sincronizar este usuario Rol Operador"
+            description="Este usuario tiene Rol Operador PERO NO tiene una ficha de Operador en la tabla Operadores. Completa los datos para crear el vínculo y que aparezca correctamente en el listado Operadores."
+            style={{ marginBottom: 14 }}
+          />
+          <Form.Item label="Nombre Completo" name="nombreV" initialValue={openVinculo?.nombre} rules={[{ required: true }]}>
+            <Input placeholder="Nombre completo del operador" />
+          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Form.Item label="Número Documento" name="documentoV">
+              <Input placeholder="C.C. / Cédula" />
+            </Form.Item>
+            <Form.Item label="Teléfono" name="telefonoV">
+              <Input placeholder="Celular contacto" />
+            </Form.Item>
+          </div>
+          <Form.Item label="Zona Asignada" name="zonaV" rules={[{ required: true }]}>
+            <Select placeholder="Selecciona la zona">
+              <Option value="Zona Norte">Zona Norte</Option>
+              <Option value="Zona Sur">Zona Sur</Option>
+              <Option value="Zona Centro">Zona Centro</Option>
+              <Option value="Zona Occidente">Zona Occidente</Option>
+              <Option value="Zona Oriente">Zona Oriente</Option>
+              <Option value="Sin asignar">Sin asignar</Option>
+            </Select>
+          </Form.Item>
+          <button id="__vinculo_form_submit_btn__" type="submit" style={{ display: 'none' }} />
+        </Form>
+      </Modal>
     </div>
   )
 }

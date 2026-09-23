@@ -89,8 +89,8 @@ const MEGACUADRO_PERMISSIONS = {
 };
 
 async function main() {
-  console.log('🌱 Iniciando seed PERFILES COMPLETOS (post-TRUNCATE v4, perfiles intactos)...');
-  console.log('⏭️  SOLO se generan: 5 roles + 7 usuarios. Nada demo.');
+  console.log('🌱 Iniciando seed PERFILES COMPLETOS (solo 4 perfiles base + Rol Operador plantilla sin usuarios demo...');
+  console.log('⏭️  SOLO se generan: 5 roles + 5 usuarios. Operadores los crea Mauricio manualmente. NINGUN operador demo');
 
   const desarrolladorRol = await prisma.rolesPerfiles.upsert({
     where: { nombreRol: 'Desarrollador' }, update: {},
@@ -115,58 +115,43 @@ async function main() {
   console.log('✅ 5 Roles creados: Desarrollador, Bodega, Tesorería, Operador, Megacuadro');
 
   const adminPassword = await bcrypt.hash('Admin123*', 10);
-  const operadorPassword = await bcrypt.hash('Operador123*', 10);
 
   await prisma.usuariosSistema.upsert({
     where: { email: 'admin@example.com' },
     update: { idRol: desarrolladorRol.idRol, nombreCompleto: 'Desarrollador ERP', passwordHash: adminPassword },
     create: { idRol: desarrolladorRol.idRol, nombreCompleto: 'Desarrollador ERP', usuarioLogin: 'desarrollador', email: 'admin@example.com', passwordHash: adminPassword },
   });
-  console.log('✅ [1/7] Admin Desarrollador: admin@example.com / Admin123*');
+  console.log('✅ [1/5] Admin Desarrollador: admin@example.com / Admin123* (permisos TOTALES todo el sistema)');
 
   await prisma.usuariosSistema.upsert({
     where: { email: 'jefe@example.com' },
     update: { idRol: megacuadroRol.idRol, nombreCompleto: 'Jefe / Gerente General', passwordHash: adminPassword },
     create: { idRol: megacuadroRol.idRol, nombreCompleto: 'Jefe / Gerente General', usuarioLogin: 'jefe', email: 'jefe@example.com', passwordHash: adminPassword },
   });
-  console.log('✅ [2/7] Jefe Megacuadro: jefe@example.com / Admin123*');
+  console.log('✅ [2/5] Jefe Megacuadro: jefe@example.com / Admin123*');
 
   await prisma.usuariosSistema.upsert({
     where: { email: 'bodega@example.com' },
     update: { idRol: bodegaRol.idRol, nombreCompleto: 'Carlos Bodeguero', passwordHash: adminPassword },
     create: { idRol: bodegaRol.idRol, nombreCompleto: 'Carlos Bodeguero', usuarioLogin: 'bodega1', email: 'bodega@example.com', passwordHash: adminPassword },
   });
-  console.log('✅ [3/7] Bodega: bodega@example.com / Admin123*');
+  console.log('✅ [3/5] Bodega: bodega@example.com / Admin123*');
 
   await prisma.usuariosSistema.upsert({
     where: { email: 'tesoreria@example.com' },
     update: { idRol: tesoreriaRol.idRol, nombreCompleto: 'Ana Tesorera', passwordHash: adminPassword },
     create: { idRol: tesoreriaRol.idRol, nombreCompleto: 'Ana Tesorera', usuarioLogin: 'tesoreria1', email: 'tesoreria@example.com', passwordHash: adminPassword },
   });
-  console.log('✅ [4/7] Tesorería: tesoreria@example.com / Admin123*');
+  console.log('✅ [4/5] Tesorería: tesoreria@example.com / Admin123*');
 
   await prisma.usuariosSistema.upsert({
-    where: { email: 'operador1@example.com' },
-    update: { idRol: operadorRol.idRol, nombreCompleto: 'Juan Pérez (Operador 1 · Zona Norte)', passwordHash: operadorPassword },
-    create: { idRol: operadorRol.idRol, nombreCompleto: 'Juan Pérez (Operador 1 · Zona Norte)', usuarioLogin: 'operador1', email: 'operador1@example.com', passwordHash: operadorPassword },
+    where: { email: 'operador0@example.com' },
+    update: { idRol: operadorRol.idRol, nombreCompleto: 'Rol Operador (plantilla (NO USAR - Mauricio crea operadores reales)', passwordHash: adminPassword },
+    create: { idRol: operadorRol.idRol, nombreCompleto: 'Rol Operador Plantilla (Mauricio crea operadores reales)', usuarioLogin: 'operador_plantilla', email: 'operador0@example.com', passwordHash: adminPassword },
   });
-  console.log('✅ [5/7] Operador 1: operador1@example.com / Operador123*');
+  console.log('✅ [5/5] Plantilla Rol Operador: operador0@example.com / Admin123* (NO se usa como usuario real. Tus operadores los creas tú en el menú Operadores).');
 
-  await prisma.usuariosSistema.upsert({
-    where: { email: 'operador2@example.com' },
-    update: { idRol: operadorRol.idRol, nombreCompleto: 'Pedro Gómez (Operador 2 · Zona Sur)', passwordHash: operadorPassword },
-    create: { idRol: operadorRol.idRol, nombreCompleto: 'Pedro Gómez (Operador 2 · Zona Sur)', usuarioLogin: 'operador2', email: 'operador2@example.com', passwordHash: operadorPassword },
-  });
-  console.log('✅ [6/7] Operador 2: operador2@example.com / Operador123*');
-
-  await prisma.usuariosSistema.upsert({
-    where: { email: 'operador3@example.com' },
-    update: { idRol: operadorRol.idRol, nombreCompleto: 'Luisa Martínez (Operador 3 · Zona Centro)', passwordHash: operadorPassword },
-    create: { idRol: operadorRol.idRol, nombreCompleto: 'Luisa Martínez (Operador 3 · Zona Centro)', usuarioLogin: 'operador3', email: 'operador3@example.com', passwordHash: operadorPassword },
-  });
-  console.log('✅ [7/7] Operador 3: operador3@example.com / Operador123*');
-
-  console.log('🌱 Seed PERFILES COMPLETOS finalizado exitosamente. 7 usuarios listos, datos operativos 0.');
+  console.log('🌱 Seed PERFILES finalizado. NINGUN operador demo creado. Operadores tu los gestionas.');
 }
 
 main()

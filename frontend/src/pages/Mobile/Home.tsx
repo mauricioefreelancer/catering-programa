@@ -65,6 +65,7 @@ const HomeMobile = () => {
 
         if (opActual && active) {
           setPerfilOperador({
+            _sinVinculo: false,
             nombre: opActual.nombreCompleto || usuario?.nombreCompleto || usuario?.nombre || 'Operador',
             email: opActual.email || opActual.usuario?.email || usuario?.email || '',
             usuarioLogin: opActual.usuarioLogin || opActual.usuario?.usuarioLogin || usuario?.usuario_login || usuario?.usuarioLogin || '',
@@ -76,7 +77,10 @@ const HomeMobile = () => {
             idOperador: idOperadorActual,
           })
         } else if (active) {
+          const rolStr = String(usuario?.rolNombre || usuario?.rol || '').toUpperCase()
+          const esRolOperador = rolStr.includes('OPERADOR') || Number((usuario as any)?.idRol) === 4 || String((usuario as any)?.perfil || '').toUpperCase() === 'OPERADOR'
           setPerfilOperador({
+            _sinVinculo: esRolOperador && !idOperadorActual,
             nombre: usuario?.nombreCompleto || usuario?.nombre || 'Operador',
             email: usuario?.email || '',
             usuarioLogin: usuario?.usuario_login || usuario?.usuarioLogin || '',
@@ -136,7 +140,11 @@ const HomeMobile = () => {
       boxSizing: 'border-box',
     }}>
       {perfilOperador && (
-        <Card size="small" style={{ marginBottom: 10, borderRadius: 12, border: '1px solid #e6f4ff', background: '#f0f7ff' }}>
+        <Card size="small" style={{
+          marginBottom: 10, borderRadius: 12,
+          border: perfilOperador._sinVinculo ? '1px solid #fff1b8' : '1px solid #e6f4ff',
+          background: perfilOperador._sinVinculo ? '#fffbe6' : '#f0f7ff',
+        }}>
           <Space direction="vertical" size={4} style={{ width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
               <Avatar size={44} style={{ backgroundColor: '#1677ff', fontWeight: 'bold', fontSize: 18 }}>
@@ -144,14 +152,16 @@ const HomeMobile = () => {
               </Avatar>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <Title level={5} style={{ margin: 0 }}>{perfilOperador.nombre}</Title>
-                <Space size={4} wrap style={{ marginTop: 2 }}>
-                  {perfilOperador.zona ? (
-                    <Tag color="blue" style={{ margin: 0 }}><EnvironmentOutlined /> {perfilOperador.zona}</Tag>
-                  ) : null}
-                  <Tag color={perfilOperador.estado === 'ACTIVO' ? 'green' : 'red'} style={{ margin: 0 }}>
-                    {perfilOperador.estado === 'ACTIVO' ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />} {perfilOperador.estado}
-                  </Tag>
-                </Space>
+                <Space size={6} wrap style={{ marginTop: 2 }}>
+              {perfilOperador._sinVinculo ? (
+                <Tag color="warning" style={{ fontSize: 12, margin: 0 }}>⚠️ SIN OPERADOR VINCULADO. Contacta administrador</Tag>
+              ) : perfilOperador.zona ? (
+                <Tag color="blue" style={{ margin: 0 }}><EnvironmentOutlined /> {perfilOperador.zona}</Tag>
+              ) : null}
+              <Tag color={perfilOperador.estado === 'ACTIVO' ? 'green' : 'red'} style={{ margin: 0 }}>
+                {perfilOperador.estado === 'ACTIVO' ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />} {perfilOperador.estado}
+              </Tag>
+            </Space>
               </div>
             </div>
             <Space size={6} wrap style={{ marginTop: 2 }}>

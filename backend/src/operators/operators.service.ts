@@ -79,22 +79,32 @@ export class OperatorsService {
       }
       const yaTieneOperador = await this.prisma.operadores.findUnique({
         where: { idUsuario: norm.idUsuario },
+        include: { usuario: true },
       });
-      if (yaTieneOperador) {
-        throw new ConflictException(`El usuario idUsuario=${norm.idUsuario} ya tiene un operador vinculado.`);
-      }
       const nombreFinal = norm.nombreCompleto ?? usuarioExiste.nombreCompleto;
       if (!nombreFinal) {
         throw new BadRequestException('nombreCompleto o nombre es requerido (o debe existir en el UsuarioSistema vinculado).');
       }
+      const dataOperador: any = {
+        nombreCompleto: nombreFinal,
+        telefono: norm.telefono ?? null,
+        zonaAsignada: norm.zonaAsignada ?? null,
+        fechaIngreso: norm.fechaIngreso ? new Date(norm.fechaIngreso) : new Date(),
+        estado: norm.estado ?? true,
+      };
+      if (yaTieneOperador) {
+        // IDEMPOTENTE (doble click Guardar o re-vincular huérfano): actualiza la fila Operador existente
+        const opUpdated = await this.prisma.operadores.update({
+          where: { idUsuario: norm.idUsuario },
+          data: dataOperador,
+          include: { usuario: true },
+        });
+        return { operador: opUpdated, usuario: opUpdated.usuario };
+      }
       const op = await this.prisma.operadores.create({
         data: {
           idUsuario: norm.idUsuario,
-          nombreCompleto: nombreFinal,
-          telefono: norm.telefono ?? null,
-          zonaAsignada: norm.zonaAsignada ?? null,
-          fechaIngreso: norm.fechaIngreso ? new Date(norm.fechaIngreso) : new Date(),
-          estado: norm.estado ?? true,
+          ...dataOperador,
         },
         include: { usuario: true },
       });
@@ -168,7 +178,17 @@ export class OperatorsService {
   }
 
   async remove(id: number) {
-    await this.findOne(id);
-    return this.prisma.operadores.delete({ where: { idOperador: id } });
+    const op = await this.findOne(id);
+    return this.prisma.$transaction(async (tx) => {
+      const usuarioVinculado = await tx.usuariosSistema.findUnique({
+        where: { idUsuario: op.idUsuario },
+      });
+      await tx.operadores.delete({ where: { idOperador: id } });
+      // Si el usuario vinculado EXCLUSIVAMENTE era Rol Operador, lo borramos para NO dejar usuario huérfano zombie en Admin/Usuarios
+      if (usuarioVinculado && Number(usuarioVinculado.idRol) === 4) {
+        await tx.usuariosSistema.delete({ where: { idUsuario: op.idUsuario } });
+      }
+      return op;
+    });
   }
 }

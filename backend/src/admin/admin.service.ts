@@ -155,8 +155,15 @@ export class AdminService {
   }
 
   async removeUsuario(id: number) {
-    await this.findOneUsuario(id);
-    return this.prisma.usuariosSistema.delete({ where: { idUsuario: id } });
+    const u = await this.findOneUsuario(id);
+    return this.prisma.$transaction(async (tx) => {
+      // Si el usuario tiene Operador vinculado, borramos PRIMERO el Operador para NO violar FK onDelete Restrict
+      const op = await tx.operadores.findUnique({ where: { idUsuario: id } });
+      if (op?.idOperador) {
+        await tx.operadores.delete({ where: { idOperador: op.idOperador } });
+      }
+      return tx.usuariosSistema.delete({ where: { idUsuario: id } });
+    });
   }
 
   // =========== META TABLAS (Panel de Datos Maestro) ======================
