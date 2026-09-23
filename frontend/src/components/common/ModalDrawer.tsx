@@ -1,5 +1,5 @@
-import { ReactNode, useEffect, useRef } from 'react'
-import { Drawer, Form, Button, Spin, Space } from 'antd'
+import { ReactNode, useEffect } from 'react'
+import { Drawer, Form, Button, Spin, Space, message } from 'antd'
 
 interface ModalDrawerProps {
   title: string
@@ -27,25 +27,28 @@ const ModalDrawer = ({
   footerExtra,
 }: ModalDrawerProps) => {
   const [form] = Form.useForm()
-  const prevOpen = useRef(false)
 
   useEffect(() => {
-    // Solo hidratar el formulario en la TRANSICIÓN de abrir (false -> true)
-    if (open && !prevOpen.current) {
+    if (open) {
+      form.resetFields()
       if (initialValues) {
         form.setFieldsValue(initialValues)
-      } else {
-        form.resetFields()
       }
     }
-    prevOpen.current = open
-  }, [open, form, initialValues])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const handleOk = async () => {
     try {
       const values = await form.validateFields()
       await onSubmit(values)
-    } catch {}
+    } catch (err: any) {
+      if (err && err.errorFields && err.errorFields.length) {
+        message.error('Por favor complete los campos obligatorios marcados en rojo antes de guardar.')
+      } else if (err && err.message) {
+        message.error(err.message)
+      }
+    }
   }
 
   return (
@@ -66,7 +69,7 @@ const ModalDrawer = ({
       }
     >
       <Spin spinning={loading}>
-        <Form form={form} layout="vertical" requiredMark={false} style={{ maxWidth: '100%' }}>
+        <Form form={form} layout="vertical" requiredMark={false} style={{ maxWidth: '100%' }} initialValues={initialValues}>
           {children}
         </Form>
       </Spin>
