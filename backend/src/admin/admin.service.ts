@@ -102,8 +102,30 @@ export class AdminService {
     if (errores.length > 0) throw new BadRequestException(errores.join(', '));
     const exists = await this.prisma.usuariosSistema.findFirst({
       where: { OR: [{ email: norm.email }, { usuarioLogin: norm.usuarioLogin }] },
+      include: { rol: true, operador: true },
     });
-    if (exists) throw new ConflictException('Email o usuario ya existen');
+    if (exists) {
+      const dupEmail = String(exists.email || '').toLowerCase() === String(norm.email || '').toLowerCase();
+      const dupUser = String(exists.usuarioLogin || '').toLowerCase() === String(norm.usuarioLogin || '').toLowerCase();
+      const existIdRol4 = Number(exists.idRol) === 4 || String(exists.rol?.nombreRol || '').toUpperCase().includes('OPERADOR');
+      const nuevoIdRol4 = Number(norm.idRol) === 4;
+      if (existIdRol4 && nuevoIdRol4) {
+        const dataUpdate: any = {};
+        if (norm.nombreCompleto) dataUpdate.nombreCompleto = norm.nombreCompleto;
+        if (norm.estado !== undefined) dataUpdate.estado = norm.estado;
+        if (norm.password) dataUpdate.passwordHash = await bcrypt.hash(norm.password, 10);
+        if (Object.keys(dataUpdate).length > 0) {
+          await this.prisma.usuariosSistema.update({ where: { idUsuario: exists.idUsuario }, data: dataUpdate });
+        }
+        return this.findOneUsuario(exists.idUsuario);
+      }
+      const partes: string[] = [];
+      if (dupEmail) partes.push(`El email "${norm.email}" ya está registrado a nombre de ${exists.nombreCompleto || exists.usuarioLogin || '(sin nombre)'} (Rol: ${exists.rol?.nombreRol || 'Desconocido'}).`);
+      if (dupUser) partes.push(`El usuario login "${norm.usuarioLogin}" ya está en uso por ${exists.nombreCompleto || exists.email || '(sin nombre)'} (Rol: ${exists.rol?.nombreRol || 'Desconocido'}).`);
+      if (partes.length === 0) partes.push('El email o usuario ya existen.');
+      partes.push('Cambie el dato que esté repetido o (si es el mismo operador) use Editar en lugar de Nuevo.');
+      throw new ConflictException(partes.join(' '));
+    }
     const hash = await bcrypt.hash(norm.password, 10);
     return this.prisma.usuariosSistema.create({
       data: {
