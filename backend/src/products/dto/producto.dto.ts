@@ -104,3 +104,5 @@ export class QueryProductoDto {
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) tipo?: string;
 }
 
+
+
