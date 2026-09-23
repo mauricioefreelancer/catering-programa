@@ -30,13 +30,14 @@ export class ProductsController {
   private async addRecetaLegacy(idProducto: number, dtoOrWrapper: (CreateRecetaDto & { idProductoIngrediente?: number; cantidad?: number }) | RecetaWrapperDto) {
     const wrapper = dtoOrWrapper as RecetaWrapperDto;
     if (Array.isArray(wrapper.receta)) {
-      const results = [];
+      const results: any[] = [];
       for (const r of wrapper.receta) {
         const idMatPrima = Number(r.idMatPrima ?? r.idProductoIngrediente);
         const cantidadDosis = Number(r.cantidadDosis ?? r.cantidad);
         const unidadDosis = String(r.unidadDosis ?? r.unidad ?? 'Unidad').slice(0, 50);
         if (!isNaN(idMatPrima) && !isNaN(cantidadDosis)) {
-          results.push(await this.srv.addReceta(idProducto, { idMatPrima, cantidadDosis, unidadDosis } as any));
+          const dto: CreateRecetaDto = { idMatPrima, cantidadDosis, unidadDosis };
+          results.push(await this.srv.addReceta(idProducto, dto));
         }
       }
       return { ok: true, guardados: results.length, items: results };
@@ -45,7 +46,8 @@ export class ProductsController {
       const idMatPrima = Number((dto as any).idMatPrima ?? (dto as any).idProductoIngrediente);
       const cantidadDosis = Number((dto as any).cantidadDosis ?? (dto as any).cantidad ?? 0);
       const unidadDosis = String((dto as any).unidadDosis || 'Unidad').slice(0, 50);
-      return this.srv.addReceta(idProducto, { idMatPrima, cantidadDosis, unidadDosis } as any);
+      const dtoFinal: CreateRecetaDto = { idMatPrima, cantidadDosis, unidadDosis };
+      return this.srv.addReceta(idProducto, dtoFinal);
     }
   }
 }
