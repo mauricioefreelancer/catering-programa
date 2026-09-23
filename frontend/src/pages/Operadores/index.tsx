@@ -51,13 +51,13 @@ const Operadores = () => {
       const mapped: Operador[] = raw.map((o: any) => ({
         id: Number(o.idOperador),
         idOperador: o.idOperador,
-        documento: o.numeroDocumento || '',
+        documento: o.numeroDocumento || o.usuario?.numeroDocumento || o.documento || '',
         nombre: o.nombreCompleto || o.usuario?.nombreCompleto || '',
         telefono: o.telefono || '',
         email: o.email || o.usuario?.email || '',
         usuario_login: o.usuarioLogin || o.usuario?.usuarioLogin || '',
         zona: o.zonaAsignada || '',
-        estado: (o.estado || o.usuario?.estado || 'ACTIVO') as 'ACTIVO' | 'INACTIVO',
+        estado: (o.estado === false || o.usuario?.estado === false ? 'INACTIVO' : 'ACTIVO') as 'ACTIVO' | 'INACTIVO',
         idUsuario: o.usuario?.idUsuario || o.idUsuario,
         usuario: o.usuario,
       }))
@@ -102,7 +102,7 @@ const Operadores = () => {
     setLoading(true)
     try {
       if (editing) {
-        const idUsuario = editing.idOperador || editing.id
+        const idOperador = editing.idOperador || editing.id
         const payloadOperador = {
           numeroDocumento: values.documento,
           nombreCompleto: values.nombre,
@@ -113,7 +113,7 @@ const Operadores = () => {
           estado: values.estado || editing.estado || 'ACTIVO',
         }
         try {
-          await patch(`/operadores/${id}`, payloadOperador)
+          await patch(`/operadores/${idOperador}`, payloadOperador)
         } catch (e: any) {
           message.error('Error actualizando operador: ' + (e?.message || e))
           return
@@ -135,26 +135,26 @@ const Operadores = () => {
         }
         message.success('Operador actualizado (y usuario vinculado)')
       } else {
-          const idRolOperador = await obtenerRolOperadorId()
-          let idUsuarioCreado: any
-          try {
-            const payloadUsuario: any = {
-              nombreCompleto: values.nombre,
-              email: values.email,
-              usuarioLogin: values.usuario_login,
-              estado: values.estado || 'ACTIVO',
-              password: values.password,
-            }
-            if (idRolOperador) payloadUsuario.idRol = idRolOperador
-            const respUsr: any = await post('/admin/usuarios', payloadUsuario)
-            idUsuarioCreado = respUsr?.data?.idUsuario || respUsr?.idUsuario || respUsr?.data?.id || respUsr?.id
-          } catch (e: any) {
-            message.error('Error creando usuario vinculado: ' + (e?.message || e))
-            return
+        const idRolOperador = await obtenerRolOperadorId()
+        let idUsuarioCreado: any
+        try {
+          const payloadUsuario: any = {
+            nombreCompleto: values.nombre,
+            email: values.email,
+            usuarioLogin: values.usuario_login,
+            estado: values.estado || 'ACTIVO',
+            password: values.password,
           }
+          if (idRolOperador) payloadUsuario.idRol = idRolOperador
+          const respUsr: any = await post('/admin/usuarios', payloadUsuario)
+          idUsuarioCreado = respUsr?.data?.idUsuario || respUsr?.idUsuario || respUsr?.data?.id || respUsr?.id
+        } catch (e: any) {
+          message.error('Error creando usuario vinculado: ' + (e?.message || e))
+          return
+        }
 
-          try {
-            const payloadOperador = {
+        try {
+          const payloadOperador = {
             numeroDocumento: values.documento,
             nombreCompleto: values.nombre,
             telefono: values.telefono,
