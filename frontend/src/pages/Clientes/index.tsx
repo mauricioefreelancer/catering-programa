@@ -106,7 +106,7 @@ const Clientes = () => {
         telefono: values.telefono,
         ciudad: values.ciudad,
         fechaContrato: fmtYYYYMMDD(fechaD),
-        estado: 'ACTIVO',
+        estado: true,
       }
       if (editing) {
         await patch<any>(`/clientes/${editing.id}`, payload)

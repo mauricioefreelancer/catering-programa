@@ -1,5 +1,14 @@
-import { Transform, TransformFnParams } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import { IsBoolean, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+
+function normalizeEstado(v: any): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') {
+    const s = v.toLowerCase().trim();
+    if (s === 'inactivo' || s === '0' || s === 'false') return false;
+  }
+  return true;
+}
 
 export class CreateProveedorDto {
   @IsString() @IsNotEmpty() @MaxLength(30) nit: string;
@@ -13,7 +22,7 @@ export class CreateProveedorDto {
   @IsOptional() @IsString() bancoTipoCuenta?: string;
   @IsOptional() @IsString() bancoNumeroCuenta?: string;
   @IsOptional() @IsString() bancoTitular?: string;
-  @IsOptional() @IsBoolean() estado?: boolean;
+  @IsOptional() @Transform(({ value }) => normalizeEstado(value)) @IsBoolean() estado?: boolean;
 
   // =====================================================
   // CAMPOS ALIAS (compatibilidad Frontend legacy mock)
@@ -41,6 +50,7 @@ export class CreateProveedorDto {
   @IsOptional() @IsString() numero_cuenta?: string;
   @IsOptional() @IsString() titular?: string;
   @IsOptional() @IsString() titular_cuenta?: string;
+  @IsOptional() @Transform(({ value }) => normalizeEstado(value)) @IsBoolean() Estado?: boolean;
 }
 
 export class UpdateProveedorDto {
@@ -55,7 +65,7 @@ export class UpdateProveedorDto {
   @IsOptional() @IsString() bancoTipoCuenta?: string;
   @IsOptional() @IsString() bancoNumeroCuenta?: string;
   @IsOptional() @IsString() bancoTitular?: string;
-  @IsOptional() @IsBoolean() estado?: boolean;
+  @IsOptional() @Transform(({ value }) => normalizeEstado(value)) @IsBoolean() estado?: boolean;
 
   @IsOptional() @IsString() @MaxLength(30) NIT?: string;
   @IsOptional() @IsString() @MaxLength(250) razon_social?: string;
@@ -80,6 +90,7 @@ export class UpdateProveedorDto {
   @IsOptional() @IsString() numero_cuenta?: string;
   @IsOptional() @IsString() titular?: string;
   @IsOptional() @IsString() titular_cuenta?: string;
+  @IsOptional() @Transform(({ value }) => normalizeEstado(value)) @IsBoolean() Estado?: boolean;
 }
 
 export class QueryProveedorDto {

@@ -109,7 +109,7 @@ const Proveedores = () => {
         bancoTipoCuenta: values.tipo_cuenta,
         bancoNumeroCuenta: values.cuenta_bancaria,
         bancoTitular: values.titular_cuenta,
-        estado: 'ACTIVO',
+        estado: true,
       }
       if (editing) {
         await patch<any>(`/proveedores/${editing.id}`, payload)
