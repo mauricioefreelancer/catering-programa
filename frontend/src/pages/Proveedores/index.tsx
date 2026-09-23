@@ -262,19 +262,7 @@ const Proveedores = () => {
           setEditing(null)
         }}
         onSubmit={handleSubmit}
-        initialValues={editing ? {
-          nit: editing.nit,
-          razon_social: editing.razon_social,
-          asesor: editing.asesor,
-          telefono_asesor: editing.telefono_asesor,
-          correo_asesor: editing.correo_asesor,
-          condiciones_pago: editing.condiciones_pago,
-          dias_credito: editing.dias_credito,
-          banco: editing.banco,
-          tipo_cuenta: editing.tipo_cuenta,
-          cuenta_bancaria: editing.cuenta_bancaria,
-          titular_cuenta: editing.titular_cuenta,
-        } : undefined}
+        initialValues={initialValues}
         loading={loading}
       >
         <Form.Item name="nit" label="NIT" rules={[{ required: true }]}>

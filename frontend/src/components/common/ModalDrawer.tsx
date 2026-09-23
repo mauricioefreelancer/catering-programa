@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react'
+import { ReactNode, useEffect, useRef } from 'react'
 import { Drawer, Form, Button, Spin, Space } from 'antd'
 
 interface ModalDrawerProps {
@@ -27,16 +27,19 @@ const ModalDrawer = ({
   footerExtra,
 }: ModalDrawerProps) => {
   const [form] = Form.useForm()
+  const prevOpen = useRef(false)
 
   useEffect(() => {
-    if (open) {
+    // Solo hidratar el formulario en la TRANSICIÓN de abrir (false -> true)
+    if (open && !prevOpen.current) {
       if (initialValues) {
         form.setFieldsValue(initialValues)
       } else {
         form.resetFields()
       }
     }
-  }, [open, initialValues])
+    prevOpen.current = open
+  }, [open, form, initialValues])
 
   const handleOk = async () => {
     try {
