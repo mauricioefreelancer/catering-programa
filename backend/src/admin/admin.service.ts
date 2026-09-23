@@ -101,7 +101,7 @@ export class AdminService {
     if (!norm.password) errores.push('password es requerido');
     if (errores.length > 0) throw new BadRequestException(errores.join(', '));
     const exists = await this.prisma.usuariosSistema.findFirst({
-      where: { OR: [{ email: norm.email }, { usuarioLogin: norm.usuarioLogin }],
+      where: { OR: [{ email: norm.email }, { usuarioLogin: norm.usuarioLogin }] },
     });
     if (exists) throw new ConflictException('Email o usuario ya existen');
     const hash = await bcrypt.hash(norm.password, 10);
