@@ -4,6 +4,29 @@ import { CreateRolDto, UpdateRolDto, CreateUsuarioDto, UpdateUsuarioDto, QueryAd
 import * as bcrypt from 'bcrypt';
 
 const PROTECTED_TABLES = ['AUDITORIA_LOG'];
+
+function firstNonEmpty(...vals: any[]): any {
+  for (const v of vals) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'string' && v.trim() === '') continue;
+    return v;
+  }
+  return undefined;
+}
+
+function normalizeUsuarioInputLegacy(dto: CreateUsuarioDto | UpdateUsuarioDto) {
+  const nombreCompleto = firstNonEmpty(dto.nombreCompleto, dto.nombre);
+  const usuarioLogin = firstNonEmpty(dto.usuarioLogin, dto.usuario_login);
+  let idRol = firstNonEmpty(dto.idRol, dto.id_rol);
+  if (idRol !== undefined && typeof idRol !== 'number') {
+    const parsed = Number(idRol);
+    if (!isNaN(parsed)) idRol = parsed; else idRol = undefined;
+  }
+  const estado = firstNonEmpty(dto.estado, true);
+  const email = firstNonEmpty(dto.email);
+  const password = firstNonEmpty(dto.password);
+  return { nombreCompleto, usuarioLogin, idRol, estado, email, password };
+}
 const ALLOWED_SCHEMA = 'public';
 
 @Injectable()
@@ -69,22 +92,43 @@ export class AdminService {
   }
 
   async createUsuario(dto: CreateUsuarioDto) {
+    const norm = normalizeUsuarioInputLegacy(dto);
+    const errores: string[] = [];
+    if (!norm.idRol) errores.push('idRol es requerido');
+    if (!norm.nombreCompleto) errores.push('nombreCompleto o nombre es requerido');
+    if (!norm.usuarioLogin) errores.push('usuarioLogin o usuario_login es requerido');
+    if (!norm.email) errores.push('email es requerido');
+    if (!norm.password) errores.push('password es requerido');
+    if (errores.length > 0) throw new BadRequestException(errores.join(', '));
     const exists = await this.prisma.usuariosSistema.findFirst({
-      where: { OR: [{ email: dto.email }, { usuarioLogin: dto.usuarioLogin }] },
+      where: { OR: [{ email: norm.email }, { usuarioLogin: norm.usuarioLogin }],
     });
     if (exists) throw new ConflictException('Email o usuario ya existen');
-    const hash = await bcrypt.hash(dto.password, 10);
+    const hash = await bcrypt.hash(norm.password, 10);
     return this.prisma.usuariosSistema.create({
-      data: { ...dto, passwordHash: hash },
+      data: {
+        idRol: norm.idRol,
+        nombreCompleto: norm.nombreCompleto,
+        usuarioLogin: norm.usuarioLogin,
+        email: norm.email,
+        passwordHash: hash,
+        estado: norm.estado,
+      },
       include: { rol: true },
     });
   }
 
   async updateUsuario(id: number, dto: UpdateUsuarioDto) {
     await this.findOneUsuario(id);
-    const data: any = { ...dto };
-    if (dto.password) data.passwordHash = await bcrypt.hash(dto.password, 10);
-    delete data.password;
+    const norm = normalizeUsuarioInputLegacy(dto);
+    const data: any = {};
+    if (norm.nombreCompleto !== undefined) data.nombreCompleto = norm.nombreCompleto;
+    if (norm.usuarioLogin !== undefined) data.usuarioLogin = norm.usuarioLogin;
+    if (norm.email !== undefined) data.email = norm.email;
+    if (norm.idRol !== undefined) data.idRol = norm.idRol;
+    if (norm.estado !== undefined) data.estado = norm.estado;
+    if (dto.permisosExcepcion !== undefined) data.permisosExcepcion = dto.permisosExcepcion;
+    if (norm.password) data.passwordHash = await bcrypt.hash(norm.password, 10);
     return this.prisma.usuariosSistema.update({ where: { idUsuario: id }, data, include: { rol: true } });
   }
 

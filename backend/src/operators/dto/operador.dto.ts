@@ -1,27 +1,57 @@
-import { IsBoolean, IsDateString, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsDateString, IsEmail, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
 
-export class CreateOperadorDto {
-  @IsString() @IsNotEmpty() nombreCompleto: string;
-  @IsOptional() @IsString() telefono?: string;
-  @IsOptional() @IsString() zonaAsignada?: string;
-  @IsOptional() @IsDateString() fechaIngreso?: string;
-  @IsOptional() @IsBoolean() estado?: boolean;
-  @IsEmail() @IsNotEmpty() email: string;
-  @IsString() @IsNotEmpty() @MinLength(4) usuarioLogin: string;
-  @IsString() @IsNotEmpty() @MinLength(6) password: string;
-  @IsInt() @IsNotEmpty() idRol: number;
+function normalizeEstadoBool(v: any): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'string') {
+    const s = v.toLowerCase().trim();
+    if (s === 'inactivo' || s === '0' || s === 'false') return false;
+  }
+  return true;
 }
 
-export class UpdateOperadorDto {
+export class CreateOperadorDto {
+  // ============ CAMPOS OFICIALES PRISMA ============
   @IsOptional() @IsString() nombreCompleto?: string;
   @IsOptional() @IsString() telefono?: string;
   @IsOptional() @IsString() zonaAsignada?: string;
   @IsOptional() @IsDateString() fechaIngreso?: string;
-  @IsOptional() @IsBoolean() estado?: boolean;
+  @IsOptional() @Transform(({ value }) => normalizeEstadoBool(value)) @IsBoolean() estado?: boolean;
   @IsOptional() @IsEmail() email?: string;
-  @IsOptional() @IsString() usuarioLogin?: string;
-  @IsOptional() @IsString() password?: string;
+  @IsOptional() @IsString() @MinLength(4) usuarioLogin?: string;
+  @IsOptional() @IsString() @MinLength(6) password?: string;
   @IsOptional() @IsInt() idRol?: number;
+  @IsOptional() @IsInt() idUsuario?: number;
+
+  // ============ ALIAS FRONTEND LEGACY ============
+  @IsOptional() @IsString() nombre?: string;
+  @IsOptional() @IsString() usuario_login?: string;
+  @IsOptional() @IsString() zona?: string;
+  @IsOptional() @IsString() numeroDocumento?: string;
+  @IsOptional() @IsString() documento?: string;
+  @IsOptional() @IsString() id_rol?: string | number;
+}
+
+export class UpdateOperadorDto {
+  // ============ CAMPOS OFICIALES PRISMA ============
+  @IsOptional() @IsString() nombreCompleto?: string;
+  @IsOptional() @IsString() telefono?: string;
+  @IsOptional() @IsString() zonaAsignada?: string;
+  @IsOptional() @IsDateString() fechaIngreso?: string;
+  @IsOptional() @Transform(({ value }) => normalizeEstadoBool(value)) @IsBoolean() estado?: boolean;
+  @IsOptional() @IsEmail() email?: string;
+  @IsOptional() @IsString() @MinLength(4) usuarioLogin?: string;
+  @IsOptional() @IsString() @MinLength(6) password?: string;
+  @IsOptional() @IsInt() idRol?: number;
+  @IsOptional() @IsInt() idUsuario?: number;
+
+  // ============ ALIAS FRONTEND LEGACY ============
+  @IsOptional() @IsString() nombre?: string;
+  @IsOptional() @IsString() usuario_login?: string;
+  @IsOptional() @IsString() zona?: string;
+  @IsOptional() @IsString() numeroDocumento?: string;
+  @IsOptional() @IsString() documento?: string;
+  @IsOptional() @IsString() id_rol?: string | number;
 }
 
 export class QueryOperadorDto {
