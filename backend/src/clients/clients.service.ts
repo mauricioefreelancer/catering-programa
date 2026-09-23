@@ -19,7 +19,27 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto) {
   const contactoCorreo = firstNonEmpty(dto.contactoCorreo, dto.email);
   const contactoDireccion = firstNonEmpty(dto.contactoDireccion, dto.direccion);
   const contactoCiudad = firstNonEmpty(dto.contactoCiudad, dto.ciudad);
-  const fechaContrato = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato);
+  const fechaContratoRaw = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato, dto.fecha);
+  let fechaContrato: Date | undefined = undefined;
+  if (fechaContratoRaw !== undefined && fechaContratoRaw !== null && String(fechaContratoRaw).trim() !== '') {
+    try {
+      const str = String(fechaContratoRaw).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [yy, mm, dd] = str.split('-').map(Number);
+        fechaContrato = new Date(yy, (mm || 1) - 1, dd || 1);
+      } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+        const [dd, mm, yy] = str.split('/').map(Number);
+        fechaContrato = new Date(yy, (mm || 1) - 1, dd || 1);
+      } else {
+        const d = new Date(str);
+        if (!isNaN(d.getTime())) {
+          fechaContrato = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        }
+      }
+    } catch {
+      fechaContrato = undefined;
+    }
+  }
   const result: any = {};
   if (nit !== undefined) result.nit = String(nit).slice(0, 30);
   if (razonSocial !== undefined) result.razonSocial = String(razonSocial).slice(0, 250);
@@ -28,8 +48,13 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto) {
   if (contactoCorreo !== undefined) result.contactoCorreo = String(contactoCorreo).slice(0, 200);
   if (contactoDireccion !== undefined) result.contactoDireccion = String(contactoDireccion).slice(0, 300);
   if (contactoCiudad !== undefined) result.contactoCiudad = String(contactoCiudad).slice(0, 100);
-  if (fechaContrato !== undefined) result.fechaContrato = new Date(fechaContrato);
-  else if (dto instanceof CreateClienteDto || !(dto as any).idCliente) result.fechaContrato = new Date();
+  if (fechaContrato !== undefined) result.fechaContrato = fechaContrato;
+  else {
+    try {
+      const ahora = new Date();
+      result.fechaContrato = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+    } catch {}
+  }
   if (typeof dto.estado === 'boolean') result.estado = dto.estado;
   return result;
 }

@@ -3,6 +3,7 @@ import {
   Table,
   Button,
   Input,
+  DatePicker,
   Space,
   Popconfirm,
   message,
@@ -12,7 +13,7 @@ import {
   Spin,
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
-import dayjs from 'dayjs'
+import dayjs, { Dayjs } from 'dayjs'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
 import { get, post, patch, remove } from '../../api/services/api'
@@ -30,6 +31,20 @@ interface Cliente {
   estado: 'ACTIVO' | 'INACTIVO'
 }
 
+const parseFechaSegura = (v: any): Dayjs | null => {
+  if (v === null || v === undefined || v === '') return null
+  if (dayjs.isDayjs(v)) return v.isValid() ? v : null
+  if (typeof v === 'string' || typeof v === 'number' || v instanceof Date) {
+    const d = dayjs(v)
+    return d.isValid() ? d : null
+  }
+  return null
+}
+
+const fmtYYYYMMDD = (d: Dayjs | null): string => {
+  return d && d.isValid() ? d.format('YYYY-MM-DD') : ''
+}
+
 const Clientes = () => {
   const [data, setData] = useState<Cliente[]>([])
   const [search, setSearch] = useState('')
@@ -43,16 +58,19 @@ const Clientes = () => {
     setFetching(true)
     try {
       const res = await get<any>('/clientes', { skip: 0, take: 200 })
-      const rows = (res.data || []).map((c: any) => ({
-        id: Number(c.idCliente || c.id) || 0,
-        nit: c.nit || '',
-        razon_social: c.razonSocial || c.razon_social || '',
-        contacto: c.contactoNombre || c.contacto || '',
-        telefono: c.contactoTelefono || c.telefono || '',
-        ciudad: c.contactoCiudad || c.ciudad || '',
-        fecha_contrato: c.fechaContrato || c.fecha_contrato || '',
-        estado: c.estado === false || c.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
-      }))
+      const rows = (res.data || []).map((c: any) => {
+        const d = parseFechaSegura(c.fechaContrato ?? c.fecha_contrato ?? c.fecha)
+        return {
+          id: Number(c.idCliente || c.id) || 0,
+          nit: c.nit || '',
+          razon_social: c.razonSocial || c.razon_social || '',
+          contacto: c.contactoNombre || c.contacto || '',
+          telefono: c.contactoTelefono || c.telefono || '',
+          ciudad: c.contactoCiudad || c.ciudad || '',
+          fecha_contrato: d ? d.format('YYYY-MM-DD') : (d ?? ''),
+          estado: c.estado === false || c.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        }
+      })
       setData(rows)
     } catch (e: any) {
       message.error(e?.response?.data?.message || 'Error al cargar clientes')
@@ -80,13 +98,14 @@ const Clientes = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
+      const fechaD = parseFechaSegura(values.fecha_contrato) || dayjs()
       const payload = {
         nit: values.nit,
         razonSocial: values.razon_social,
         contactoNombre: values.contacto,
         telefono: values.telefono,
         ciudad: values.ciudad,
-        fechaContrato: values.fecha_contrato,
+        fechaContrato: fmtYYYYMMDD(fechaD),
         estado: 'ACTIVO',
       }
       if (editing) {
@@ -122,7 +141,11 @@ const Clientes = () => {
     { title: 'Contacto', dataIndex: 'contacto', key: 'contacto' },
     { title: 'Teléfono', dataIndex: 'telefono', key: 'telefono' },
     { title: 'Ciudad', dataIndex: 'ciudad', key: 'ciudad' },
-    { title: 'Fecha Contrato', dataIndex: 'fecha_contrato', key: 'fecha_contrato', render: (v: string, _t: any) => dayjs(v).format('DD/MM/YYYY') },
+    { title: 'Fecha Contrato', dataIndex: 'fecha_contrato', key: 'fecha_contrato', render: (v: string, _t: any) => {
+      const d = parseFechaSegura(v)
+      if (!d) return <Tag color="default">Sin fecha</Tag>
+      return d.format('DD/MM/YYYY')
+    } },
     { title: 'Estado', dataIndex: 'estado', key: 'estado', render: (v: string) => <Tag color={v === 'ACTIVO' ? 'green' : 'red'}>{v}</Tag> },
     {
       title: 'Acciones',
@@ -208,8 +231,8 @@ const Clientes = () => {
           contacto: editing.contacto,
           telefono: editing.telefono,
           ciudad: editing.ciudad,
-          fecha_contrato: editing.fecha_contrato,
-        } : undefined}
+          fecha_contrato: parseFechaSegura(editing.fecha_contrato) ?? undefined,
+        } : { fecha_contrato: dayjs() }}
         loading={loading}
       >
         <Form.Item name="nit" label="NIT" rules={[{ required: true, message: 'Ingrese NIT' }]}>
@@ -230,8 +253,8 @@ const Clientes = () => {
           <Form.Item name="ciudad" label="Ciudad" rules={[{ required: true }]}>
             <Input placeholder="Ciudad" />
           </Form.Item>
-          <Form.Item name="fecha_contrato" label="Fecha Contrato" rules={[{ required: true }]}>
-            <Input type="date" />
+          <Form.Item name="fecha_contrato" label="Fecha Contrato" rules={[{ required: true, message: 'Ingrese una fecha de contrato válida' }]}>
+            <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" showToday allowClear placeholder="Seleccione fecha contrato" />
           </Form.Item>
         </div>
       </ModalDrawer>
