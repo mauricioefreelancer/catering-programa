@@ -26,10 +26,14 @@ interface Proveedor {
   nit: string
   razon_social: string
   asesor: string
+  telefono_asesor: string
+  correo_asesor: string
   condiciones_pago: 'CONTADO' | 'CREDITO'
   dias_credito?: number
   banco?: string
+  tipo_cuenta?: string
   cuenta_bancaria?: string
+  titular_cuenta?: string
   estado: 'ACTIVO' | 'INACTIVO'
 }
 
@@ -52,11 +56,15 @@ const Proveedores = () => {
         nit: p.nit || '',
         razon_social: p.razonSocial || p.razon_social || '',
         asesor: p.asesorNombre || p.asesor || '',
-        condiciones_pago: (p.condicionesPago || p.condiciones_pago || 'CONTADO') as 'CONTADO' | 'CREDITO',
-        dias_credito: p.diasCredito ?? p.dias_credito,
-        banco: p.banco || '',
-        cuenta_bancaria: p.cuentaBancaria || p.cuenta_bancaria || '',
-        estado: p.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        telefono_asesor: p.asesorTelefono || p.telefono_asesor || p.telefono || '',
+        correo_asesor: p.asesorCorreo || p.correo_asesor || p.email || '',
+        condiciones_pago: (p.condicionPagoTipo || p.condicionesPago || p.condiciones_pago || 'CONTADO').toString().toUpperCase().includes('CRED') ? 'CREDITO' : 'CONTADO',
+        dias_credito: Number(p.condicionPagoDias ?? p.diasCredito ?? p.dias_credito) || 0,
+        banco: p.bancoNombre || p.banco || '',
+        tipo_cuenta: p.bancoTipoCuenta || p.tipo_cuenta || '',
+        cuenta_bancaria: p.bancoNumeroCuenta || p.cuentaBancaria || p.cuenta_bancaria || '',
+        titular_cuenta: p.bancoTitular || p.titular_cuenta || p.titular || '',
+        estado: p.estado === false || p.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
       }))
       setData(rows)
     } catch (e: any) {
@@ -77,7 +85,11 @@ const Proveedores = () => {
       return (
         c.razon_social.toLowerCase().includes(s) ||
         c.nit.toLowerCase().includes(s) ||
-        c.asesor.toLowerCase().includes(s)
+        c.asesor.toLowerCase().includes(s) ||
+        String(c.telefono_asesor || '').toLowerCase().includes(s) ||
+        String(c.correo_asesor || '').toLowerCase().includes(s) ||
+        String(c.banco || '').toLowerCase().includes(s) ||
+        String(c.cuenta_bancaria || '').toLowerCase().includes(s)
       )
     })
   }, [data, search])
@@ -89,45 +101,26 @@ const Proveedores = () => {
         nit: values.nit,
         razonSocial: values.razon_social,
         asesorNombre: values.asesor,
-        condicionesPago: values.condiciones_pago,
-        diasCredito: values.dias_credito,
-        banco: values.banco,
-        cuentaBancaria: values.cuenta_bancaria,
+        asesorTelefono: values.telefono_asesor,
+        asesorCorreo: values.correo_asesor,
+        condicionPagoTipo: values.condiciones_pago,
+        condicionPagoDias: Number(values.dias_credito || 0),
+        bancoNombre: values.banco,
+        bancoTipoCuenta: values.tipo_cuenta,
+        bancoNumeroCuenta: values.cuenta_bancaria,
+        bancoTitular: values.titular_cuenta,
         estado: 'ACTIVO',
       }
       if (editing) {
-        const resp = await patch<any>(`/proveedores/${editing.id}`, payload)
-        const nr: Proveedor = {
-          id: Number(resp.idProveedor || editing.id) || editing.id,
-          nit: resp.nit || payload.nit,
-          razon_social: resp.razonSocial || payload.razonSocial,
-          asesor: resp.asesorNombre || payload.asesorNombre,
-          condiciones_pago: (resp.condicionesPago || payload.condicionesPago) as 'CONTADO' | 'CREDITO',
-          dias_credito: resp.diasCredito ?? payload.diasCredito,
-          banco: resp.banco || payload.banco,
-          cuenta_bancaria: resp.cuentaBancaria || payload.cuentaBancaria,
-          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
-        }
-        setData(data.map((c) => (c.id === editing.id ? { ...c, ...nr } : c)))
+        await patch<any>(`/proveedores/${editing.id}`, payload)
         message.success('Proveedor actualizado')
       } else {
-        const resp = await post<any>('/proveedores', payload)
-        const nr: Proveedor = {
-          id: Number(resp.idProveedor) || 0,
-          nit: resp.nit || payload.nit,
-          razon_social: resp.razonSocial || payload.razonSocial,
-          asesor: resp.asesorNombre || payload.asesorNombre,
-          condiciones_pago: (resp.condicionesPago || payload.condicionesPago) as 'CONTADO' | 'CREDITO',
-          dias_credito: resp.diasCredito ?? payload.diasCredito,
-          banco: resp.banco || payload.banco,
-          cuenta_bancaria: resp.cuentaBancaria || payload.cuentaBancaria,
-          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
-        }
-        setData([nr, ...data])
+        await post<any>('/proveedores', payload)
         message.success('Proveedor creado')
       }
       setOpen(false)
       setEditing(null)
+      await loadData()
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || 'Error al guardar proveedor')
     } finally {
@@ -149,6 +142,8 @@ const Proveedores = () => {
     { title: 'NIT', dataIndex: 'nit', key: 'nit' },
     { title: 'Razon Social', dataIndex: 'razon_social', key: 'razon_social', render: (v: string) => <strong>{v}</strong> },
     { title: 'Asesor', dataIndex: 'asesor', key: 'asesor' },
+    { title: 'Tel Asesor', dataIndex: 'telefono_asesor', key: 'tel_asesor' },
+    { title: 'Correo Asesor', dataIndex: 'correo_asesor', key: 'correo_asesor', width: 220 },
     {
       title: 'Cond. Pago',
       dataIndex: 'condiciones_pago',
@@ -157,7 +152,7 @@ const Proveedores = () => {
         return (
           <Space>
             <Tag color={v === 'CONTADO' ? 'blue' : 'orange'}>{v}</Tag>
-            {r.dias_credito && (
+            {r.dias_credito && Number(r.dias_credito) > 0 && (
               <span style={{ fontSize: 12, color: '#666' }}>{r.dias_credito} dias</span>
             )}
           </Space>
@@ -165,6 +160,9 @@ const Proveedores = () => {
       },
     },
     { title: 'Banco', dataIndex: 'banco', key: 'banco' },
+    { title: 'T. Cuenta', dataIndex: 'tipo_cuenta', key: 'tipo_cuenta', render: (v: string) => v ? <Tag color="geekblue">{v}</Tag> : '-' },
+    { title: 'N° Cuenta', dataIndex: 'cuenta_bancaria', key: 'cuenta_bancaria' },
+    { title: 'Titular', dataIndex: 'titular_cuenta', key: 'titular_cuenta' },
     {
       title: 'Estado',
       dataIndex: 'estado',
@@ -268,10 +266,14 @@ const Proveedores = () => {
           nit: editing.nit,
           razon_social: editing.razon_social,
           asesor: editing.asesor,
+          telefono_asesor: editing.telefono_asesor,
+          correo_asesor: editing.correo_asesor,
           condiciones_pago: editing.condiciones_pago,
           dias_credito: editing.dias_credito,
           banco: editing.banco,
+          tipo_cuenta: editing.tipo_cuenta,
           cuenta_bancaria: editing.cuenta_bancaria,
+          titular_cuenta: editing.titular_cuenta,
         } : undefined}
         loading={loading}
       >
@@ -281,9 +283,19 @@ const Proveedores = () => {
         <Form.Item name="razon_social" label="Razon Social" rules={[{ required: true }]}>
           <Input />
         </Form.Item>
-        <Form.Item name="asesor" label="Asesor Comercial" rules={[{ required: true }]}>
-          <Input />
-        </Form.Item>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Form.Item name="asesor" label="Asesor Comercial (Nombre)" rules={[{ required: true }]}>
+            <Input placeholder="Nombre asesor" />
+          </Form.Item>
+          <Form.Item name="telefono_asesor" label="Teléfono Asesor">
+            <Input placeholder="3101234567" />
+          </Form.Item>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+          <Form.Item name="correo_asesor" label="Correo Asesor">
+            <Input placeholder="asesor@proveedor.com" />
+          </Form.Item>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Form.Item
             name="condiciones_pago"
@@ -309,10 +321,22 @@ const Proveedores = () => {
         <Form.Item label="Datos Bancarios" style={{ marginBottom: 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Form.Item name="banco" noStyle>
-              <Input placeholder="Banco" />
+              <Input placeholder="Banco (Bancolombia, Davivienda, Nequi...)" />
+            </Form.Item>
+            <Form.Item name="tipo_cuenta" noStyle>
+              <Select placeholder="Tipo Cta.">
+                <Option value="AHORROS">AHORROS</Option>
+                <Option value="CORRIENTE">CORRIENTE</Option>
+                <Option value="NEQUI">NEQUI</Option>
+                <Option value="DAVIPLATA">DAVIPLATA</Option>
+                <Option value="OTRO">OTRO</Option>
+              </Select>
             </Form.Item>
             <Form.Item name="cuenta_bancaria" noStyle>
-              <Input placeholder="N° Cuenta" />
+              <Input placeholder="N° Cuenta (ej: 1234567890)" />
+            </Form.Item>
+            <Form.Item name="titular_cuenta" noStyle>
+              <Input placeholder="Titular Cuenta (nombre como aparece en banco)" />
             </Form.Item>
           </div>
         </Form.Item>

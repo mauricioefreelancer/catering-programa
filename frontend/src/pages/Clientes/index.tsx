@@ -48,10 +48,10 @@ const Clientes = () => {
         nit: c.nit || '',
         razon_social: c.razonSocial || c.razon_social || '',
         contacto: c.contactoNombre || c.contacto || '',
-        telefono: c.telefono || '',
-        ciudad: c.ciudad || '',
+        telefono: c.contactoTelefono || c.telefono || '',
+        ciudad: c.contactoCiudad || c.ciudad || '',
         fecha_contrato: c.fechaContrato || c.fecha_contrato || '',
-        estado: c.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
+        estado: c.estado === false || c.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
       }))
       setData(rows)
     } catch (e: any) {
@@ -90,36 +90,15 @@ const Clientes = () => {
         estado: 'ACTIVO',
       }
       if (editing) {
-        const resp = await patch<any>(`/clientes/${editing.id}`, payload)
-        const nr: Cliente = {
-          id: Number(resp.idCliente || editing.id) || editing.id,
-          nit: resp.nit || payload.nit,
-          razon_social: resp.razonSocial || payload.razonSocial,
-          contacto: resp.contactoNombre || payload.contactoNombre,
-          telefono: resp.telefono || payload.telefono,
-          ciudad: resp.ciudad || payload.ciudad,
-          fecha_contrato: resp.fechaContrato || payload.fechaContrato,
-          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
-        }
-        setData(data.map((c) => (c.id === editing.id ? { ...c, ...nr } : c)))
+        await patch<any>(`/clientes/${editing.id}`, payload)
         message.success('Cliente actualizado')
       } else {
-        const resp = await post<any>('/clientes', payload)
-        const nr: Cliente = {
-          id: Number(resp.idCliente) || 0,
-          nit: resp.nit || payload.nit,
-          razon_social: resp.razonSocial || payload.razonSocial,
-          contacto: resp.contactoNombre || payload.contactoNombre,
-          telefono: resp.telefono || payload.telefono,
-          ciudad: resp.ciudad || payload.ciudad,
-          fecha_contrato: resp.fechaContrato || payload.fechaContrato,
-          estado: resp.estado === 'INACTIVO' ? 'INACTIVO' : 'ACTIVO',
-        }
-        setData([nr, ...data])
+        await post<any>('/clientes', payload)
         message.success('Cliente creado')
       }
       setOpen(false)
       setEditing(null)
+      await loadData()
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || 'Error al guardar cliente')
     } finally {

@@ -34,6 +34,7 @@ interface Ingrediente {
 
 interface Producto {
   id: number
+  idProveedor?: number | null
   codigo_barras: string
   nombre: string
   tipo: 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'
@@ -53,6 +54,7 @@ const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const
 
 const Productos = () => {
   const [data, setData] = useState<Producto[]>([])
+  const [proveedoresList, setProveedoresList] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Producto | null>(null)
@@ -64,31 +66,41 @@ const Productos = () => {
   const perm = usePermissions('productos')
 
   const normalizeTipo = (t: any): 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO' => {
-    if (TIPOS_VALIDOS.includes(t)) return t
+    if (typeof t === 'string') {
+      const up = t.trim().toUpperCase();
+      if ((TIPOS_VALIDOS as readonly string[]).includes(up)) return up as any;
+      if (up.includes('MATERIA')) return 'MATERIA_PRIMA';
+      if (up.includes('DOSIF')) return 'DOSIFICADO';
+    }
     return 'ESTANDAR'
   }
 
-  const loadData = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     setLoadingTable(true)
     try {
-      const resp: any = await get('/productos')
-      const raw = resp?.data || []
+      const [respProd, respProv] = await Promise.all([
+        get('/productos?limit=500&take=500'),
+        get('/proveedores?limit=500&take=500') as any,
+      ])
+      const raw: any[] = (respProd as any)?.data || []
       const mapped: Producto[] = raw.map((p: any) => ({
         id: Number(p.idProducto),
-        codigo_barras: p.codigoBarras || '',
-        nombre: p.nombre || '',
-        tipo: normalizeTipo(p.Tipo_Producto),
-        unidad_compra: p.unidadCompra || 'UND',
-        unidad_consumo: p.unidadConsumo || 'UND',
+        idProveedor: (p.idProveedor as number | null) ?? null,
+        codigo_barras: p.codigoBarras || p.codigo_barras || '',
+        nombre: p.nombreProducto || p.nombre_producto || p.nombre || '',
+        tipo: normalizeTipo(p.tipoProducto ?? p.Tipo_Producto ?? p.tipo),
+        unidad_compra: p.unidadCompra || p.unidad_compra || 'UND',
+        unidad_consumo: p.unidadConsumo || p.unidad_consumo || 'UND',
         equivalencia: Number(p.equivalencia || 1),
-        costo_base: Number(p.costoBase || 0),
-        iva: Number(p.IVA || 0),
-        costo_total: Number(p.costoTotal || 0),
-        stock_actual: Number(p.stockActual || 0),
-        stock_min: Number(p.stockMin || 0),
-        stock_max: Number(p.stockMax || 0),
+        costo_base: Number(p.costoBase || p.costo_base || 0),
+        iva: Number(p.porcentajeImp || p.IVA || p.iva || 0),
+        costo_total: Number(p.costoTotal || p.costo_total || 0),
+        stock_actual: Number(p.stockActual || p.stock_actual || 0),
+        stock_min: Number(p.stockMin || p.stock_min || 0),
+        stock_max: Number(p.stockMax || p.stock_max || 0),
       }))
       setData(mapped)
+      setProveedoresList(respProv?.data || [])
     } catch (e: any) {
       message.error('Error cargando productos: ' + (e?.message || e))
     } finally {
@@ -97,8 +109,8 @@ const Productos = () => {
   }, [])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    loadAll()
+  }, [loadAll])
 
   const materiasPrimas = useMemo(() => data.filter((p) => p.tipo === 'MATERIA_PRIMA'), [data])
   const filtered = useMemo(() => {
@@ -123,7 +135,8 @@ const Productos = () => {
     setLoading(true)
     try {
       const costoTotal = Number(values.costo_base || 0) * (1 + Number(values.iva || 0))
-      const payloadBackend = {
+      const payloadBackend: any = {
+        idProveedor: values.idProveedor ? Number(values.idProveedor) : null,
         codigoBarras: values.codigo_barras,
         nombre: values.nombre,
         Tipo_Producto: values.tipo,
@@ -132,7 +145,7 @@ const Productos = () => {
         equivalencia: Number(values.equivalencia || 1),
         costoBase: Number(values.costo_base || 0),
         IVA: Number(values.iva || 0),
-        costoTotal: Math.round(costoTotal),
+        costoTotal: Math.round(costoTotal * 100) / 100,
         stockActual: Number(values.stock_actual || 0),
         stockMin: Number(values.stock_min || 0),
         stockMax: Number(values.stock_max || 0),
@@ -149,14 +162,14 @@ const Productos = () => {
           await patch(`/productos/${editing.id}`, payloadBackend)
           if (values.tipo === 'DOSIFICADO' && recetaPayload) {
             try {
-              await post(`/productos/${editing.id}/receta`, { receta: recetaPayload })
+              await post(`/productos/${editing.id}/recetas`, { receta: recetaPayload })
             } catch (errReceta: any) {
-              message.warning('Producto actualizado, pero error guardando receta (endpoint no implementado?): ' + (errReceta?.message || errReceta))
+              message.warning('Producto actualizado, pero error guardando receta: ' + (errReceta?.response?.data?.message || errReceta?.message || errReceta))
             }
           }
           message.success('Producto actualizado')
         } catch (e: any) {
-          message.error('Error actualizando producto: ' + (e?.message || e))
+          message.error('Error actualizando producto: ' + (e?.response?.data?.message || e?.message || e))
           return
         }
       } else {
@@ -165,19 +178,19 @@ const Productos = () => {
           const nuevoId = resp?.data?.idProducto || resp?.idProducto
           if (values.tipo === 'DOSIFICADO' && recetaPayload && nuevoId) {
             try {
-              await post(`/productos/${nuevoId}/receta`, { receta: recetaPayload })
+              await post(`/productos/${nuevoId}/recetas`, { receta: recetaPayload })
             } catch (errReceta: any) {
-              message.warning('Producto creado, pero error guardando receta (endpoint no implementado?): ' + (errReceta?.message || errReceta))
+              message.warning('Producto creado, pero error guardando receta: ' + (errReceta?.response?.data?.message || errReceta?.message || errReceta))
             }
           }
           message.success('Producto creado')
         } catch (e: any) {
-          message.error('Error creando producto: ' + (e?.message || e))
+          message.error('Error creando producto: ' + (e?.response?.data?.message || e?.message || e))
           return
         }
       }
       resetDrawer()
-      await loadData()
+      await loadAll()
     } finally {
       setLoading(false)
     }
@@ -234,6 +247,11 @@ const Productos = () => {
     if (t === 'MATERIA_PRIMA') return 'MP · Empaque Grande / Consumo Fracción'
     return 'ESTÁNDAR · Compra/Venta misma unidad'
   }
+  const proveedorNombrePorId = (idP: number | null | undefined) => {
+    if (!idP) return ''
+    const pr = proveedoresList.find((x: any) => Number(x.idProveedor || x.id) === Number(idP))
+    return pr ? (pr.razonSocial || pr.razon_social || '') : ''
+  }
 
   const addIngrediente = () => {
     if (materiasPrimas.length === 0) {
@@ -249,6 +267,15 @@ const Productos = () => {
   const columns = [
     { title: 'Código Barras', dataIndex: 'codigo_barras', key: 'codigo_barras', width: 160 },
     { title: 'Nombre', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
+    {
+      title: 'Proveedor',
+      key: 'proveedor',
+      width: 200,
+      render: (_: any, r: Producto) => {
+        const n = proveedorNombrePorId(r.idProveedor || null)
+        return n ? <Tag color="cyan">{n}</Tag> : <span style={{ color: '#999' }}>Sin asignar</span>
+      },
+    },
     { title: 'Tipo', dataIndex: 'tipo', key: 'tipo', render: (v: string) => <Tag color={tipoColor(v)}>{tipoLabel(v)}</Tag>, width: 280 },
     { title: 'Costo Base', dataIndex: 'costo_base', key: 'costo_base', render: (v: number) => `$ ${v.toLocaleString('es-CO')}` },
     { title: 'Costo Total + IVA', dataIndex: 'costo_total', key: 'costo_total', render: (v: number) => `$ ${v.toLocaleString('es-CO')}`, width: 160 },
@@ -296,16 +323,16 @@ const Productos = () => {
     },
   ]
 
-  const initialVals = editing
+  const initialVals: any = editing
     ? editing
-    : { tipo: 'ESTANDAR', unidad_compra: 'UND', unidad_consumo: 'UND', equivalencia: 1, iva: 0.19, costo_base: 0, stock_actual: 0, stock_min: 0, stock_max: 100 }
+    : { idProveedor: null, tipo: 'ESTANDAR', unidad_compra: 'UND', unidad_consumo: 'UND', equivalencia: 1, iva: 0.19, costo_base: 0, stock_actual: 0, stock_min: 0, stock_max: 100 }
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <Title level={4} style={{ margin: 0 }}>Productos</Title>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={loadData} loading={loadingTable}>Recargar</Button>
+          <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loadingTable}>Recargar</Button>
           <Input allowClear prefix={<SearchOutlined />} placeholder="Buscar nombre, código..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 320 }} />
           {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo Producto</Button>}
         </Space>
@@ -347,9 +374,18 @@ const Productos = () => {
                     </Tag>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <Form.Item name="idProveedor" label="Proveedor (Opcional)">
+                      <Select allowClear placeholder="Seleccione el proveedor de este producto">
+                        {proveedoresList.map((pr: any) => (
+                          <Option key={Number(pr.idProveedor || pr.id)} value={Number(pr.idProveedor || pr.id)}>
+                            {pr.razonSocial || pr.razon_social || `Proveedor ${pr.idProveedor || pr.id}`}
+                          </Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
                     <Form.Item name="codigo_barras" label="Código Barras" rules={[{ required: true }]}><Input /></Form.Item>
-                    <Form.Item name="nombre" label="Nombre" rules={[{ required: true }]}><Input /></Form.Item>
                   </div>
+                  <Form.Item name="nombre" label="Nombre" rules={[{ required: true }]}><Input /></Form.Item>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true }]}><Input placeholder="Ej: UND / Gramo / ml" /></Form.Item>
