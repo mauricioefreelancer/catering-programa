@@ -20,26 +20,34 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto, isUpdat
   const contactoDireccion = firstNonEmpty(dto.contactoDireccion, dto.direccion);
   const contactoCiudad = firstNonEmpty(dto.contactoCiudad, dto.ciudad);
   const fechaContratoRaw = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato, (dto as any).fecha);
-  let fechaContrato: Date | undefined = undefined;
+  let fechaContratoISO: string | undefined = undefined;
   let fechaFueEnviada = false;
   if (fechaContratoRaw !== undefined && fechaContratoRaw !== null && String(fechaContratoRaw).trim() !== '') {
     fechaFueEnviada = true;
     try {
       const str = String(fechaContratoRaw).trim();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      let yy: number | undefined, mm: number | undefined, dd: number | undefined;
       if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-        const [yy, mm, dd] = str.split('-').map(Number);
-        fechaContrato = new Date(yy, (mm || 1) - 1, dd || 1);
+        const [y, m, d] = str.split('-').map(Number);
+        yy = y; mm = m; dd = d;
       } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
-        const [dd, mm, yy] = str.split('/').map(Number);
-        fechaContrato = new Date(yy, (mm || 1) - 1, dd || 1);
+        const [d, m, y] = str.split('/').map(Number);
+        yy = y; mm = m; dd = d;
       } else {
         const d = new Date(str);
         if (!isNaN(d.getTime())) {
-          fechaContrato = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          yy = d.getUTCFullYear();
+          mm = d.getUTCMonth() + 1;
+          dd = d.getUTCDate();
         }
       }
+      if (yy !== undefined && mm !== undefined && dd !== undefined
+        && yy >= 1900 && yy <= 2999 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+        fechaContratoISO = `${yy}-${pad(mm)}-${pad(dd)}`;
+      }
     } catch {
-      fechaContrato = undefined;
+      fechaContratoISO = undefined;
     }
   }
   const result: any = {};
@@ -50,13 +58,14 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto, isUpdat
   if (contactoCorreo !== undefined) result.contactoCorreo = String(contactoCorreo).slice(0, 200);
   if (contactoDireccion !== undefined) result.contactoDireccion = String(contactoDireccion).slice(0, 300);
   if (contactoCiudad !== undefined) result.contactoCiudad = String(contactoCiudad).slice(0, 100);
-  if (fechaContrato !== undefined) {
-    result.fechaContrato = fechaContrato;
+  if (fechaContratoISO !== undefined) {
+    result.fechaContrato = fechaContratoISO;
   } else if (!isUpdate) {
     if (!fechaFueEnviada) {
       try {
+        const pad = (n: number) => String(n).padStart(2, '0');
         const ahora = new Date();
-        result.fechaContrato = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+        result.fechaContrato = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}`;
       } catch {}
     }
   }
