@@ -7,7 +7,7 @@ const firstNonEmpty = (...vals: any[]): any => {
   return undefined;
 };
 
-function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto) {
+function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto, isUpdate: boolean = false) {
   const nombres = firstNonEmpty(dto.nombres, dto.contacto, dto.contactoNombre);
   const apellidos = firstNonEmpty(dto.apellidos);
   const razonSocial = firstNonEmpty(dto.razonSocial, dto.razon_social,
@@ -21,7 +21,9 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto) {
   const contactoCiudad = firstNonEmpty(dto.contactoCiudad, dto.ciudad);
   const fechaContratoRaw = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato, (dto as any).fecha);
   let fechaContrato: Date | undefined = undefined;
+  let fechaFueEnviada = false;
   if (fechaContratoRaw !== undefined && fechaContratoRaw !== null && String(fechaContratoRaw).trim() !== '') {
+    fechaFueEnviada = true;
     try {
       const str = String(fechaContratoRaw).trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
@@ -48,12 +50,15 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto) {
   if (contactoCorreo !== undefined) result.contactoCorreo = String(contactoCorreo).slice(0, 200);
   if (contactoDireccion !== undefined) result.contactoDireccion = String(contactoDireccion).slice(0, 300);
   if (contactoCiudad !== undefined) result.contactoCiudad = String(contactoCiudad).slice(0, 100);
-  if (fechaContrato !== undefined) result.fechaContrato = fechaContrato;
-  else {
-    try {
-      const ahora = new Date();
-      result.fechaContrato = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-    } catch {}
+  if (fechaContrato !== undefined) {
+    result.fechaContrato = fechaContrato;
+  } else if (!isUpdate) {
+    if (!fechaFueEnviada) {
+      try {
+        const ahora = new Date();
+        result.fechaContrato = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+      } catch {}
+    }
   }
   if (typeof dto.estado === 'boolean') result.estado = dto.estado;
   return result;
@@ -103,7 +108,7 @@ export class ClientsService {
   }
 
   async create(dto: CreateClienteDto) {
-    const data = normalizeClienteInput(dto);
+    const data = normalizeClienteInput(dto, false);
     if (!data.razonSocial) data.razonSocial = `Cliente ${data.nit || new Date().getTime()}`;
     if (!data.nit) data.nit = `${new Date().getTime()}`.slice(0, 30);
     data.estado = data.estado ?? true;
@@ -112,7 +117,7 @@ export class ClientsService {
 
   async update(id: number, dto: UpdateClienteDto) {
     await this.findOne(id);
-    const data = normalizeClienteInput(dto);
+    const data = normalizeClienteInput(dto, true);
     return this.prisma.clientes.update({ where: { idCliente: id }, data });
   }
 

@@ -98,15 +98,23 @@ const Clientes = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
-      const fechaD = parseFechaSegura(values.fecha_contrato) || dayjs()
-      const payload = {
+      const fechaD = parseFechaSegura(values.fecha_contrato)
+      const payload: any = {
         nit: values.nit,
         razonSocial: values.razon_social,
         contactoNombre: values.contacto,
         telefono: values.telefono,
         ciudad: values.ciudad,
-        fechaContrato: fmtYYYYMMDD(fechaD),
-        estado: true,
+      }
+      if (fechaD && fechaD.isValid()) {
+        payload.fechaContrato = fmtYYYYMMDD(fechaD)
+      } else if (!editing) {
+        payload.fechaContrato = fmtYYYYMMDD(dayjs())
+      }
+      if (!editing) {
+        payload.estado = true
+      } else if (typeof values.estado !== 'undefined') {
+        payload.estado = values.estado ? true : false
       }
       if (editing) {
         await patch<any>(`/clientes/${editing.id}`, payload)
