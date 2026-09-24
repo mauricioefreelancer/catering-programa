@@ -29,9 +29,25 @@ function normalizeUsuarioInputLegacy(dto: CreateUsuarioDto | UpdateUsuarioDto) {
 }
 const ALLOWED_SCHEMA = 'public';
 
+const esRolOperador = (rol: { idRol?: number; nombreRol?: string | null } | null | undefined): boolean => {
+  if (!rol) return false;
+  if (String(rol.nombreRol || '').toUpperCase().includes('OPERADOR')) return true;
+  if (Number(rol.idRol) === 4) return true;
+  return false;
+};
+
 @Injectable()
 export class AdminService {
   constructor(private prisma: PrismaService) {}
+
+  private async isIdRolOperador(idRol: number | undefined): Promise<boolean> {
+    if (idRol === undefined) return false;
+    if (Number(idRol) === 4) return true;
+    try {
+      const r = await this.prisma.rolesPerfiles.findUnique({ where: { idRol: Number(idRol) } });
+      return esRolOperador(r);
+    } catch { return false; }
+  }
 
   async findAllRoles(query: QueryAdminDto) {
     const skip = query.skip ? parseInt(query.skip) : 0;
@@ -107,9 +123,9 @@ export class AdminService {
     if (exists) {
       const dupEmail = String(exists.email || '').toLowerCase() === String(norm.email || '').toLowerCase();
       const dupUser = String(exists.usuarioLogin || '').toLowerCase() === String(norm.usuarioLogin || '').toLowerCase();
-      const existIdRol4 = Number(exists.idRol) === 4 || String(exists.rol?.nombreRol || '').toUpperCase().includes('OPERADOR');
-      const nuevoIdRol4 = Number(norm.idRol) === 4;
-      if (existIdRol4 && nuevoIdRol4) {
+      const existEsOperador = esRolOperador({ idRol: exists.idRol, nombreRol: exists.rol?.nombreRol });
+      const nuevoEsOperador = await this.isIdRolOperador(norm.idRol);
+      if (existEsOperador && nuevoEsOperador) {
         const dataUpdate: any = {};
         if (norm.nombreCompleto) dataUpdate.nombreCompleto = norm.nombreCompleto;
         if (norm.estado !== undefined) dataUpdate.estado = norm.estado;

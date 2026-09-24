@@ -105,7 +105,7 @@ export const routes = createBrowserRouter([
       {
         path: 'ingresos',
         element: (
-          <PermissionRoute modulo="ingresos" accion="ver">
+          <PermissionRoute modulo="inventario" accion="ver">
             <Ingresos />
           </PermissionRoute>
         ),

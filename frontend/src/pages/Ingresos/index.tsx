@@ -44,7 +44,7 @@ const Ingresos = () => {
   const [productos, setProductos] = useState<any[]>([])
   const [fetching, setFetching] = useState(true)
   const [initialLoading, setInitialLoading] = useState(true)
-  const perm = usePermissions('ingresos')
+  const perm = usePermissions('inventario')
 
   const loadData = useCallback(async () => {
     setFetching(true)

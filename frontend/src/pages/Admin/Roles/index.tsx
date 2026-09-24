@@ -18,7 +18,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, SafetyOutlined, SettingOutl
 import ModalDrawer from '../../../components/common/ModalDrawer'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { Permisos } from '../../../store/auth.store'
-import { get } from '../../../api/services/api'
+import { get, post, patch, remove } from '../../../api/services/api'
 
 const { Title } = Typography
 
@@ -59,45 +59,10 @@ const fullPermisos = (): Permisos => {
   return p
 }
 
-const initialData: Rol[] = [
-  {
-    id: 1,
-    nombre: 'GERENCIA',
-    estado: 'ACTIVO',
-    permisos: Object.fromEntries(MODULOS.map((m) => [m.key, { ver: true, crear: true, editar: true, eliminar: true }])),
-  },
-  {
-    id: 2,
-    nombre: 'ADMIN BODEGA',
-    estado: 'ACTIVO',
-    permisos: {
-      ...fullPermisos(),
-      dashboard: { ver: true, crear: false, editar: false, eliminar: false },
-      clientes: { ver: true, crear: true, editar: true, eliminar: false },
-      proveedores: { ver: true, crear: true, editar: true, eliminar: false },
-      productos: { ver: true, crear: true, editar: true, eliminar: true },
-      maquinas: { ver: true, crear: false, editar: true, eliminar: false },
-      operadores: { ver: true, crear: false, editar: false, eliminar: false },
-      inventario: { ver: true, crear: true, editar: true, eliminar: true },
-      despachos: { ver: true, crear: true, editar: true, eliminar: false },
-    },
-  },
-  {
-    id: 3,
-    nombre: 'TESORERO',
-    estado: 'ACTIVO',
-    permisos: {
-      ...fullPermisos(),
-      dashboard: { ver: true },
-      clientes: { ver: true },
-      tesoreria: { ver: true, crear: true, editar: true, eliminar: true },
-      maquinas: { ver: true },
-    },
-  },
-]
+const SISTEMA_ROLES = ['desarrollador', 'bodega', 'tesorería', 'tesoreria', 'operador', 'megacuadro']
 
 const Roles = () => {
-  const [data, setData] = useState<Rol[]>(initialData)
+  const [data, setData] = useState<Rol[]>([])
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Rol | null>(null)
   const [permisosForm, setPermisosForm] = useState<Permisos>(fullPermisos())
@@ -111,29 +76,27 @@ const Roles = () => {
     try {
       const resp: any = await get('/admin/roles')
       const raw = resp?.data || []
-      if (Array.isArray(raw) && raw.length > 0) {
-        const mapped: Rol[] = raw.map((r: any) => {
-          let permisosParsed: Permisos = fullPermisos()
-          try {
-            if (r.permisos) {
-              permisosParsed = typeof r.permisos === 'string' ? JSON.parse(r.permisos) : r.permisos
-            }
-          } catch { permisosParsed = fullPermisos() }
-          return {
-            id: Number(r.idRol ?? r.id),
-            nombre: r.nombreRol || r.nombre || '',
-            estado: (r.estado || 'ACTIVO') as 'ACTIVO' | 'INACTIVO',
-            permisos: permisosParsed,
+      const mapped: Rol[] = raw.map((r: any) => {
+        let permisosParsed: Permisos = fullPermisos()
+        try {
+          if (r.permisosCrud) {
+            permisosParsed = typeof r.permisosCrud === 'string' ? JSON.parse(r.permisosCrud) : r.permisosCrud
+          } else if (r.permisos) {
+            permisosParsed = typeof r.permisos === 'string' ? JSON.parse(r.permisos) : r.permisos
           }
-        })
-        setData(mapped)
-      } else {
-        setData(initialData)
-      }
+        } catch { permisosParsed = fullPermisos() }
+        return {
+          id: Number(r.idRol ?? r.id),
+          nombre: r.nombreRol || r.nombre || '',
+          estado: (r.estado ?? true) ? 'ACTIVO' : 'INACTIVO',
+          permisos: permisosParsed,
+        }
+      })
+      setData(mapped)
       setEndpointNoImplementado(false)
     } catch (e: any) {
       setEndpointNoImplementado(true)
-      setData(initialData)
+      setData([])
     } finally {
       setLoadingTable(false)
     }
@@ -191,27 +154,40 @@ const Roles = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
-      const payload: Rol = {
-        id: editing?.id || Math.max(0, ...data.map((d) => d.id)) + 1,
-        nombre: values.nombre.toUpperCase(),
-        estado: values.estado ? 'ACTIVO' : 'INACTIVO',
-        permisos: permisosForm,
-      }
+      const permisosCrud = permisosForm
       if (editing) {
-        setData(data.map((r) => (r.id === editing.id ? { ...r, ...payload } : r)))
+        await patch<any>(`/admin/roles/${editing.id}`, {
+          nombreRol: values.nombre.trim(),
+          estado: values.estado ? true : false,
+          permisosCrud,
+        })
         message.success('Rol actualizado')
       } else {
-        setData([...data, payload])
+        await post<any>('/admin/roles', {
+          nombreRol: values.nombre.trim(),
+          estado: values.estado ? true : false,
+          permisosCrud,
+        })
         message.success('Rol creado')
       }
       reset()
+      await loadData()
+    } catch (e: any) {
+      const m = e?.response?.data?.message
+      message.error(Array.isArray(m) ? m.join(' · ') : typeof m === 'string' ? m : String(e?.message || e || 'Error al guardar rol'))
     } finally {
       setLoading(false)
     }
   }
-  const handleDelete = (id: number) => {
-    setData(data.filter((c) => c.id !== id))
-    message.success('Rol eliminado')
+  const handleDelete = async (id: number) => {
+    try {
+      await remove(`/admin/roles/${id}`)
+      message.success('Rol eliminado')
+      await loadData()
+    } catch (e: any) {
+      const m = e?.response?.data?.message
+      message.error(Array.isArray(m) ? m.join(' · ') : typeof m === 'string' ? m : String(e?.message || e || 'Error al eliminar rol'))
+    }
   }
 
   const contarPermisos = (p: Permisos) => {
@@ -248,16 +224,22 @@ const Roles = () => {
     {
       title: 'Acciones',
       key: 'acc',
-      render: (_: any, r: Rol) => (
-        <Space>
-          {perm.editar && <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>Editar</Button>}
-          {perm.eliminar && (
-            <Popconfirm title="¿Eliminar rol?" onConfirm={() => handleDelete(r.id)}>
-              <Button type="link" danger icon={<DeleteOutlined />}>Eliminar</Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+      render: (_: any, r: Rol) => {
+        const esSistema = SISTEMA_ROLES.includes(String(r.nombre || '').toLowerCase())
+        if (esSistema) {
+          return <Tag color="default">Sistema</Tag>
+        }
+        return (
+          <Space>
+            {perm.editar && <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>Editar</Button>}
+            {perm.eliminar && (
+              <Popconfirm title="¿Eliminar rol?" onConfirm={() => handleDelete(r.id)}>
+                <Button type="link" danger icon={<DeleteOutlined />}>Eliminar</Button>
+              </Popconfirm>
+            )}
+          </Space>
+        )
+      },
     },
   ]
 
@@ -270,16 +252,6 @@ const Roles = () => {
           {perm.crear && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Nuevo Rol</Button>}
         </Space>
       </div>
-
-      {endpointNoImplementado && (
-        <Alert
-          type="error"
-          showIcon
-          message="🛑 Endpoint /admin/roles NO implementado en Backend"
-          description="La lista de roles mostrada es provisional hardcodeada. Crear el endpoint en NestJS para persistencia real. Los cambios en el drawer se guardan solo localmente y se pierden al refrescar."
-          style={{ marginBottom: 16 }}
-        />
-      )}
 
       <Table rowKey="id" dataSource={data} columns={columns} pagination={{ pageSize: 8 }} />
 

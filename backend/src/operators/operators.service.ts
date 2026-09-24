@@ -34,6 +34,13 @@ function normalizeOperadorInputLegacy(dto: CreateOperadorDto | UpdateOperadorDto
   return { nombreCompleto, usuarioLogin, zonaAsignada, idRol, idUsuario, estado, email, password, telefono, fechaIngreso };
 }
 
+const esRolOperador = (rol: { idRol?: number; nombreRol?: string | null } | null | undefined): boolean => {
+  if (!rol) return false;
+  if (String(rol.nombreRol || '').toUpperCase().includes('OPERADOR')) return true;
+  if (Number(rol.idRol) === 4) return true;
+  return false;
+};
+
 @Injectable()
 export class OperatorsService {
   constructor(private prisma: PrismaService) {}
@@ -182,10 +189,11 @@ export class OperatorsService {
     return this.prisma.$transaction(async (tx) => {
       const usuarioVinculado = await tx.usuariosSistema.findUnique({
         where: { idUsuario: op.idUsuario },
+        include: { rol: true },
       });
       await tx.operadores.delete({ where: { idOperador: id } });
-      // Si el usuario vinculado EXCLUSIVAMENTE era Rol Operador, lo borramos para NO dejar usuario huérfano zombie en Admin/Usuarios
-      if (usuarioVinculado && Number(usuarioVinculado.idRol) === 4) {
+      const esOperador = usuarioVinculado && esRolOperador({ idRol: usuarioVinculado.idRol, nombreRol: usuarioVinculado.rol?.nombreRol });
+      if (esOperador) {
         await tx.usuariosSistema.delete({ where: { idUsuario: op.idUsuario } });
       }
       return op;
