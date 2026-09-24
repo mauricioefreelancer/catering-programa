@@ -7,6 +7,10 @@ import helmet from 'helmet';
 const BigIntSerializer = (v: any) => {
   if (v === null || v === undefined) return v;
   if (typeof v === 'bigint') return v.toString();
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    return v.toISOString();
+  }
   if (typeof v === 'object') {
     if (Array.isArray(v)) return v.map(BigIntSerializer);
     if (typeof v.toNumber === 'function') {
