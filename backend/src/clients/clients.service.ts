@@ -20,13 +20,12 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto, isUpdat
   const contactoDireccion = firstNonEmpty(dto.contactoDireccion, dto.direccion);
   const contactoCiudad = firstNonEmpty(dto.contactoCiudad, dto.ciudad);
   const fechaContratoRaw = firstNonEmpty(dto.fechaContrato, dto.fecha_contrato, (dto as any).fecha);
-  let fechaContratoISO: string | undefined = undefined;
+  let fechaContratoDate: Date | undefined = undefined;
   let fechaFueEnviada = false;
   if (fechaContratoRaw !== undefined && fechaContratoRaw !== null && String(fechaContratoRaw).trim() !== '') {
     fechaFueEnviada = true;
     try {
       const str = String(fechaContratoRaw).trim();
-      const pad = (n: number) => String(n).padStart(2, '0');
       let yy: number | undefined, mm: number | undefined, dd: number | undefined;
       if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
         const [y, m, d] = str.split('-').map(Number);
@@ -44,10 +43,10 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto, isUpdat
       }
       if (yy !== undefined && mm !== undefined && dd !== undefined
         && yy >= 1900 && yy <= 2999 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-        fechaContratoISO = `${yy}-${pad(mm)}-${pad(dd)}`;
+        fechaContratoDate = new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
       }
     } catch {
-      fechaContratoISO = undefined;
+      fechaContratoDate = undefined;
     }
   }
   const result: any = {};
@@ -58,14 +57,15 @@ function normalizeClienteInput(dto: CreateClienteDto | UpdateClienteDto, isUpdat
   if (contactoCorreo !== undefined) result.contactoCorreo = String(contactoCorreo).slice(0, 200);
   if (contactoDireccion !== undefined) result.contactoDireccion = String(contactoDireccion).slice(0, 300);
   if (contactoCiudad !== undefined) result.contactoCiudad = String(contactoCiudad).slice(0, 100);
-  if (fechaContratoISO !== undefined) {
-    result.fechaContrato = fechaContratoISO;
+  if (fechaContratoDate !== undefined) {
+    result.fechaContrato = fechaContratoDate;
   } else if (!isUpdate) {
     if (!fechaFueEnviada) {
       try {
-        const pad = (n: number) => String(n).padStart(2, '0');
         const ahora = new Date();
-        result.fechaContrato = `${ahora.getFullYear()}-${pad(ahora.getMonth() + 1)}-${pad(ahora.getDate())}`;
+        result.fechaContrato = new Date(Date.UTC(
+          ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 12, 0, 0,
+        ));
       } catch {}
     }
   }
