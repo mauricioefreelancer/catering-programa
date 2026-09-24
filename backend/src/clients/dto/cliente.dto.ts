@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsDateString, IsEmail, IsNotEmpty, IsOptional, IsPhoneNumber, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
 
 function normalizeEstado(v: any): boolean {
   if (typeof v === 'boolean') return v;
@@ -12,7 +12,7 @@ function normalizeEstado(v: any): boolean {
 
 export class CreateClienteDto {
   @IsOptional()
-  @IsDateString()
+  @IsString()
   fechaContrato?: string;
 
   @IsOptional()
@@ -52,6 +52,7 @@ export class CreateClienteDto {
 
   // =====================================================
   // CAMPOS ALIAS (compatibilidad Frontend legacy mock)
+  // Normalizacion flexible en clients.service.ts (admite DD/MM/YYYY o YYYY-MM-DD)
   // =====================================================
   @IsOptional() @IsString() nombres?: string;
   @IsOptional() @IsString() apellidos?: string;
@@ -65,11 +66,11 @@ export class CreateClienteDto {
   @IsOptional() @IsString() @MaxLength(30) NIT?: string;
   @IsOptional() @IsString() @MaxLength(250) razon_social?: string;
   @IsOptional() @IsString() contacto?: string;
-  @IsOptional() @IsDateString() fecha_contrato?: string;
+  @IsOptional() @IsString() fecha_contrato?: string;
 }
 
 export class UpdateClienteDto {
-  @IsOptional() @IsDateString() fechaContrato?: string;
+  @IsOptional() @IsString() fechaContrato?: string;
   @IsOptional() @IsString() @MaxLength(30) nit?: string;
   @IsOptional() @IsString() @MaxLength(250) razonSocial?: string;
   @IsOptional() @IsString() contactoNombre?: string;
@@ -94,7 +95,7 @@ export class UpdateClienteDto {
   @IsOptional() @IsString() @MaxLength(30) NIT?: string;
   @IsOptional() @IsString() @MaxLength(250) razon_social?: string;
   @IsOptional() @IsString() contacto?: string;
-  @IsOptional() @IsDateString() fecha_contrato?: string;
+  @IsOptional() @IsString() fecha_contrato?: string;
 }
 
 export class QueryClienteDto {
