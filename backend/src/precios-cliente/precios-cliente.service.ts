@@ -41,13 +41,14 @@ export class PreciosClienteService {
       ? ((dto.precioVenta - Number(producto.costoTotal)) / dto.precioVenta) * 100
       : 0;
     const umbral = Number(process.env.UMBRAL_MARGEN || 30);
+    let creado;
     try {
-      return await this.prisma.preciosCliente.create({
+      creado = await this.prisma.preciosCliente.create({
         data: {
           idCliente: dto.idCliente,
           idProducto: dto.idProducto,
-          precioVenta: new Prisma.Decimal(dto.precioVenta),
-          margenActual: new Prisma.Decimal(margen),
+          precioVenta: new Prisma.Decimal(Number(dto.precioVenta)),
+          margenActual: new Prisma.Decimal(Number(margen)),
           alertaMargen: margen < umbral,
         },
       });
@@ -57,6 +58,17 @@ export class PreciosClienteService {
       }
       throw new BadRequestException(`Error al crear precio: ${e?.message || 'ver log'} (meta: ${JSON.stringify(e?.meta || {})})`);
     }
+    // Devolver datos planos evitando Decimal/objetos que puedan romper la
+    // serializacion global del JSON de NestJS.
+    return {
+      idPrecio: creado.idPrecio,
+      idCliente: creado.idCliente,
+      idProducto: creado.idProducto,
+      precioVenta: Number(creado.precioVenta),
+      margenActual: Number(creado.margenActual),
+      alertaMargen: creado.alertaMargen,
+      fechaCreacion: creado.fechaCreacion,
+    };
   }
 
   async update(id: number, dto: UpdatePrecioClienteDto) {
