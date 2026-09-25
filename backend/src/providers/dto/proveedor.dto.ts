@@ -10,12 +10,19 @@ function normalizeEstado(v: any): boolean {
   return true;
 }
 
+// Convierte string vacio a undefined para que @IsOptional la ignore y
+// @IsEmail no la rechace con 400 cuando el formulario envia correo vacio.
+function emptyToUndefined(v: any): any {
+  if (typeof v === 'string' && v.trim() === '') return undefined;
+  return v;
+}
+
 export class CreateProveedorDto {
   @IsString() @IsNotEmpty() @MaxLength(30) nit: string;
   @IsString() @IsNotEmpty() @MaxLength(250) razonSocial: string;
   @IsOptional() @IsString() asesorNombre?: string;
   @IsOptional() @IsString() asesorTelefono?: string;
-  @IsOptional() @IsEmail() asesorCorreo?: string;
+  @IsOptional() @Transform(({ value }) => emptyToUndefined(value)) @IsEmail() asesorCorreo?: string;
   @IsOptional() @IsString() condicionPagoTipo?: string;
   @IsOptional() @IsInt() @Min(0) condicionPagoDias?: number;
   @IsOptional() @IsString() bancoNombre?: string;
@@ -34,8 +41,8 @@ export class CreateProveedorDto {
   @IsOptional() @IsString() telefono?: string;
   @IsOptional() @IsString() telefono_asesor?: string;
   @IsOptional() @IsString() asesor_telefono?: string;
-  @IsOptional() @IsEmail() email?: string;
-  @IsOptional() @IsEmail() correo?: string;
+  @IsOptional() @Transform(({ value }) => emptyToUndefined(value)) @IsEmail() email?: string;
+  @IsOptional() @Transform(({ value }) => emptyToUndefined(value)) @IsEmail() correo?: string;
   @IsOptional() @IsString() condicionesPago?: string;
   @IsOptional() @IsString() condicion_pago?: string;
   @IsOptional() @IsString() condiciones_pago?: string;
@@ -58,7 +65,7 @@ export class UpdateProveedorDto {
   @IsOptional() @IsString() @MaxLength(250) razonSocial?: string;
   @IsOptional() @IsString() asesorNombre?: string;
   @IsOptional() @IsString() asesorTelefono?: string;
-  @IsOptional() @IsEmail() asesorCorreo?: string;
+  @IsOptional() @Transform(({ value }) => emptyToUndefined(value)) @IsEmail() asesorCorreo?: string;
   @IsOptional() @IsString() condicionPagoTipo?: string;
   @IsOptional() @IsInt() @Min(0) condicionPagoDias?: number;
   @IsOptional() @IsString() bancoNombre?: string;
@@ -74,8 +81,8 @@ export class UpdateProveedorDto {
   @IsOptional() @IsString() telefono?: string;
   @IsOptional() @IsString() telefono_asesor?: string;
   @IsOptional() @IsString() asesor_telefono?: string;
-  @IsOptional() @IsEmail() email?: string;
-  @IsOptional() @IsEmail() correo?: string;
+  @IsOptional() @Transform(({ value }) => emptyToUndefined(value)) @IsEmail() email?: string;
+  @IsOptional() @Transform(({ value }) => emptyToUndefined(value)) @IsEmail() correo?: string;
   @IsOptional() @IsString() condicionesPago?: string;
   @IsOptional() @IsString() condicion_pago?: string;
   @IsOptional() @IsString() condiciones_pago?: string;

@@ -109,8 +109,10 @@ const Proveedores = () => {
         bancoTipoCuenta: values.tipo_cuenta,
         bancoNumeroCuenta: values.cuenta_bancaria,
         bancoTitular: values.titular_cuenta,
-        estado: true,
       }
+      // Estado: solo se forcea ACTIVO en la creacion. En edicion se respeta el
+      // valor actual para no volver ACTIVO un proveedor que estaba INACTIVO.
+      if (!editing) payload.estado = true
       if (editing) {
         await patch<any>(`/proveedores/${editing.id}`, payload)
         message.success('Proveedor actualizado')
@@ -131,7 +133,7 @@ const Proveedores = () => {
   const handleDelete = async (id: number) => {
     try {
       await remove(`/proveedores/${id}`)
-      setData(data.filter((c) => c.id !== id))
+      await loadData()
       message.success('Proveedor eliminado')
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || 'Error al eliminar proveedor')
