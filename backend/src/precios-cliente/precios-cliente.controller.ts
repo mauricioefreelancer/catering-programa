@@ -13,6 +13,7 @@ export class PreciosClienteController {
   @Get('alertas-margen') @Permissions('preciosCliente', 'ver') alertas() { return this.srv.alertasMargen(); }
   @Get(':id') @Permissions('preciosCliente', 'ver') findOne(@Param('id') id: string) { return this.srv.findOne(+id); }
   @Post() @Permissions('preciosCliente', 'crear') create(@Body() dto: CreatePrecioClienteDto) { return this.srv.create(dto); }
+  @Patch('bulk') @Permissions('preciosCliente', 'editar') bulkUpdate(@Body() body: any) { return this.srv.bulkUpdate(body.cambios); }
   @Post('aumento-ipc') @Permissions('preciosCliente', 'editar') aumento(@Body() dto: AumentoIpcDto) { return this.srv.aumentoIpc(dto); }
   @Patch(':id') @Permissions('preciosCliente', 'editar') update(@Param('id') id: string, @Body() dto: UpdatePrecioClienteDto) { return this.srv.update(+id, dto); }
   @Delete(':id') @Permissions('preciosCliente', 'eliminar') remove(@Param('id') id: string) { return this.srv.remove(+id); }

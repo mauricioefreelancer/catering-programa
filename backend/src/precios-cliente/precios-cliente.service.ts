@@ -41,15 +41,22 @@ export class PreciosClienteService {
       ? ((dto.precioVenta - Number(producto.costoTotal)) / dto.precioVenta) * 100
       : 0;
     const umbral = Number(process.env.UMBRAL_MARGEN || 30);
-    return this.prisma.preciosCliente.create({
-      data: {
-        idCliente: dto.idCliente,
-        idProducto: dto.idProducto,
-        precioVenta: new Prisma.Decimal(dto.precioVenta),
-        margenActual: new Prisma.Decimal(margen),
-        alertaMargen: margen < umbral,
-      },
-    });
+    try {
+      return await this.prisma.preciosCliente.create({
+        data: {
+          idCliente: dto.idCliente,
+          idProducto: dto.idProducto,
+          precioVenta: new Prisma.Decimal(dto.precioVenta),
+          margenActual: new Prisma.Decimal(margen),
+          alertaMargen: margen < umbral,
+        },
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new BadRequestException('Ya existe un precio asignado para ese cliente y producto. Seleccione otro o edite el existente.');
+      }
+      throw new BadRequestException(`Error al crear precio: ${e?.message || 'ver log'} (meta: ${JSON.stringify(e?.meta || {})})`);
+    }
   }
 
   async update(id: number, dto: UpdatePrecioClienteDto) {
@@ -71,6 +78,40 @@ export class PreciosClienteService {
   async remove(id: number) {
     await this.findOne(id);
     return this.prisma.preciosCliente.delete({ where: { idPrecio: id } });
+  }
+
+  // Actualizacion masiva de precios recibida desde la UI (PATCH /bulk).
+  // `cambios` es un arreglo de { id, precio_venta }.
+  async bulkUpdate(cambios: { id: number; precio_venta?: number }[]) {
+    if (!Array.isArray(cambios)) throw new BadRequestException('cambios debe ser un arreglo');
+    const umbral = Number(process.env.UMBRAL_MARGEN || 30);
+    const actualizados: number[] = [];
+    const errores: { id: number; mensaje: string }[] = [];
+
+    for (const c of cambios) {
+      try {
+        const id = Number(c.id);
+        if (!id) continue;
+        const actual = await this.findOne(id);
+        const precioVenta = c.precio_venta !== undefined ? Number(c.precio_venta) : Number(actual.precioVenta);
+        const costoTotal = Number((actual.producto as any)?.costoTotal || 0);
+        const margen = precioVenta > 0 ? ((precioVenta - costoTotal) / precioVenta) * 100 : 0;
+        await this.prisma.preciosCliente.update({
+          where: { idPrecio: id },
+          data: {
+            precioVenta: new Prisma.Decimal(precioVenta),
+            margenActual: new Prisma.Decimal(margen),
+            alertaMargen: margen < umbral,
+            fechaUltimaActualizacion: new Date(),
+          },
+        });
+        actualizados.push(id);
+      } catch (e: any) {
+        errores.push({ id: Number(c.id), mensaje: e?.message || 'Error al actualizar' });
+      }
+    }
+
+    return { actualizados: actualizados.length, ids: actualizados, errores };
   }
 
   async aumentoIpc(dto: AumentoIpcDto) {

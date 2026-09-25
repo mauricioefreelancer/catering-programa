@@ -60,6 +60,9 @@ const Precios = () => {
   const [loading, setLoading] = useState(false)
   const [ipcForm] = Form.useForm()
   const [preview, setPreview] = useState<Precio[] | null>(null)
+  const [openCrear, setOpenCrear] = useState(false)
+  const [crearLoading, setCrearLoading] = useState(false)
+  const [crearForm] = Form.useForm()
   const perm = usePermissions('precios')
 
   const loadData = useCallback(async () => {
@@ -75,18 +78,26 @@ const Precios = () => {
       const clientesData = clientesRes?.data ?? clientesRes ?? []
       const productosData = productosRes?.data ?? productosRes ?? []
 
-      setClientes(clientesData)
-      setProductos(productosData)
+      setClientes(clientesData.map((c: any) => ({ id: Number(c.idCliente ?? c.id), razonSocial: c.razonSocial || c.nombre, nombre: c.nombre || c.razonSocial })))
+      setProductos(productosData.map((p: any) => ({ id: Number(p.idProducto ?? p.id), nombreProducto: p.nombreProducto || p.nombre, nombre: p.nombre || p.nombreProducto })))
 
-      const mapped: Precio[] = preciosData.map((p: any) => ({
-        id: p.idPrecioCliente ?? p.id,
-        clienteId: p.idCliente,
-        clienteNombre: clientesData.find((c: any) => c.id === p.idCliente)?.razonSocial ?? clientesData.find((c: any) => c.id === p.idCliente)?.nombre ?? '',
-        productoId: p.idProducto,
-        productoNombre: productosData.find((pr: any) => pr.id === p.idProducto)?.nombreProducto ?? productosData.find((pr: any) => pr.id === p.idProducto)?.nombre ?? '',
-        costo_total: p.costoTotal ?? p.costo_total ?? 0,
-        precio_venta: p.precioVenta ?? p.precio_venta ?? 0,
-      }))
+      const mapped: Precio[] = preciosData.reduce((acc: Precio[], p: any) => {
+        // Evitar duplicados de cliente+producto (unique en BD intenta forzarlo,
+        // pero si la BD ya tiene filas repetidas de versiones viejas, se muestran todas).
+        if (acc.some((x) => x.clienteId === p.idCliente && x.productoId === p.idProducto)) return acc;
+        const cli = p.cliente || clientesData.find((c: any) => Number(c.idCliente ?? c.id) === Number(p.idCliente))
+        const prod = p.producto || productosData.find((pr: any) => Number(pr.idProducto ?? pr.id) === Number(p.idProducto))
+        acc.push({
+          id: p.idPrecio ?? p.idPrecioCliente ?? p.id,
+          clienteId: p.idCliente,
+          clienteNombre: cli?.razonSocial || cli?.nombre || `Cliente #${p.idCliente}`,
+          productoId: p.idProducto,
+          productoNombre: prod?.nombreProducto || prod?.nombre || `Producto #${p.idProducto}`,
+          costo_total: Number(prod?.costoTotal ?? p.costoTotal ?? p.costo_total ?? 0),
+          precio_venta: Number(p.precioVenta ?? p.precio_venta ?? 0),
+        })
+        return acc
+      }, [])
 
       setData(mapped)
     } catch (err: any) {
@@ -121,10 +132,12 @@ const Precios = () => {
       id: Number(id),
       precio_venta,
     }))
+    if (cambios.length === 0) return
     try {
       await apiService.patch('/precios-cliente/bulk', { cambios })
       message.success(`Precios actualizados (${cambios.length} cambios)`)
       setEditMap({})
+      await loadData()
     } catch (err: any) {
       const is404 = err?.response?.status === 404 || err?.status === 404
       message.error(is404 ? 'Endpoint bulk no disponible (404). Cambios mantenidos localmente.' : 'Error al guardar: ' + (err?.message || err) + '. Cambios mantenidos localmente.')
@@ -191,6 +204,26 @@ const Precios = () => {
     ipcForm.resetFields()
   }
 
+  const handleCrear = async (values: any) => {
+    setCrearLoading(true)
+    try {
+      await apiService.post('/precios-cliente', {
+        idCliente: values.idCliente,
+        idProducto: values.idProducto,
+        precioVenta: Number(values.precioVenta),
+      })
+      message.success('Precio asignado correctamente')
+      setOpenCrear(false)
+      crearForm.resetFields()
+      await loadData()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Error al asignar precio'
+      message.error(Array.isArray(msg) ? msg.join(', ') : msg)
+    } finally {
+      setCrearLoading(false)
+    }
+  }
+
   const columns = [
     { title: 'Cliente', dataIndex: 'clienteNombre', key: 'c', width: 200, render: (v: string) => <Tag color="blue">{v}</Tag> },
     { title: 'Producto', dataIndex: 'productoNombre', key: 'p', render: (v: string) => <strong>{v}</strong> },
@@ -235,9 +268,14 @@ const Precios = () => {
             {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombreProducto || p.nombre || `Producto #${p.id}`}</Option>)}
           </Select>
           {perm.crear && (
-            <Button icon={<RiseOutlined />} onClick={() => setOpenIPC(true)}>
-              Aumento IPC
-            </Button>
+            <>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setOpenCrear(true); crearForm.resetFields() }}>
+                Nueva Asignación
+              </Button>
+              <Button icon={<RiseOutlined />} onClick={() => setOpenIPC(true)}>
+                Aumento IPC
+              </Button>
+            </>
           )}
           {perm.editar && (
             <Button type="primary" icon={<SaveOutlined />} onClick={saveAll} disabled={Object.keys(editMap).length === 0}>
@@ -357,6 +395,33 @@ const Precios = () => {
             </div>
           </>
         )}
+      </Modal>
+
+      <Modal
+        title="Nueva Asignación de Precio"
+        open={openCrear}
+        onCancel={() => { setOpenCrear(false); crearForm.resetFields() }}
+        okText="Asignar Precio"
+        cancelText="Cancelar"
+        confirmLoading={crearLoading}
+        onOk={() => crearForm.submit()}
+        width={520}
+      >
+        <Form form={crearForm} layout="vertical" onFinish={handleCrear}>
+          <Form.Item name="idCliente" label="Cliente" rules={[{ required: true, message: 'Seleccione el cliente' }]}>
+            <Select showSearch placeholder="Seleccione el cliente" optionFilterProp="children">
+              {clientes.map((c) => <Option key={c.id} value={c.id}>{c.razonSocial || c.nombre || `Cliente #${c.id}`}</Option>)}
+            </Select>
+          </Form.Item>
+          <Form.Item name="idProducto" label="Producto" rules={[{ required: true, message: 'Seleccione el producto' }]}>
+            <Select showSearch placeholder="Seleccione el producto" optionFilterProp="children">
+              {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombreProducto || p.nombre || `Producto #${p.id}`}</Option>)}
+            </Select>
+          </Form.Item>
+          <Form.Item name="precioVenta" label="Precio de Venta" rules={[{ required: true, message: 'Ingrese el precio de venta' }]}>
+            <InputNumber style={{ width: '100%' }} min={0} step={100} prefix="$" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )
