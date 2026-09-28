@@ -101,6 +101,8 @@ const Maquinas = () => {
   const [editBtnIdx, setEditBtnIdx] = useState<number | null>(null)
   const [formBtn] = Form.useForm()
 
+  const [rend, setRend] = useState<{ materiasPrimas: any[]; dosificados: any[]; maquina?: any } | null>(null)
+
   const loadData = useCallback(async () => {
     setFetching(true)
     try {
@@ -108,7 +110,7 @@ const Maquinas = () => {
         apiService.get('/maquinas?include=cliente,operador'),
         apiService.get('/clientes'),
         apiService.get('/operadores'),
-        apiService.get('/productos'),
+        apiService.get('/productos?limit=2000&take=2000'),
       ])
 
       const maquinasList = Array.isArray(maquinasRes) ? maquinasRes : (maquinasRes?.data || [])
@@ -175,13 +177,25 @@ const Maquinas = () => {
     setEditing(null)
     setEspirales([])
     setBotones([])
+    setRend(null)
     setOpen(false)
+  }
+
+  const loadRendimiento = async (id: number) => {
+    try {
+      const rd: any = await apiService.get(`/maquinas/${id}/rendimiento`)
+      const rdata = rd?.data ?? rd ?? {}
+      setRend({ materiasPrimas: rdata.materiasPrimas ?? [], dosificados: rdata.dosificados ?? [], maquina: rdata.maquina })
+    } catch {
+      setRend({ materiasPrimas: [], dosificados: [] })
+    }
   }
 
   const openEdit = async (m: Maquina) => {
     setEditing(m)
     setEspirales([])
     setBotones([])
+    setRend(null)
     setOpen(true)
     try {
       // Cargar detalle completo (mapa espirales/botones + precio de venta por cliente)
@@ -209,6 +223,9 @@ const Maquinas = () => {
           precio_venta_cliente: b.precioVentaCliente,
         })),
       )
+      if (m.tipo === 'CAFE') {
+        loadRendimiento(m.id)
+      }
     } catch {
       // Si falla el detalle, mantener lo que venga en la lista
       setEspirales(m.espirales ? [...m.espirales] : [])
@@ -348,6 +365,7 @@ const Maquinas = () => {
       if (editing?.id) {
         try {
           await apiService.post(`/maquinas/${editing.id}/espirales`, { espirales: ns })
+          if (editing.tipo === 'CAFE') loadRendimiento(editing.id)
         } catch {
           message.warning('El espiral quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
         }
@@ -361,6 +379,9 @@ const Maquinas = () => {
     const removed = ns.splice(idx, 1)[0]
     setEspirales(ns)
     message.success(`Espiral ${removed.espiral} eliminada`)
+    if (editing?.id && editing.tipo === 'CAFE') {
+      apiService.post(`/maquinas/${editing.id}/espirales`, { espirales: ns }).then(() => loadRendimiento(editing.id)).catch(() => {})
+    }
   }
 
   const openAddBoton = () => {
@@ -422,6 +443,7 @@ const Maquinas = () => {
       if (editing?.id) {
         try {
           await apiService.post(`/maquinas/${editing.id}/botones`, { botones: ns })
+          if (editing.tipo === 'CAFE') loadRendimiento(editing.id)
         } catch {
           message.warning('El botón quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
         }
@@ -435,6 +457,9 @@ const Maquinas = () => {
     const removed = ns.splice(idx, 1)[0]
     setBotones(ns)
     message.success(`Botón ${removed.boton} eliminado`)
+    if (editing?.id && editing.tipo === 'CAFE') {
+      apiService.post(`/maquinas/${editing.id}/botones`, { botones: ns }).then(() => loadRendimiento(editing.id)).catch(() => {})
+    }
   }
 
   const columns = [
@@ -540,12 +565,106 @@ const Maquinas = () => {
                 </>
               ),
             },
-            ...(editing?.tipo === 'CAFE'
-              ? [
-                  {
-                    key: 'NRQ',
+            ...[
+              {
+                key: 'MAPA',
+                label: `🗂️ Mapa MP (Espirales) ${totalEspirales > 0 ? `· ${totalEspirales}` : ''}`,
+                children: (
+                  <Card
+                    size="small"
+                    title="Configurar espirales y productos — defínelas una a una"
+                    type="inner"
+                    extra={
+                      <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openAddEspiral}>
+                        Agregar Espiral
+                      </Button>
+                    }
+                  >
+                    <Table
+                      size="small"
+                      rowKey="id"
+                      dataSource={espirales}
+                      pagination={false}
+                      locale={{ emptyText: 'Sin espirales asignadas. Clic en "Agregar Espiral" para crear una.' }}
+                      columns={[
+                        {
+                          title: 'Espiral',
+                          dataIndex: 'espiral',
+                          width: 100,
+                          render: (v: string) => <Tag color="blue" style={{ fontFamily: 'monospace' }}>{v}</Tag>,
+                        },
+                        {
+                          title: 'Producto Asignado',
+                          dataIndex: 'productoNombre',
+                          render: (v: string) => v ? <span>{v}</span> : <Tag color="default">Sin asignar</Tag>,
+                        },
+                        {
+                          title: 'Precio Venta',
+                          dataIndex: 'precio_venta_cliente',
+                          width: 120,
+                          align: 'right',
+                          render: (v: number) =>
+                            v != null && !isNaN(v) ? (
+                              <b style={{ color: '#1677ff' }}>${Number(v).toLocaleString('es-CO')}</b>
+                            ) : (
+                              <Tag color="gold">Sin precio</Tag>
+                            ),
+                        },
+                        {
+                          title: 'Capacidad Actual',
+                          dataIndex: 'cantidad_actual',
+                          width: 130,
+                          align: 'right',
+                          render: (v: number, r: Espiral) => {
+                            const val = v ?? 0
+                            const max = r.capacidad_max ?? 1
+                            const pct = Math.min(100, Math.round((val / max) * 100))
+                            return (
+                              <Space>
+                                <b>{val}</b>
+                                <Tag color={val === 0 ? 'red' : pct > 50 ? 'green' : 'gold'}>
+                                  {pct}%
+                                </Tag>
+                              </Space>
+                            )
+                          },
+                        },
+                        {
+                          title: 'Capacidad Máx.',
+                          dataIndex: 'capacidad_max',
+                          width: 120,
+                          align: 'right',
+                          render: (v: number) => <span>{v ?? 0}</span>,
+                        },
+                        {
+                          title: 'Acciones',
+                          key: 'acc',
+                          width: 140,
+                          render: (_: any, r: Espiral, i: number) => (
+                            <Space size={4}>
+                              <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditEspiral(i)}>
+                                Editar
+                              </Button>
+                              <Popconfirm title={`¿Eliminar espiral ${r.espiral}?`} onConfirm={() => deleteEspiral(i)}>
+                                <Button size="small" type="link" danger icon={<DeleteOutlined />}>
+                                  Quitar
+                                </Button>
+                              </Popconfirm>
+                            </Space>
+                          ),
+                        },
+                      ]}
+                    />
+                  </Card>
+                ),
+              },
+              ...(editing?.tipo === 'CAFE'
+                ? [
+                    {
+                      key: 'NRQ',
                     label: `🔘 Mapa NRQ (Botones Café) ${totalBotones > 0 ? `· ${totalBotones}` : ''}`,
                     children: (
+                      <>
                       <Card
                         size="small"
                         title="Configurar botones dosificadora — defínelos uno a uno"
@@ -606,103 +725,130 @@ const Maquinas = () => {
                           ]}
                         />
                       </Card>
+                      <Card
+                        size="small"
+                        title="📈 Rendimiento de Producción (tazas servibles según Materia Prima en las espirales)"
+                        type="inner"
+                        style={{ marginTop: 12 }}
+                        extra={
+                          rend ? <Tag color="green">Actualizado</Tag> : <Tag color="default">Requiere guardar</Tag>
+                        }
+                      >
+                        {rend && rend.dosificados.length > 0 ? (
+                          <Table
+                            size="small"
+                            rowKey="idMapaNrq"
+                            dataSource={rend.dosificados}
+                            pagination={false}
+                            columns={[
+                              {
+                                title: 'Botón',
+                                dataIndex: 'boton',
+                                width: 90,
+                                render: (v: string) => <Tag color="purple" style={{ fontFamily: 'monospace' }}>{v}</Tag>,
+                              },
+                              {
+                                title: 'Dosificado',
+                                dataIndex: 'nombre',
+                                render: (v: string) => (v ? <strong>{v}</strong> : <Tag color="default">Sin asignar</Tag>),
+                              },
+                              {
+                                title: 'Tazas posibles',
+                                dataIndex: 'tazasPosibles',
+                                width: 130,
+                                align: 'right',
+                                render: (v: number) => <b style={{ color: '#1677ff' }}>{v.toLocaleString('es-CO')} 🥤</b>,
+                              },
+                              {
+                                title: 'Factor limitante',
+                                key: 'limitante',
+                                render: (_, r) =>
+                                  r.limitante ? <Tag color="gold">Falta: {r.limitante}</Tag> : <Tag color="green">Sin restricción</Tag>,
+                              },
+                              {
+                                title: 'Ingredientes por servicio',
+                                key: 'ing',
+                                render: (_, r) => (
+                                  <Space wrap size={4}>
+                                    {r.ingredientes && r.ingredientes.length > 0
+                                      ? r.ingredientes.map((ing: any, i: number) => (
+                                          <Tag key={i} color={ing.tazasPosibles === 0 ? 'red' : 'blue'}>
+                                            {ing.dosis} {ing.unidad} {ing.nombre}
+                                            {ing.tazasPosibles === 0 ? ' (sin MP)' : ''}
+                                          </Tag>
+                                        ))
+                                      : <Tag color="default">Sin receta</Tag>}
+                                  </Space>
+                                ),
+                              },
+                            ]}
+                          />
+                        ) : (
+                          <Tag style={{ display: 'block' }}>Asigne los botones y guarde (o ajuste las cantidades de MP en las espirales) para ver el cálculo de tazas.</Tag>
+                        )}
+                      </Card>
+                      <Card
+                        size="small"
+                        title="🗂️ Resumen Materias Primas (empaque → unidades → consumo de los botones)"
+                        type="inner"
+                        style={{ marginTop: 12 }}
+                      >
+                        {rend && rend.materiasPrimas.length > 0 ? (
+                          <Table
+                            size="small"
+                            rowKey="idProducto"
+                            dataSource={rend.materiasPrimas}
+                            pagination={false}
+                            columns={[
+                              {
+                                title: 'Materia Prima',
+                                dataIndex: 'nombre',
+                                render: (v: string) => <strong>{v || '—'}</strong>,
+                              },
+                              { title: 'Espiral', dataIndex: 'espiral', width: 80, render: (v: string) => <Tag color="blue">{v}</Tag> },
+                              { title: 'Empaques', dataIndex: 'empaques', width: 90, align: 'right', render: (v: number) => <span>{v}</span> },
+                              { title: 'Und/empaque', dataIndex: 'equivalencia', width: 100, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v}</span> },
+                              { title: 'Unidades disp.', dataIndex: 'unidadesDisponibles', width: 110, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v} {rend?.materiasPrimas?.[0]?.unidad || ''}</span> },
+                              {
+                                title: 'Dosis/servicio (suma botones)',
+                                dataIndex: 'dosisPorServicioTotal',
+                                width: 150,
+                                align: 'right',
+                                render: (v: number) => <span>{v || 0}</span>,
+                              },
+                              {
+                                title: 'Servicios posibles',
+                                dataIndex: 'serviciosPosibles',
+                                width: 130,
+                                align: 'right',
+                                render: (v: number) => <b style={{ color: '#1677ff' }}>{v?.toLocaleString?.('es-CO') ?? v} 🥤</b>,
+                              },
+                              {
+                                title: 'Despacho',
+                                key: 'despacho',
+                                width: 120,
+                                align: 'center',
+                                render: (_, r) =>
+                                  r.serviciosPosibles > 20 ? (
+                                    <Tag color="green">OK</Tag>
+                                  ) : r.serviciosPosibles > 0 ? (
+                                    <Tag color="gold">Próximo a reponer</Tag>
+                                  ) : (
+                                    <Tag color="red">Despachar MP</Tag>
+                                  ),
+                              },
+                            ]}
+                          />
+                        ) : (
+                          <Tag style={{ display: 'block' }}>No hay Materias Primas en las espirales de esta máquina café. Asigne MP en "Capacidad Actual" de las espirales para calcular el despacho.</Tag>
+                        )}
+                      </Card>
+                      </>
                     ),
                   },
                 ]
-              : [
-                  {
-                    key: 'MAPA',
-                    label: `🗂️ Mapa MP (Espirales) ${totalEspirales > 0 ? `· ${totalEspirales}` : ''}`,
-                    children: (
-                      <Card
-                        size="small"
-                        title="Configurar espirales y productos — defínelas una a una"
-                        type="inner"
-                        extra={
-                          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openAddEspiral}>
-                            Agregar Espiral
-                          </Button>
-                        }
-                      >
-                        <Table
-                          size="small"
-                          rowKey="id"
-                          dataSource={espirales}
-                          pagination={false}
-                          locale={{ emptyText: 'Sin espirales asignadas. Clic en "Agregar Espiral" para crear una.' }}
-                          columns={[
-                            {
-                              title: 'Espiral',
-                              dataIndex: 'espiral',
-                              width: 100,
-                              render: (v: string) => <Tag color="blue" style={{ fontFamily: 'monospace' }}>{v}</Tag>,
-                            },
-                            {
-                              title: 'Producto Asignado',
-                              dataIndex: 'productoNombre',
-                              render: (v: string) => v ? <span>{v}</span> : <Tag color="default">Sin asignar</Tag>,
-                            },
-                            {
-                              title: 'Precio Venta',
-                              dataIndex: 'precio_venta_cliente',
-                              width: 120,
-                              align: 'right',
-                              render: (v: number) =>
-                                v != null && !isNaN(v) ? (
-                                  <b style={{ color: '#1677ff' }}>${Number(v).toLocaleString('es-CO')}</b>
-                                ) : (
-                                  <Tag color="gold">Sin precio</Tag>
-                                ),
-                            },
-                            {
-                              title: 'Capacidad Actual',
-                              dataIndex: 'cantidad_actual',
-                              width: 130,
-                              align: 'right',
-                              render: (v: number, r: Espiral) => {
-                                const val = v ?? 0
-                                const max = r.capacidad_max ?? 1
-                                const pct = Math.min(100, Math.round((val / max) * 100))
-                                return (
-                                  <Space>
-                                    <b>{val}</b>
-                                    <Tag color={val === 0 ? 'red' : pct > 50 ? 'green' : 'gold'}>
-                                      {pct}%
-                                    </Tag>
-                                  </Space>
-                                )
-                              },
-                            },
-                            {
-                              title: 'Capacidad Máx.',
-                              dataIndex: 'capacidad_max',
-                              width: 120,
-                              align: 'right',
-                              render: (v: number) => <span>{v ?? 0}</span>,
-                            },
-                            {
-                              title: 'Acciones',
-                              key: 'acc',
-                              width: 140,
-                              render: (_: any, r: Espiral, i: number) => (
-                                <Space size={4}>
-                                  <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditEspiral(i)}>
-                                    Editar
-                                  </Button>
-                                  <Popconfirm title={`¿Eliminar espiral ${r.espiral}?`} onConfirm={() => deleteEspiral(i)}>
-                                    <Button size="small" type="link" danger icon={<DeleteOutlined />}>
-                                      Quitar
-                                    </Button>
-                                  </Popconfirm>
-                                </Space>
-                              ),
-                            },
-                          ]}
-                        />
-                      </Card>
-                    ),
-                  },
-                ]),
+              : []),
+            ],
           ]}
         />
       </ModalDrawer>

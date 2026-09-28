@@ -162,6 +162,115 @@ export class MachinesService {
   }
 
   // ============================================================
+  // Rendimiento de dosificados (máquina café)
+  // Calcula, a partir de las Materias Primas en las espirales y de
+  // las recetas de cada botón (dosificado), cuántas tazas/servicios
+  // se pueden servir y cuánto consume cada MP.
+  // ============================================================
+  async rendimiento(id: number) {
+    const m = await this.findOne(id);
+    if (m.tipo !== 'CAFE') throw new BadRequestException('Solo las máquinas de tipo CAFE tienen rendimiento de dosificados');
+
+    // Materias Primas en las espirales de la máquina
+    const espirales: any[] = await this.prisma.mapaMateriaPrima.findMany({
+      where: { idMaquina: id },
+      include: { producto: true },
+      orderBy: { espiralCodigo: 'asc' },
+    });
+
+    // Botones / productos dosificados con su receta
+    const botones: any[] = await this.prisma.mapaCafeNrq.findMany({
+      where: { idMaquina: id },
+      include: {
+        productoTerminado: {
+          include: { recetasProdTerm: { include: { materiaPrima: true } } },
+        },
+      },
+      orderBy: { opcionBoton: 'asc' },
+    });
+
+    // MPI: unidades disponibles por Materia Prima (empaques * equivalencia)
+    const mpIndex = new Map<number, any>();
+    for (const e of espirales) {
+      const prod: any = e.producto as any;
+      if (!prod) continue;
+      const idP = e.idProducto;
+      const equiv = Number(prod.equivalencia ?? 1) || 1;
+      const unidades = (e.capacidadActual ?? 0) * equiv;
+      const prev = mpIndex.get(idP);
+      if (prev) {
+        prev.empaques += e.capacidadActual ?? 0;
+        prev.unidadesDisponibles += unidades;
+      } else {
+        mpIndex.set(idP, {
+          idProducto: idP,
+          nombre: prod.nombreProducto ?? '',
+          unidad: prod.unidadConsumo ?? prod.unidad_consumo ?? 'und',
+          equivalencia: equiv,
+          empaques: e.capacidadActual ?? 0,
+          espiral: e.espiralCodigo,
+          unidadesDisponibles: unidades,
+        });
+      }
+    }
+
+    // Dosificados → cuántas tazas por cada MP y factor limitante
+    const dosificados = (botones as any[]).map((b) => {
+      const dt: any = b.productoTerminado as any;
+      const recetas: any[] = Array.isArray(dt?.recetasProdTerm) ? dt.recetasProdTerm : [];
+      const ingredientes = recetas.map((r: any) => {
+        const mpInfo = mpIndex.get(r.idMatPrima);
+        const dosis = Number(r.cantidadDosis ?? 0);
+        const unidades = mpInfo?.unidadesDisponibles ?? 0;
+        const tazasMP = dosis > 0 ? Math.floor(unidades / dosis) : 0;
+        return {
+          idMatPrima: r.idMatPrima,
+          nombre: mpInfo?.nombre ?? r.materiaPrima?.nombreProducto ?? '',
+          unidad: mpInfo?.unidad ?? r.unidadDosis ?? 'und',
+          empaques: mpInfo?.empaques ?? 0,
+          equivalencia: mpInfo?.equivalencia ?? 1,
+          unidadesDisponibles: unidades,
+          dosis,
+          tazasPosibles: Math.max(0, tazasMP),
+        };
+      });
+      const tazasTotal = ingredientes.length
+        ? Math.min(...ingredientes.map((i: any) => i.tazasPosibles))
+        : 0;
+      const limitante = ingredientes.find((i: any) => i.tazasPosibles === tazasTotal)?.nombre;
+      return {
+        idMapaNrq: b.idMapaNrq,
+        boton: b.opcionBoton,
+        idProducto: b.idProdTerm,
+        nombre: dt?.nombreProducto ?? '',
+        ingredientes,
+        tazasPosibles: Math.max(0, tazasTotal),
+        limitante,
+      };
+    });
+
+    // Resumen por MP: cuánto consume por servicio la suma de todos los botones
+    const materiasPrimas = Array.from(mpIndex.values()).map((mp) => {
+      let dosisTotal = 0;
+      for (const d of dosificados) {
+        const ing = d.ingredientes.find((i: any) => i.idMatPrima === mp.idProducto);
+        if (ing) dosisTotal += ing.dosis;
+      }
+      return {
+        ...mp,
+        dosisPorServicioTotal: dosisTotal,
+        serviciosPosibles: dosisTotal > 0 ? Math.max(0, Math.floor(mp.unidadesDisponibles / dosisTotal)) : 0,
+      };
+    });
+
+    return {
+      maquina: { id, serial: m.serial },
+      materiasPrimas,
+      dosificados,
+    };
+  }
+
+  // ============================================================
   // Guardado masivo del Mapa (formato del frontend)
   // POST /maquinas/:id/espirales  body { espirales: [...] }
   // POST /maquinas/:id/botones    body { botones: [...] }

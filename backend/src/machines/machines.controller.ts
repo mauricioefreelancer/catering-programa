@@ -31,4 +31,6 @@ export class MachinesController {
   @Post(':id/mapa-nrq') @Permissions('maquinas', 'crear') addMapaNRQ(@Param('id') id: string, @Body() dto: CreateMapaNRQDto) { return this.srv.addMapaNRQ(+id, dto); }
   @Patch(':id/mapa-nrq/:idMapa') @Permissions('maquinas', 'editar') updateMapaNRQ(@Param('id') id: string, @Param('idMapa') idMapa: string, @Body() dto: UpdateMapaNRQDto) { return this.srv.updateMapaNRQ(+id, +idMapa, dto); }
   @Delete(':id/mapa-nrq/:idMapa') @Permissions('maquinas', 'eliminar') removeMapaNRQ(@Param('id') id: string, @Param('idMapa') idMapa: string) { return this.srv.removeMapaNRQ(+id, +idMapa); }
+
+  @Get(':id/rendimiento') @Permissions('maquinas', 'ver') rendimiento(@Param('id') id: string) { return this.srv.rendimiento(+id); }
 }
