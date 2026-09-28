@@ -181,7 +181,6 @@ export class MachinesService {
         update: {
           idProducto,
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
-          cantidadInicial: Number(e.cantidad_inicial ?? e.cantidadInicial ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
         },
         create: {
@@ -189,7 +188,6 @@ export class MachinesService {
           idProducto,
           espiralCodigo: String(e.espiral),
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
-          cantidadInicial: Number(e.cantidad_inicial ?? e.cantidadInicial ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
         },
       });

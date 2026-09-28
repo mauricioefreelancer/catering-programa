@@ -201,7 +201,6 @@ model MapaMateriaPrima {
   idProducto      Int                       @map("ID_Producto")
   espiralCodigo   String                    @map("Espiral_Codigo") @db.VarChar(20)
   capacidadMax    Int                       @default(0) @map("Capacidad_Max")
-  cantidadInicial Int                       @default(0) @map("Cantidad_Inicial")
   capacidadActual Int                       @default(0) @map("Capacidad_Actual")
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 

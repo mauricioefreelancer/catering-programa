@@ -29,7 +29,6 @@ interface Espiral {
   id: number
   espiral: string
   capacidad_max: number
-  cantidad_inicial: number
   cantidad_actual: number
   productoId?: number
   productoNombre?: string
@@ -133,7 +132,6 @@ const Maquinas = () => {
               id: e.idMapaMp ?? Math.random(),
               espiral: e.espiralCodigo ?? '',
               capacidad_max: e.capacidadMax ?? 0,
-              cantidad_inicial: Number(e.cantidadInicial ?? e.cantidad_inicial ?? 0),
               cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
               productoId: e.idProducto,
               productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
@@ -196,7 +194,6 @@ const Maquinas = () => {
           id: e.idMapaMp ?? Math.random(),
           espiral: e.espiralCodigo ?? '',
           capacidad_max: e.capacidadMax ?? 0,
-          cantidad_inicial: Number(e.cantidadInicial ?? e.cantidad_inicial ?? 0),
           cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
           productoId: e.idProducto,
           productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
@@ -288,7 +285,6 @@ const Maquinas = () => {
     formEsp.setFieldsValue({
       espiral: '',
       productoId: undefined,
-      cantidad_inicial: 0,
       capacidad_max: 15,
       cantidad_actual: 0,
     })
@@ -301,7 +297,6 @@ const Maquinas = () => {
     formEsp.setFieldsValue({
       espiral: esp.espiral,
       productoId: esp.productoId,
-      cantidad_inicial: esp.cantidad_inicial,
       cantidad_actual: esp.cantidad_actual ?? 0,
       capacidad_max: esp.capacidad_max,
     })
@@ -326,8 +321,7 @@ const Maquinas = () => {
           id: newId,
           espiral: String(values.espiral).trim().toUpperCase(),
           capacidad_max: Number(values.capacidad_max),
-          cantidad_inicial: Number(values.cantidad_inicial ?? 0),
-          cantidad_actual: Number(values.cantidad_actual ?? values.cantidad_inicial ?? 0),
+          cantidad_actual: Number(values.cantidad_actual ?? 0),
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
@@ -341,7 +335,6 @@ const Maquinas = () => {
           ...original,
           espiral: String(values.espiral).trim().toUpperCase(),
           capacidad_max: Number(values.capacidad_max),
-          cantidad_inicial: Number(values.cantidad_inicial ?? 0),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
           productoId: values.productoId,
           productoNombre: prodName,
@@ -653,13 +646,6 @@ const Maquinas = () => {
                                 ),
                             },
                             {
-                              title: 'Cant. Inicial',
-                              dataIndex: 'cantidad_inicial',
-                              width: 110,
-                              align: 'right',
-                              render: (v: number) => <b>{v ?? 0}</b>,
-                            },
-                            {
                               title: 'Capacidad Actual',
                               dataIndex: 'cantidad_actual',
                               width: 130,
@@ -750,15 +736,7 @@ const Maquinas = () => {
                 {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
               </Select>
             </Form.Item>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-              <Form.Item
-                label="Cantidad Inicial"
-                name="cantidad_inicial"
-                rules={[{ required: true, message: 'Digite cantidad inicial' }]}
-                initialValue={0}
-              >
-                <InputNumber min={0} style={{ width: '100%' }} />
-              </Form.Item>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Form.Item
                 label="Capacidad Máxima"
                 name="capacidad_max"
