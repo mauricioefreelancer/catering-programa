@@ -134,12 +134,14 @@ const Productos = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
+      const esDosificado = (editing?.tipo || values.tipo) === 'DOSIFICADO'
       const costoTotal = Number(values.costo_base || 0) * (1 + Number(values.iva || 0))
       const payloadBackend: any = {
         idProveedor: values.idProveedor ? Number(values.idProveedor) : null,
         codigoBarras: values.codigo_barras,
         nombre: values.nombre,
-        Tipo_Producto: values.tipo,
+        // los DOSIFICADOS se editan como está, sin re-guardar type de forma destructiva
+        ...(editing?.tipo !== 'DOSIFICADO' ? { Tipo_Producto: values.tipo || 'ESTANDAR' } : {}),
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
         equivalencia: Number(values.equivalencia || 1),
@@ -150,7 +152,7 @@ const Productos = () => {
         stockMin: Number(values.stock_min || 0),
         stockMax: Number(values.stock_max || 0),
       }
-      const recetaPayload = values.tipo === 'DOSIFICADO'
+      const recetaPayload = esDosificado
         ? (receta || []).map((r: Ingrediente) => ({
             idProductoIngrediente: Number(r.productoId),
             cantidad: Number(r.cantidad),
@@ -160,7 +162,7 @@ const Productos = () => {
       if (editing) {
         try {
           await patch(`/productos/${editing.id}`, payloadBackend)
-          if (values.tipo === 'DOSIFICADO' && recetaPayload) {
+          if (esDosificado && recetaPayload) {
             try {
               await post(`/productos/${editing.id}/recetas`, { receta: recetaPayload })
             } catch (errReceta: any) {
@@ -175,14 +177,6 @@ const Productos = () => {
       } else {
         try {
           const resp: any = await post('/productos', payloadBackend)
-          const nuevoId = resp?.data?.idProducto || resp?.idProducto
-          if (values.tipo === 'DOSIFICADO' && recetaPayload && nuevoId) {
-            try {
-              await post(`/productos/${nuevoId}/recetas`, { receta: recetaPayload })
-            } catch (errReceta: any) {
-              message.warning('Producto creado, pero error guardando receta: ' + (errReceta?.response?.data?.message || errReceta?.message || errReceta))
-            }
-          }
           message.success('Producto creado')
         } catch (e: any) {
           message.error('Error creando producto: ' + (e?.response?.data?.message || e?.message || e))
@@ -221,12 +215,29 @@ const Productos = () => {
     }
   }
 
-  const openEdit = (p: Producto) => {
+  const openEdit = async (p: Producto) => {
     setEditing(p)
     setTipoSel(p.tipo)
-    setTabKey(p.tipo === 'DOSIFICADO' ? 'RECETA' : 'GENERAL')
-    setReceta(p.receta || [])
     setOpen(true)
+    if (p.tipo === 'DOSIFICADO') {
+      setTabKey('RECETA')
+      try {
+        const full: any = await get(`/productos/${p.id}`)
+        const recetas: any[] = (full as any)?.recetasProdTerm || []
+        const ing: Ingrediente[] = recetas.map((r: any, i: number) => ({
+          id: i + 1,
+          productoId: Number(r.idMatPrima),
+          cantidad: Number(r.cantidadDosis),
+          nombre: data.find((m) => m.id === Number(r.idMatPrima))?.nombre,
+        }))
+        setReceta(ing)
+      } catch (e) {
+        setReceta([])
+      }
+    } else {
+      setTabKey('GENERAL')
+      setReceta([])
+    }
   }
 
   const openCreate = () => {
@@ -356,13 +367,18 @@ const Productos = () => {
               label: '📋 General',
               children: (
                 <>
-                  <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Un solo formulario. Aquí defines cómo se usará el producto.">
-                    <Radio.Group onChange={(e: any) => setTipoSel(e.target.value)}>
-                      <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
-                      <Radio.Button value="MATERIA_PRIMA">🟣 Materia Prima (insumo)</Radio.Button>
-                      <Radio.Button value="DOSIFICADO">🟧 Dosificado · Receta</Radio.Button>
-                    </Radio.Group>
-                  </Form.Item>
+                  {editing?.tipo === 'DOSIFICADO' ? (
+                    <Form.Item label="Clasificación del producto" extra="Producto DOSIFICADO pre-parametrizado (bebida de café). El tipo no se puede cambiar; edite su receta en la pestaña 🧪 Receta (Ingredientes).">
+                      <Tag color="orange">🟧 DOSIFICADO · Receta (pre-parametrizado)</Tag>
+                    </Form.Item>
+                  ) : (
+                    <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Un solo formulario. Aquí defines cómo se usará el producto. Los DOSIFICADOS ya están parametrizados y se asignan en las máquinas de café.">
+                      <Radio.Group onChange={(e: any) => setTipoSel(e.target.value)}>
+                        <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
+                        <Radio.Button value="MATERIA_PRIMA">🟣 Materia Prima (insumo)</Radio.Button>
+                      </Radio.Group>
+                    </Form.Item>
+                  )}
                   {tipoSel === 'MATERIA_PRIMA' && (
                     <Tag color="purple" style={{ marginBottom: 12 }}>
                       🟣 INSUMO: Este producto actuará como ingrediente en recetas DOSIFICADAS.

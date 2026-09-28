@@ -130,14 +130,74 @@ export class ProductsService {
     if (!mp || mp.tipoProducto !== 'MATERIA_PRIMA') {
       throw new BadRequestException('El ingrediente debe ser una MATERIA_PRIMA (Manual 1.3: insumo empaque grande / consumo fracción)');
     }
-    return this.prisma.recetasDosificados.create({
-      data: {
+    return this.prisma.recetasDosificados.upsert({
+      where: {
+        idProdTerm_idMatPrima: { idProdTerm: idProducto, idMatPrima: dto.idMatPrima },
+      },
+      update: {
+        cantidadDosis: new Prisma.Decimal(dto.cantidadDosis),
+        unidadDosis: dto.unidadDosis,
+      },
+      create: {
         idProdTerm: idProducto,
         idMatPrima: dto.idMatPrima,
         cantidadDosis: new Prisma.Decimal(dto.cantidadDosis),
         unidadDosis: dto.unidadDosis,
       },
     });
+  }
+
+  async syncReceta(
+    idProducto: number,
+    items: Array<{ idMatPrima: number; cantidadDosis: number; unidadDosis?: string }>,
+  ) {
+    const producto = await this.findOne(idProducto);
+    if (producto.tipoProducto !== 'DOSIFICADO') {
+      throw new BadRequestException('Solo los productos DOSIFICADOS pueden tener recetas');
+    }
+    // validar que todos los ingredientes sean Materia Prima
+    const idsMatPrima = items.map((i) => i.idMatPrima);
+    const mps = idsMatPrima.length
+      ? await this.prisma.productos.findMany({
+          where: { idProducto: { in: idsMatPrima } },
+          select: { idProducto: true, tipoProducto: true },
+        })
+      : [];
+    for (const mpId of idsMatPrima) {
+      const mp = mps.find((m) => m.idProducto === mpId);
+      if (!mp || mp.tipoProducto !== 'MATERIA_PRIMA') {
+        throw new BadRequestException(`El ingrediente ${mpId} debe ser una MATERIA_PRIMA`);
+      }
+    }
+    // eliminar recetas del producto que ya no están en la lista enviada
+    await this.prisma.recetasDosificados.deleteMany({
+      where: {
+        idProdTerm: idProducto,
+        idMatPrima: { notIn: idsMatPrima.length ? idsMatPrima : [-1] },
+      },
+    });
+    // upsert cada ingrediente de la lista
+    const results: any[] = [];
+    for (const item of items) {
+      results.push(
+        await this.prisma.recetasDosificados.upsert({
+          where: {
+            idProdTerm_idMatPrima: { idProdTerm: idProducto, idMatPrima: item.idMatPrima },
+          },
+          update: {
+            cantidadDosis: new Prisma.Decimal(item.cantidadDosis),
+            unidadDosis: String(item.unidadDosis || 'Und').slice(0, 50),
+          },
+          create: {
+            idProdTerm: idProducto,
+            idMatPrima: item.idMatPrima,
+            cantidadDosis: new Prisma.Decimal(item.cantidadDosis),
+            unidadDosis: String(item.unidadDosis || 'Und').slice(0, 50),
+          },
+        }),
+      );
+    }
+    return { ok: true, guardados: results.length, items: results };
   }
 
   async removeReceta(idProducto: number, idReceta: number) {

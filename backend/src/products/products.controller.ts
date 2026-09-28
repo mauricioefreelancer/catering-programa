@@ -30,17 +30,13 @@ export class ProductsController {
   private async addRecetaLegacy(idProducto: number, dtoOrWrapper: (CreateRecetaDto & { idProductoIngrediente?: number; cantidad?: number }) | RecetaWrapperDto) {
     const wrapper = dtoOrWrapper as RecetaWrapperDto;
     if (Array.isArray(wrapper.receta)) {
-      const results: any[] = [];
-      for (const r of wrapper.receta) {
-        const idMatPrima = Number(r.idMatPrima ?? r.idProductoIngrediente);
-        const cantidadDosis = Number(r.cantidadDosis ?? r.cantidad);
-        const unidadDosis = String(r.unidadDosis ?? r.unidad ?? 'Unidad').slice(0, 50);
-        if (!isNaN(idMatPrima) && !isNaN(cantidadDosis)) {
-          const dto: CreateRecetaDto = { idMatPrima, cantidadDosis, unidadDosis };
-          results.push(await this.srv.addReceta(idProducto, dto));
-        }
-      }
-      return { ok: true, guardados: results.length, items: results };
+      // Lista completa de la receta: sincronizar (agrega/actualiza y elimina las que ya no están)
+      const items = (wrapper.receta || []).map((r) => ({
+        idMatPrima: Number(r.idMatPrima ?? r.idProductoIngrediente),
+        cantidadDosis: Number(r.cantidadDosis ?? r.cantidad),
+        unidadDosis: String(r.unidadDosis ?? r.unidad ?? 'Und').slice(0, 50),
+      })).filter((r) => !isNaN(r.idMatPrima) && !isNaN(r.cantidadDosis));
+      return this.srv.syncReceta(idProducto, items);
     } else {
       const dto = dtoOrWrapper as CreateRecetaDto & { idProductoIngrediente?: number; cantidad?: number };
       const idMatPrima = Number((dto as any).idMatPrima ?? (dto as any).idProductoIngrediente);
