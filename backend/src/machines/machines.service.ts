@@ -6,7 +6,6 @@ import {
 } from './dto/maquina.dto';
 import { Prisma } from '@prisma/client';
 
-@Injectable()
 function tipoCanonico(tipo?: string): string | undefined {
   if (!tipo) return tipo;
   const t = String(tipo).toUpperCase();
@@ -14,6 +13,7 @@ function tipoCanonico(tipo?: string): string | undefined {
   return t;
 }
 
+@Injectable()
 export class MachinesService {
   constructor(private prisma: PrismaService) {}
 
