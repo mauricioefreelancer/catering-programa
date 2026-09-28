@@ -133,8 +133,8 @@ const Maquinas = () => {
               id: e.idMapaMp ?? Math.random(),
               espiral: e.espiralCodigo ?? '',
               capacidad_max: e.capacidadMax ?? 0,
-              cantidad_inicial: e.cantidad_inicial ?? 0,
-              cantidad_actual: e.cantidad_actual ?? 0,
+              cantidad_inicial: Number(e.cantidadInicial ?? e.cantidad_inicial ?? 0),
+              cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
               productoId: e.idProducto,
               productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
               precio_venta_cliente: e.precioVentaCliente,
@@ -196,8 +196,8 @@ const Maquinas = () => {
           id: e.idMapaMp ?? Math.random(),
           espiral: e.espiralCodigo ?? '',
           capacidad_max: e.capacidadMax ?? 0,
-          cantidad_inicial: e.cantidad_inicial ?? 0,
-          cantidad_actual: e.cantidad_actual ?? 0,
+          cantidad_inicial: Number(e.cantidadInicial ?? e.cantidad_inicial ?? 0),
+          cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
           productoId: e.idProducto,
           productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
           precio_venta_cliente: e.precioVentaCliente,
@@ -290,6 +290,7 @@ const Maquinas = () => {
       productoId: undefined,
       cantidad_inicial: 0,
       capacidad_max: 15,
+      cantidad_actual: 0,
     })
     setOpenEspModal(true)
   }
@@ -749,7 +750,7 @@ const Maquinas = () => {
                 {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
               </Select>
             </Form.Item>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
               <Form.Item
                 label="Cantidad Inicial"
                 name="cantidad_inicial"
@@ -766,18 +767,16 @@ const Maquinas = () => {
               >
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
-            </div>
-            {editEspIdx !== null && (
               <Form.Item
                 label="Capacidad Actual"
                 name="cantidad_actual"
                 rules={[{ required: true }]}
                 initialValue={0}
-                extra="Mostrará 0 cuando no exista stock actual. Puede editar el valor manualmente."
+                extra="Stock actual del producto en la espiral."
               >
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
-            )}
+            </div>
           </Form>
         </Spin>
       </Drawer>
