@@ -243,9 +243,9 @@ const Productos = () => {
     return 'blue'
   }
   const tipoLabel = (t: string) => {
-    if (t === 'DOSIFICADO') return 'DOSIFICADO · Receta Café'
-    if (t === 'MATERIA_PRIMA') return 'MP · Empaque Grande / Consumo Fracción'
-    return 'ESTÁNDAR · Compra/Venta misma unidad'
+    if (t === 'DOSIFICADO') return 'DOSIFICADO · Receta (Bebida Café)'
+    if (t === 'MATERIA_PRIMA') return 'MATERIA PRIMA · Insumo para recetas'
+    return 'ESTÁNDAR · Compra/Venta en la misma unidad'
   }
   const proveedorNombrePorId = (idP: number | null | undefined) => {
     if (!idP) return ''
@@ -255,7 +255,7 @@ const Productos = () => {
 
   const addIngrediente = () => {
     if (materiasPrimas.length === 0) {
-      message.warning('Primero marque al menos un producto Estándar como Insumo MP (columna derecha Acciones)')
+      message.warning('Antes de armar una receta, marque al menos un producto como Insumo (🟣 MP) usando la columna "¿Usarlo como Insumo?".')
       return
     }
     const firstMp = materiasPrimas[0]
@@ -289,9 +289,9 @@ const Productos = () => {
       },
     },
     {
-      title: 'Insumo MP',
+      title: '¿Usarlo como Insumo?',
       key: 'mp_toggle',
-      width: 150,
+      width: 165,
       render: (_: any, r: Producto) => {
         if (r.tipo === 'DOSIFICADO') {
           return <Tag color="default">N/A (es Receta)</Tag>
@@ -356,21 +356,21 @@ const Productos = () => {
               label: '📋 General',
               children: (
                 <>
-                  <Form.Item name="tipo" label="Tipología Producto (Manual 1.3)" rules={[{ required: true }]} initialValue="ESTANDAR">
+                  <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Un solo formulario. Aquí defines cómo se usará el producto.">
                     <Radio.Group onChange={(e: any) => setTipoSel(e.target.value)}>
-                      <Radio.Button value="ESTANDAR">🔵 Estándar · Compra/Venta misma unidad</Radio.Button>
-                      <Radio.Button value="MATERIA_PRIMA">🟣 Materia Prima · Emp Grande / Fracción</Radio.Button>
-                      <Radio.Button value="DOSIFICADO">🟧 Dosificado · Receta (Bebida Café)</Radio.Button>
+                      <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
+                      <Radio.Button value="MATERIA_PRIMA">🟣 Materia Prima (insumo)</Radio.Button>
+                      <Radio.Button value="DOSIFICADO">🟧 Dosificado · Receta</Radio.Button>
                     </Radio.Group>
                   </Form.Item>
                   {tipoSel === 'MATERIA_PRIMA' && (
                     <Tag color="purple" style={{ marginBottom: 12 }}>
-                      🟣 INSUMO: Este producto se usará en recetas DOSIFICADAS. Su fracción = Unidad Consumo.
+                      🟣 INSUMO: Este producto actuará como ingrediente en recetas DOSIFICADAS.
                     </Tag>
                   )}
                   {tipoSel === 'DOSIFICADO' && (
                     <Tag color="orange" style={{ marginBottom: 12 }}>
-                      🧪 RECETA: Pase a la pestaña "Receta (Ingredientes)" para seleccionar qué Materias Primas componen este producto.
+                      🧪 RECETA: Pase a la pestaña "Receta (Ingredientes)" para elegir qué Materias Primas (gramos por servicio) componen este producto.
                     </Tag>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
