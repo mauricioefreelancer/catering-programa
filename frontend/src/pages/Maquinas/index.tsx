@@ -772,7 +772,7 @@ const Maquinas = () => {
                                   <Space wrap size={4}>
                                     {r.ingredientes && r.ingredientes.length > 0
                                       ? r.ingredientes.map((ing: any, i: number) => (
-                                          <Tag key={i} color={ing.tazasPosibles === 0 ? 'red' : 'blue'}>
+                                          <Tag key={i} color={ing.tazasPosibles === 0 ? 'red' : 'blue'} title={`$ ${(ing.costoPorTaza ?? 0).toLocaleString('es-CO')}/taza`}>
                                             {ing.dosis} {ing.unidad} {ing.nombre}
                                             {ing.tazasPosibles === 0 ? ' (sin MP)' : ''}
                                           </Tag>
@@ -780,6 +780,28 @@ const Maquinas = () => {
                                       : <Tag color="default">Sin receta</Tag>}
                                   </Space>
                                 ),
+                              },
+                              {
+                                title: 'Costo / taza',
+                                dataIndex: 'costoPorTaza',
+                                width: 110,
+                                align: 'right',
+                                render: (v: number) => (v != null && !isNaN(v) ? <span>$ {v.toLocaleString('es-CO')}</span> : <Tag color="default">N/D</Tag>),
+                              },
+                              {
+                                title: 'Precio venta',
+                                dataIndex: 'precioVenta',
+                                width: 110,
+                                align: 'right',
+                                render: (v: number) => (v != null && !isNaN(v) ? <b style={{ color: '#1677ff' }}>$ {v.toLocaleString('es-CO')}</b> : <Tag color="gold">Sin precio</Tag>),
+                              },
+                              {
+                                title: 'Margen',
+                                dataIndex: 'margen',
+                                width: 100,
+                                align: 'right',
+                                render: (v: number) =>
+                                  v != null && !isNaN(v) ? <Tag color={v < 20 ? 'red' : v < 35 ? 'gold' : 'green'}>{v.toFixed(1)}%</Tag> : <Tag color="default">—</Tag>,
                               },
                             ]}
                           />
@@ -806,6 +828,7 @@ const Maquinas = () => {
                                 render: (v: string) => <strong>{v || '—'}</strong>,
                               },
                               { title: 'Espiral', dataIndex: 'espiral', width: 80, render: (v: string) => <Tag color="blue">{v}</Tag> },
+                              { title: 'Proveedor', dataIndex: 'proveedor', width: 150, render: (v: string) => (v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: '#999' }}>Sin proveedor</span>) },
                               { title: 'Empaques', dataIndex: 'empaques', width: 90, align: 'right', render: (v: number) => <span>{v}</span> },
                               { title: 'Und/empaque', dataIndex: 'equivalencia', width: 100, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v}</span> },
                               { title: 'Unidades disp.', dataIndex: 'unidadesDisponibles', width: 110, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v} {rend?.materiasPrimas?.[0]?.unidad || ''}</span> },

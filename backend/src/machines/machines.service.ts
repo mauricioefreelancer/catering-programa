@@ -171,10 +171,19 @@ export class MachinesService {
     const m = await this.findOne(id);
     if (m.tipo !== 'CAFE') throw new BadRequestException('Solo las máquinas de tipo CAFE tienen rendimiento de dosificados');
 
+    // Precio de venta del dosificado según el cliente asignado a la máquina
+    const preciosCliente = m.idCliente
+      ? await this.prisma.preciosCliente.findMany({ where: { idCliente: m.idCliente } })
+      : [];
+    const precioDe = (idProducto: number) => {
+      const pc = preciosCliente.find((p) => p.idProducto === idProducto);
+      return pc ? Number(pc.precioVenta) : undefined;
+    };
+
     // Materias Primas en las espirales de la máquina
     const espirales: any[] = await this.prisma.mapaMateriaPrima.findMany({
       where: { idMaquina: id },
-      include: { producto: true },
+      include: { producto: { include: { proveedor: true } } },
       orderBy: { espiralCodigo: 'asc' },
     });
 
@@ -189,7 +198,8 @@ export class MachinesService {
       orderBy: { opcionBoton: 'asc' },
     });
 
-    // MPI: unidades disponibles por Materia Prima (empaques * equivalencia)
+    // MPI: unidades disponibles por Materia Prima (empaques * equivalencia),
+    // costo por unidad de consumo y proveedor, para calcular el costo por taza.
     const mpIndex = new Map<number, any>();
     for (const e of espirales) {
       const prod: any = e.producto as any;
@@ -197,6 +207,9 @@ export class MachinesService {
       const idP = e.idProducto;
       const equiv = Number(prod.equivalencia ?? 1) || 1;
       const unidades = (e.capacidadActual ?? 0) * equiv;
+      // Costo por unidad consumida = costoTotal del empaque / equivalencia
+      const costoTotal = Number(prod.costoTotal ?? prod.costo_total ?? 0);
+      const costoPorUnidad = equiv > 0 ? costoTotal / equiv : 0;
       const prev = mpIndex.get(idP);
       if (prev) {
         prev.empaques += e.capacidadActual ?? 0;
@@ -210,11 +223,14 @@ export class MachinesService {
           empaques: e.capacidadActual ?? 0,
           espiral: e.espiralCodigo,
           unidadesDisponibles: unidades,
+          costoTotal: costoTotal,
+          costoPorUnidad: costoPorUnidad,
+          proveedor: prod.proveedor?.razonSocial ?? prod.proveedor?.razon_social ?? '',
         });
       }
     }
 
-    // Dosificados → cuántas tazas por cada MP y factor limitante
+    // Dosificados → cuántas tazas por cada MP, factor limitante y costo por taza
     const dosificados = (botones as any[]).map((b) => {
       const dt: any = b.productoTerminado as any;
       const recetas: any[] = Array.isArray(dt?.recetasProdTerm) ? dt.recetasProdTerm : [];
@@ -223,6 +239,7 @@ export class MachinesService {
         const dosis = Number(r.cantidadDosis ?? 0);
         const unidades = mpInfo?.unidadesDisponibles ?? 0;
         const tazasMP = dosis > 0 ? Math.floor(unidades / dosis) : 0;
+        const costoIng = (mpInfo?.costoPorUnidad ?? 0) * dosis;
         return {
           idMatPrima: r.idMatPrima,
           nombre: mpInfo?.nombre ?? r.materiaPrima?.nombreProducto ?? '',
@@ -232,12 +249,15 @@ export class MachinesService {
           unidadesDisponibles: unidades,
           dosis,
           tazasPosibles: Math.max(0, tazasMP),
+          costoPorTaza: Math.round(costoIng * 100) / 100,
         };
       });
       const tazasTotal = ingredientes.length
         ? Math.min(...ingredientes.map((i: any) => i.tazasPosibles))
         : 0;
       const limitante = ingredientes.find((i: any) => i.tazasPosibles === tazasTotal)?.nombre;
+      const costoPorTaza = Math.round(ingredientes.reduce((acc: number, i: any) => acc + (i.costoPorTaza ?? 0), 0) * 100) / 100;
+      const precioVenta = precioDe(b.idProdTerm);
       return {
         idMapaNrq: b.idMapaNrq,
         boton: b.opcionBoton,
@@ -246,6 +266,11 @@ export class MachinesService {
         ingredientes,
         tazasPosibles: Math.max(0, tazasTotal),
         limitante,
+        costoPorTaza,
+        precioVenta,
+        margen: precioVenta != null && precioVenta > 0
+          ? Math.round(((precioVenta - costoPorTaza) / precioVenta) * 10000) / 100
+          : undefined,
       };
     });
 
