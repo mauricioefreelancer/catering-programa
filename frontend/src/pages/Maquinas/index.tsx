@@ -718,8 +718,7 @@ const Maquinas = () => {
         onClose={closeEspModal}
         destroyOnClose={false}
         maskClosable={false}
-        zIndex={1200}
-        getContainer={() => document.body}
+        zIndex={1500}
         extra={
           <Space>
             <Button onClick={closeEspModal}>Cancelar</Button>
@@ -790,8 +789,7 @@ const Maquinas = () => {
         onClose={closeBtnModal}
         destroyOnClose={false}
         maskClosable={false}
-        zIndex={1200}
-        getContainer={() => document.body}
+        zIndex={1500}
         extra={
           <Space>
             <Button onClick={closeBtnModal}>Cancelar</Button>
