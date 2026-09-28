@@ -471,6 +471,15 @@ const Maquinas = () => {
   const totalEspirales = espirales.length
   const totalBotones = botones.length
 
+  // Solo productos DOSIFICADOS (receta café) para asignar a los botones NRQ.
+  const productosDosificados = useMemo(
+    () => productos.filter((p: any) => {
+      const t = String(p?.tipoProducto ?? p?.Tipo_Producto ?? p?.tipo ?? '').toUpperCase()
+      return t.includes('DOSIF') || t === 'DOSIFICADO'
+    }),
+    [productos],
+  )
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -792,9 +801,19 @@ const Maquinas = () => {
                 style={{ textTransform: 'uppercase', letterSpacing: 2, fontSize: 18, fontFamily: 'monospace', fontWeight: 600 }}
               />
             </Form.Item>
-            <Form.Item label="Producto Dosificado" name="productoId">
-              <Select allowClear placeholder="Seleccione el producto DOSIFICADO para este botón">
-                {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
+            <Form.Item
+              label="Producto Dosificado"
+              name="productoId"
+              rules={[{ required: true, message: 'Seleccione un producto DOSIFICADO para este botón' }]}
+              extra={`Solo se muestran productos DOSIFICADOS (receta café). Disponibles: ${productosDosificados.length}`}
+            >
+              <Select
+                allowClear
+                showSearch
+                placeholder="Seleccione el producto DOSIFICADO para este botón"
+                filterOption={(input, option: any) => String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
+              >
+                {productosDosificados.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
               </Select>
             </Form.Item>
           </Form>

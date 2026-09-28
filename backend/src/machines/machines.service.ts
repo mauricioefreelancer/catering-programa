@@ -208,6 +208,15 @@ export class MachinesService {
       if (!b?.boton || b?.boton === '') continue;
       const idProdTerm = Number(b.productoId ?? b.idProdTerm);
       if (!idProdTerm) throw new BadRequestException('Cada botón debe tener un producto asignado');
+      const prodTerm = await this.prisma.productos.findFirst({
+        where: { idProducto: idProdTerm },
+        select: { idProducto: true, tipoProducto: true },
+      });
+      if (!prodTerm) throw new BadRequestException(`El producto del botón ${b?.boton} no existe`);
+      const tipoProd = String(prodTerm.tipoProducto ?? '').toUpperCase();
+      if (!tipoProd.includes('DOSIF')) {
+        throw new BadRequestException(`El botón ${b?.boton} debe ser un producto DOSIFICADO (receta café). '${prodTerm.tipoProducto}' no es válido.`);
+      }
       await this.prisma.mapaCafeNrq.upsert({
         where: { idMaquina_opcionBoton: { idMaquina: id, opcionBoton: String(b.boton) } },
         update: { idProdTerm },
