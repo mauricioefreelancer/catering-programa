@@ -318,6 +318,7 @@ const Maquinas = () => {
       const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
       const prodName = prod?.nombreProducto ?? prod?.nombre
 
+      let ns: Espiral[]
       if (editEspIdx === null) {
         const newId = Math.max(0, ...espirales.map((e) => e.id), 0) + 1
         const nuevo: Espiral = {
@@ -328,11 +329,12 @@ const Maquinas = () => {
           cantidad_actual: Number(values.cantidad_actual ?? values.cantidad_inicial ?? 0),
           productoId: values.productoId,
           productoNombre: prodName,
+          precio_venta_cliente: undefined,
         }
-        setEspirales([...espirales, nuevo])
+        ns = [...espirales, nuevo]
         message.success(`Espiral ${nuevo.espiral} agregada`)
       } else {
-        const ns = [...espirales]
+        ns = [...espirales]
         const original = ns[editEspIdx]
         ns[editEspIdx] = {
           ...original,
@@ -342,9 +344,19 @@ const Maquinas = () => {
           cantidad_actual: Number(values.cantidad_actual ?? 0),
           productoId: values.productoId,
           productoNombre: prodName,
+          precio_venta_cliente: original?.precio_venta_cliente,
         }
-        setEspirales(ns)
         message.success(`Espiral ${ns[editEspIdx].espiral} actualizada`)
+      }
+
+      setEspirales(ns)
+      // Persistir a BD si la máquina ya existe
+      if (editing?.id) {
+        try {
+          await apiService.post(`/maquinas/${editing.id}/espirales`, { espirales: ns })
+        } catch {
+          message.warning('El espiral quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
+        }
       }
       closeEspModal()
     } catch {}
@@ -387,6 +399,7 @@ const Maquinas = () => {
       const values = await formBtn.validateFields()
       const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
       const prodName = prod?.nombreProducto ?? prod?.nombre
+      let ns: BotonNRQ[]
 
       if (editBtnIdx === null) {
         const newId = Math.max(0, ...botones.map((b) => b.id), 0) + 1
@@ -395,19 +408,29 @@ const Maquinas = () => {
           boton: String(values.boton).trim().toUpperCase(),
           productoId: values.productoId,
           productoNombre: prodName,
+          precio_venta_cliente: undefined,
         }
-        setBotones([...botones, nuevo])
+        ns = [...botones, nuevo]
         message.success(`Botón ${nuevo.boton} agregado`)
       } else {
-        const ns = [...botones]
+        ns = [...botones]
         ns[editBtnIdx] = {
           ...ns[editBtnIdx],
           boton: String(values.boton).trim().toUpperCase(),
           productoId: values.productoId,
           productoNombre: prodName,
+          precio_venta_cliente: ns[editBtnIdx]?.precio_venta_cliente,
         }
-        setBotones(ns)
         message.success(`Botón ${ns[editBtnIdx].boton} actualizado`)
+      }
+      setBotones(ns)
+      // Persistir a BD si la máquina ya existe
+      if (editing?.id) {
+        try {
+          await apiService.post(`/maquinas/${editing.id}/botones`, { botones: ns })
+        } catch {
+          message.warning('El botón quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
+        }
       }
       closeBtnModal()
     } catch {}
@@ -695,6 +718,8 @@ const Maquinas = () => {
         onClose={closeEspModal}
         destroyOnClose={false}
         maskClosable={false}
+        zIndex={1200}
+        getContainer={() => document.body}
         extra={
           <Space>
             <Button onClick={closeEspModal}>Cancelar</Button>
@@ -765,6 +790,8 @@ const Maquinas = () => {
         onClose={closeBtnModal}
         destroyOnClose={false}
         maskClosable={false}
+        zIndex={1200}
+        getContainer={() => document.body}
         extra={
           <Space>
             <Button onClick={closeBtnModal}>Cancelar</Button>
