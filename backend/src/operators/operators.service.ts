@@ -13,6 +13,7 @@ function firstNonEmpty(...vals: any[]): any {
 }
 
 function normalizeOperadorInputLegacy(dto: CreateOperadorDto | UpdateOperadorDto) {
+  const numeroDocumento = firstNonEmpty(dto.numeroDocumento, dto.documento);
   const nombreCompleto = firstNonEmpty(dto.nombreCompleto, dto.nombre);
   const usuarioLogin = firstNonEmpty(dto.usuarioLogin, dto.usuario_login);
   const zonaAsignada = firstNonEmpty(dto.zonaAsignada, dto.zona);
@@ -31,7 +32,7 @@ function normalizeOperadorInputLegacy(dto: CreateOperadorDto | UpdateOperadorDto
   const password = firstNonEmpty(dto.password);
   const telefono = firstNonEmpty(dto.telefono);
   const fechaIngreso = firstNonEmpty(dto.fechaIngreso);
-  return { nombreCompleto, usuarioLogin, zonaAsignada, idRol, idUsuario, estado, email, password, telefono, fechaIngreso };
+  return { numeroDocumento, nombreCompleto, usuarioLogin, zonaAsignada, idRol, idUsuario, estado, email, password, telefono, fechaIngreso };
 }
 
 const esRolOperador = (rol: { idRol?: number; nombreRol?: string | null } | null | undefined): boolean => {
@@ -93,6 +94,7 @@ export class OperatorsService {
         throw new BadRequestException('nombreCompleto o nombre es requerido (o debe existir en el UsuarioSistema vinculado).');
       }
       const dataOperador: any = {
+        numeroDocumento: norm.numeroDocumento ?? null,
         nombreCompleto: nombreFinal,
         telefono: norm.telefono ?? null,
         zonaAsignada: norm.zonaAsignada ?? null,
@@ -149,6 +151,7 @@ export class OperatorsService {
       const operador = await tx.operadores.create({
         data: {
           idUsuario: usuario.idUsuario,
+          numeroDocumento: norm.numeroDocumento ?? null,
           nombreCompleto: norm.nombreCompleto,
           telefono: norm.telefono ?? null,
           zonaAsignada: norm.zonaAsignada ?? null,
@@ -175,6 +178,7 @@ export class OperatorsService {
         await tx.usuariosSistema.update({ where: { idUsuario: op.idUsuario }, data: userData });
       }
       const opData: any = {};
+      if (norm.numeroDocumento !== undefined) opData.numeroDocumento = norm.numeroDocumento;
       if (norm.nombreCompleto !== undefined) opData.nombreCompleto = norm.nombreCompleto;
       if (norm.telefono !== undefined) opData.telefono = norm.telefono;
       if (norm.zonaAsignada !== undefined) opData.zonaAsignada = norm.zonaAsignada;

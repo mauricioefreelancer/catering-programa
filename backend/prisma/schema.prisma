@@ -89,6 +89,7 @@ model Proveedores {
 model Operadores {
   idOperador        Int                       @id @default(autoincrement()) @map("ID_Operador")
   idUsuario         Int                       @unique @map("ID_Usuario")
+  numeroDocumento   String?                   @map("Numero_Documento") @db.VarChar(50)
   nombreCompleto   String                    @map("Nombre_Completo") @db.VarChar(200)
   telefono          String?                   @map("Telefono") @db.VarChar(50)
   zonaAsignada     String?                   @map("Zona_Asignada") @db.VarChar(200)
