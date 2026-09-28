@@ -167,24 +167,29 @@ const FacturacionNRQ = () => {
 
   const mapearResultados = (rawList: any[]): RegistroNRQ[] => {
     return rawList.map((r: any, i: number) => {
-      const maquinaId = r.idMaquina ?? r.maquinaId
+      const maquinaId = r.ID_Maquina ?? r.idMaquina ?? r.maquinaId
       const maquina = maquinasCafe.find((m) => m.id === maquinaId)
-      const clienteId = r.idCliente ?? r.clienteId ?? maquina?.clienteId
+      const clienteId = r.ID_Cliente ?? r.idCliente ?? r.clienteId ?? maquina?.clienteId
       const cliente = clientes.find((c) => c.id === clienteId)
-      const productoId = r.idProducto ?? r.productoId
+      const productoId = r.ID_Producto ?? r.idProducto ?? r.productoId
       const producto = productosDosificados.find((p) => p.id === productoId)
 
-      const precio = Number(r.precio ?? r.precioUnitario ?? producto?.precio ?? 0)
-      const ni = Number(r.nrq_inicial ?? r.nrInicial ?? r.inicial ?? 0)
-      const nf = Number(r.nrq_final ?? r.nrFinal ?? r.final ?? 0)
-      const diff = Number(r.nrq_diferencia ?? r.diferencia ?? (nf - ni) ?? 0)
+      // El backend devuelve en snake_case/Mayúsculas (query raw + PreciosCliente).
+      // Precio_Promedio proviene de la tabla PRECIOS_CLIENTE (precio de venta por
+      // cliente+producto que se asigna en la sección Precios).
+      const precio = Number(
+        r.Precio_Promedio ?? r.precioPromedio ?? r.precio ?? r.precioUnitario ?? producto?.precio ?? 0
+      )
+      const ni = Number(r.NRQ_Inicial ?? r.nrq_inicial ?? r.nrInicial ?? r.inicial ?? 0)
+      const nf = Number(r.NRQ_Final ?? r.nrq_final ?? r.nrFinal ?? r.final ?? 0)
+      const diff = Number(r.NRQ_Diferencia ?? r.nrq_diferencia ?? r.diferencia ?? (nf - ni) ?? 0)
 
       return {
         key: String(i),
-        maquinaSerial: r.maquina?.serial ?? r.maquinaSerial ?? maquina?.serial ?? '',
+        maquinaSerial: r.Serial ?? r.maquina?.serial ?? r.maquinaSerial ?? maquina?.serial ?? '',
         zona: r.zona ?? maquina?.zona ?? '',
-        clienteNombre: r.cliente?.razonSocial ?? r.clienteNombre ?? cliente?.nombre ?? '',
-        productoNombre: r.producto?.nombre ?? r.productoNombre ?? producto?.nombre ?? '',
+        clienteNombre: r.Razon_Social ?? r.cliente?.razonSocial ?? r.clienteNombre ?? cliente?.nombre ?? '',
+        productoNombre: r.Nombre_Producto ?? r.producto?.nombre ?? r.productoNombre ?? producto?.nombre ?? '',
         precio,
         nrq_inicial: ni,
         nrq_final: nf,
