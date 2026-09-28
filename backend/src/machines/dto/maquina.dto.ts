@@ -5,7 +5,7 @@ export class CreateMaquinaDto {
   @IsOptional() @IsInt() idOperador?: number;
   @IsString() @IsNotEmpty() serial: string;
   @IsOptional() @IsString() marca?: string;
-  @IsOptional() @IsIn(['SNACKS', 'COMBINADA', 'REFRIGERADA', 'TIENDA', 'CAFE']) tipo?: string;
+  @IsOptional() @IsIn(['SNACKS', 'SNACK', 'COMBINADA', 'REFRIGERADA', 'TIENDA', 'CAFE', 'CAFÉ', 'BEBIDA']) tipo?: string;
   @IsOptional() @IsString() ubicacionEsp?: string;
   @IsOptional() @IsObject() mediosPago?: any;
   @IsOptional() @IsNumber() tarifaPromedioOverride?: number;
@@ -18,7 +18,7 @@ export class UpdateMaquinaDto {
   @IsOptional() @IsInt() idOperador?: number;
   @IsOptional() @IsString() serial?: string;
   @IsOptional() @IsString() marca?: string;
-  @IsOptional() @IsIn(['SNACKS', 'COMBINADA', 'REFRIGERADA', 'TIENDA', 'CAFE']) tipo?: string;
+  @IsOptional() @IsIn(['SNACKS', 'SNACK', 'COMBINADA', 'REFRIGERADA', 'TIENDA', 'CAFE', 'CAFÉ', 'BEBIDA']) tipo?: string;
   @IsOptional() @IsString() ubicacionEsp?: string;
   @IsOptional() @IsObject() mediosPago?: any;
   @IsOptional() @IsNumber() tarifaPromedioOverride?: number;

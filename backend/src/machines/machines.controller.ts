@@ -24,6 +24,9 @@ export class MachinesController {
   @Patch(':id/mapa-mp/:idMapa') @Permissions('maquinas', 'editar') updateMapaMP(@Param('id') id: string, @Param('idMapa') idMapa: string, @Body() dto: UpdateMapaMPDto) { return this.srv.updateMapaMP(+id, +idMapa, dto); }
   @Delete(':id/mapa-mp/:idMapa') @Permissions('maquinas', 'eliminar') removeMapaMP(@Param('id') id: string, @Param('idMapa') idMapa: string) { return this.srv.removeMapaMP(+id, +idMapa); }
 
+  @Post(':id/espirales') @Permissions('maquinas', 'editar') saveEspirales(@Param('id') id: string, @Body() body: any) { return this.srv.saveMapaEspirales(+id, body?.espirales); }
+  @Post(':id/botones') @Permissions('maquinas', 'editar') saveBotones(@Param('id') id: string, @Body() body: any) { return this.srv.saveMapaBotones(+id, body?.botones); }
+
   @Get(':id/mapa-nrq') @Permissions('maquinas', 'ver') getMapaNRQ(@Param('id') id: string) { return this.srv.getMapaNRQ(+id); }
   @Post(':id/mapa-nrq') @Permissions('maquinas', 'crear') addMapaNRQ(@Param('id') id: string, @Body() dto: CreateMapaNRQDto) { return this.srv.addMapaNRQ(+id, dto); }
   @Patch(':id/mapa-nrq/:idMapa') @Permissions('maquinas', 'editar') updateMapaNRQ(@Param('id') id: string, @Param('idMapa') idMapa: string, @Body() dto: UpdateMapaNRQDto) { return this.srv.updateMapaNRQ(+id, +idMapa, dto); }

@@ -33,12 +33,14 @@ interface Espiral {
   cantidad_actual: number
   productoId?: number
   productoNombre?: string
+  precio_venta_cliente?: number
 }
 interface BotonNRQ {
   id: number
   boton: string
   productoId?: number
   productoNombre?: string
+  precio_venta_cliente?: number
 }
 
 interface Maquina {
@@ -119,15 +121,34 @@ const Maquinas = () => {
         id: m.idMaquina ?? m.id,
         serial: m.serial ?? '',
         marca: m.marca ?? '',
-        tipo: normalizarTipo(m.Tipo_Maquina),
+        tipo: normalizarTipo(m.tipo ?? m.Tipo_Maquina),
         clienteId: m.idCliente ?? m.clienteId,
         clienteNombre: m.cliente?.razonSocial ?? m.clienteNombre ?? '',
         operadorId: m.idOperador ?? m.operadorId,
         operadorNombre: m.operador?.nombreCompleto ?? m.operador?.usuario?.nombre ?? m.operadorNombre ?? '',
         zona: m.ubicacionEsp ?? m.zona ?? '',
-        estado: normalizarEstado(m.estado_operacion),
-        espirales: m.espirales ?? genEspiralesVacio(),
-        botonesNRQ: m.botonesNRQ ?? genBotonesVacio(),
+        estado: normalizarEstado(m.estado ?? m.estado_operacion),
+        espirales: Array.isArray(m.mapaMateriaPrima)
+          ? m.mapaMateriaPrima.map((e: any) => ({
+              id: e.idMapaMp ?? Math.random(),
+              espiral: e.espiralCodigo ?? '',
+              capacidad_max: e.capacidadMax ?? 0,
+              cantidad_inicial: e.cantidad_inicial ?? 0,
+              cantidad_actual: e.cantidad_actual ?? 0,
+              productoId: e.idProducto,
+              productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
+              precio_venta_cliente: e.precioVentaCliente,
+            }))
+          : (m.espirales ?? genEspiralesVacio()),
+        botonesNRQ: Array.isArray(m.mapaCafeNrq)
+          ? m.mapaCafeNrq.map((b: any) => ({
+              id: b.idMapaNrq ?? Math.random(),
+              boton: b.opcionBoton ?? '',
+              productoId: b.idProdTerm,
+              productoNombre: b.productoTerminado?.nombreProducto ?? b.productoTerminado?.nombre ?? '',
+              precio_venta_cliente: b.precioVentaCliente,
+            }))
+          : (m.botonesNRQ ?? genBotonesVacio()),
       }))
 
       setData(maquinasMapeadas)
@@ -159,11 +180,43 @@ const Maquinas = () => {
     setOpen(false)
   }
 
-  const openEdit = (m: Maquina) => {
+  const openEdit = async (m: Maquina) => {
     setEditing(m)
-    setEspirales(m.espirales ? [...m.espirales] : [])
-    setBotones(m.botonesNRQ ? [...m.botonesNRQ] : [])
+    setEspirales([])
+    setBotones([])
     setOpen(true)
+    try {
+      // Cargar detalle completo (mapa espirales/botones + precio de venta por cliente)
+      const det: any = await apiService.get(`/maquinas/${m.id}`)
+      const info: any = det?.data ?? det ?? {}
+      const esp = info.mapaMateriaPrima ?? []
+      const bot = info.mapaCafeNrq ?? []
+      setEspirales(
+        esp.map((e: any) => ({
+          id: e.idMapaMp ?? Math.random(),
+          espiral: e.espiralCodigo ?? '',
+          capacidad_max: e.capacidadMax ?? 0,
+          cantidad_inicial: e.cantidad_inicial ?? 0,
+          cantidad_actual: e.cantidad_actual ?? 0,
+          productoId: e.idProducto,
+          productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
+          precio_venta_cliente: e.precioVentaCliente,
+        })),
+      )
+      setBotones(
+        bot.map((b: any) => ({
+          id: b.idMapaNrq ?? Math.random(),
+          boton: b.opcionBoton ?? '',
+          productoId: b.idProdTerm,
+          productoNombre: b.productoTerminado?.nombreProducto ?? b.productoTerminado?.nombre ?? '',
+          precio_venta_cliente: b.precioVentaCliente,
+        })),
+      )
+    } catch {
+      // Si falla el detalle, mantener lo que venga en la lista
+      setEspirales(m.espirales ? [...m.espirales] : [])
+      setBotones(m.botonesNRQ ? [...m.botonesNRQ] : [])
+    }
   }
   const openCreate = () => {
     setEditing(null)
@@ -178,11 +231,11 @@ const Maquinas = () => {
       const body: any = {
         serial: values.serial,
         marca: values.marca,
-        Tipo_Maquina: values.tipo,
+        tipo: values.tipo,
         idCliente: values.clienteId,
         idOperador: values.operadorId,
         ubicacionEsp: values.zona,
-        estado_operacion: values.estado || 'OPERANDO',
+        estado: values.estado ? values.estado !== 'FUERA_SERVICIO' && values.estado !== 'FUERA SERVICIO' : true,
       }
 
       let savedMaquina: any
@@ -496,6 +549,18 @@ const Maquinas = () => {
                               render: (v: string) => v ? <span>{v}</span> : <Tag color="default">Sin asignar</Tag>,
                             },
                             {
+                              title: 'Precio Venta',
+                              dataIndex: 'precio_venta_cliente',
+                              width: 120,
+                              align: 'right',
+                              render: (v: number) =>
+                                v != null && !isNaN(v) ? (
+                                  <b style={{ color: '#1677ff' }}>${Number(v).toLocaleString('es-CO')}</b>
+                                ) : (
+                                  <Tag color="gold">Sin precio</Tag>
+                                ),
+                            },
+                            {
                               title: 'Acciones',
                               key: 'acc',
                               width: 140,
@@ -550,6 +615,18 @@ const Maquinas = () => {
                               title: 'Producto Asignado',
                               dataIndex: 'productoNombre',
                               render: (v: string) => v ? <span>{v}</span> : <Tag color="default">Sin asignar</Tag>,
+                            },
+                            {
+                              title: 'Precio Venta',
+                              dataIndex: 'precio_venta_cliente',
+                              width: 120,
+                              align: 'right',
+                              render: (v: number) =>
+                                v != null && !isNaN(v) ? (
+                                  <b style={{ color: '#1677ff' }}>${Number(v).toLocaleString('es-CO')}</b>
+                                ) : (
+                                  <Tag color="gold">Sin precio</Tag>
+                                ),
                             },
                             {
                               title: 'Cant. Inicial',
