@@ -64,6 +64,9 @@ const Productos = () => {
   const [tipoSel, setTipoSel] = useState<'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'>(editing?.tipo || 'ESTANDAR')
   const [tabKey, setTabKey] = useState<'GENERAL' | 'RECETA'>('GENERAL')
   const [receta, setReceta] = useState<Ingrediente[]>([])
+  const [formProd] = Form.useForm()
+  // Proveedores que manejan el producto en edición (con su costo de lote), según los ingresos a bodega
+  const [provDelProducto, setProvDelProducto] = useState<any[]>([])
   const perm = usePermissions('productos')
 
   const normalizeTipo = (t: any): 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO' => {
@@ -130,6 +133,7 @@ const Productos = () => {
     setTabKey('GENERAL')
     setReceta([])
     setEditing(null)
+    setProvDelProducto([])
     setOpen(false)
   }
 
@@ -222,6 +226,15 @@ const Productos = () => {
     setEditing(p)
     setTipoSel(p.tipo)
     setOpen(true)
+    setProvDelProducto([])
+    // Proveedores que manejan este producto (según los ingresos a bodega), con su costo de lote
+    try {
+      const provs: any = await get(`/productos/${p.id}/proveedores`)
+      const lista = Array.isArray(provs) ? provs : (Array.isArray((provs as any)?.data) ? (provs as any).data : [])
+      setProvDelProducto(lista || [])
+    } catch (e) {
+      setProvDelProducto([])
+    }
     if (p.tipo === 'DOSIFICADO') {
       setTabKey('RECETA')
       try {
@@ -375,6 +388,7 @@ const Productos = () => {
         title={editing ? 'Editar Producto' : 'Nuevo Producto'}
         open={open} onClose={resetDrawer} onSubmit={handleSubmit}
         initialValues={initialVals} loading={loading} width={820}
+        formInstance={formProd}
       >
         <Tabs
           activeKey={tabKey}
@@ -408,14 +422,54 @@ const Productos = () => {
                     </Tag>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="idProveedor" label="Proveedor (Opcional)">
-                      <Select allowClear placeholder="Seleccione el proveedor de este producto">
-                        {proveedoresList.map((pr: any) => (
-                          <Option key={Number(pr.idProveedor || pr.id)} value={Number(pr.idProveedor || pr.id)}>
-                            {pr.razonSocial || pr.razon_social || `Proveedor ${pr.idProveedor || pr.id}`}
-                          </Option>
-                        ))}
-                      </Select>
+                    <Form.Item name="idProveedor" label={
+                      editing && provDelProducto.length > 0
+                        ? 'Proveedor (los que manejan este producto)'
+                        : 'Proveedor (Opcional)'
+                    } extra={
+                      editing && provDelProducto.length > 0
+                        ? 'Al elegir un proveedor se actualizan el Costo Base y el Costo Total + IVA al costo de ese proveedor. El Stock muestra el total del producto.'
+                        : undefined
+                    }>
+                      {(() => {
+                        const opcionesBase = proveedoresList.map((pr: any) => ({
+                          value: Number(pr.idProveedor || pr.id),
+                          label: pr.razonSocial || pr.razon_social || `Proveedor ${pr.idProveedor || pr.id}`,
+                          costo: null,
+                          cantidad: null,
+                        }))
+                        const opciones = editing && provDelProducto.length > 0
+                          ? provDelProducto.map((pr: any) => ({
+                              value: Number(pr.idProveedor),
+                              label: `${pr.razonSocial} · Costo $ ${Number(pr.finalCostoLote || 0).toLocaleString('es-CO')} · ${pr.cantidadTotal} und`,
+                              costo: Number(pr.finalCostoLote || 0),
+                              cantidad: Number(pr.cantidadTotal || 0),
+                            }))
+                          : opcionesBase
+                        return (
+                          <Select
+                            allowClear
+                            showSearch
+                            optionFilterProp="label"
+                            placeholder={editing && provDelProducto.length > 0 ? 'Seleccione el proveedor de este producto' : 'Seleccione el proveedor de este producto'}
+                            onSelect={(v: any) => {
+                              const opt = opciones.find((o: any) => o.value === v)
+                              if (opt && opt.costo != null) {
+                                const iva = Number(formProd.getFieldValue('iva') ?? 0)
+                                const costoBase = opt.costo
+                                const costoTotal = costoBase * (1 + iva)
+                                formProd.setFieldsValue({ costo_base: costoBase, costo_total: Math.round(costoTotal * 100) / 100 })
+                              }
+                            }}
+                          >
+                            {opciones.map((pr: any) => (
+                              <Option key={pr.value} value={pr.value} label={pr.label}>
+                                {pr.label}
+                              </Option>
+                            ))}
+                          </Select>
+                        )
+                      })()}
                     </Form.Item>
                     <Form.Item name="codigo_barras" label="Código Barras" rules={[{ required: true }]}><Input /></Form.Item>
                   </div>
@@ -445,17 +499,22 @@ const Productos = () => {
                     </Form.Item>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="costo_base" label="Costo Base" rules={[{ required: true }]}>
+                    <Form.Item name="costo_base" label="Costo Base" rules={[{ required: true }]} extra={editing && provDelProducto.length > 0 ? 'Se actualiza al costo del proveedor seleccionado arriba' : undefined}>
                       <InputNumber style={{ width: '100%' }} min={0} prefix="$" />
                     </Form.Item>
-                    <Form.Item name="stock_actual" label="Stock Actual" rules={[{ required: true }]}>
+                    <Form.Item name="costo_total" label="Costo Total + IVA" rules={[{ required: true }]}>
+                      <InputNumber style={{ width: '100%' }} min={0} prefix="$" />
+                    </Form.Item>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <Form.Item name="stock_actual" label="Stock Actual" rules={[{ required: true }]} extra="Muestra el total del producto (suma de todos los proveedores)">
+                      <InputNumber style={{ width: '100%' }} min={0} />
+                    </Form.Item>
+                    <Form.Item name="stock_min" label="Stock Mínimo" rules={[{ required: true }]}>
                       <InputNumber style={{ width: '100%' }} min={0} />
                     </Form.Item>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="stock_min" label="Stock Mínimo" rules={[{ required: true }]}>
-                      <InputNumber style={{ width: '100%' }} min={0} />
-                    </Form.Item>
                     <Form.Item name="stock_max" label="Stock Máximo" rules={[{ required: true }]}>
                       <InputNumber style={{ width: '100%' }} min={0} />
                     </Form.Item>

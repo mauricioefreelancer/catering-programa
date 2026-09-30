@@ -104,6 +104,43 @@ export class ProductsService {
     });
   }
 
+  // Proveedores que manejan un producto, según los ingresos a bodega registrados.
+  // Cada proveedor trae: id, razon social, costo del último lote (costoUnitarioCompra),
+  // unidades totales recibidas y fecha del último ingreso.
+  async proveedoresDeProducto(idProducto: number) {
+    await this.findOne(idProducto);
+    const detalles = await this.prisma.detalleIngresos.findMany({
+      where: { idProducto },
+      include: {
+        ingreso: {
+          include: {
+            proveedor: true,
+          },
+        },
+      },
+      orderBy: { ingreso: { fechaHora: 'desc' as const } },
+    });
+    const mapa = new Map<number, any>();
+    for (const d of detalles) {
+      const prov = d.ingreso?.proveedor;
+      if (!prov) continue;
+      const pid = prov.idProveedor;
+      const existente = mapa.get(pid);
+      if (existente) {
+        existente.cantidadTotal += d.cantidadRecib;
+      } else {
+        mapa.set(pid, {
+          idProveedor: pid,
+          razonSocial: prov.razonSocial,
+          finalCostoLote: Number(d.costoUnitarioCompra),
+          finalFecha: d.ingreso.fechaHora,
+          cantidadTotal: d.cantidadRecib,
+        });
+      }
+    }
+    return Array.from(mapa.values());
+  }
+
   async create(dto: CreateProductoDto) {
     const data = normalizeProductoInput(dto);
     data.tipoProducto = data.tipoProducto ?? 'ESTANDAR';
