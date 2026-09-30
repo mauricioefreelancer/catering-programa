@@ -77,12 +77,31 @@ export class ProductsService {
     const [data, total] = await Promise.all([
       this.prisma.productos.findMany({
         skip, take, where,
-        include: { proveedor: true },
+        include: {
+          proveedor: true,
+          detalleIngresos: {
+            include: { ingreso: { include: { proveedor: true } } },
+            orderBy: { idDetIngreso: 'desc' },
+          },
+        },
         orderBy: { fechaCreacion: 'desc' },
       }),
       this.prisma.productos.count({ where }),
     ]);
-    return { data, total, skip, take };
+    // Proveedores que manejan cada producto, con su último costo de lote y cantidad total
+    const enriquecido = data.map((p: any) => {
+      const mapa: Record<number, any> = {};
+      for (const d of p.detalleIngresos || []) {
+        const prov = d.ingreso?.proveedor;
+        if (!prov) continue;
+        const pid = prov.idProveedor;
+        if (mapa[pid]) mapa[pid].cantidadTotal += d.cantidadRecib;
+        else mapa[pid] = { idProveedor: pid, razonSocial: prov.razonSocial, finalCostoLote: Number(d.costoUnitarioCompra), cantidadTotal: d.cantidadRecib };
+      }
+      const { detalleIngresos, ...resto } = p;
+      return { ...resto, proveedores: Object.values(mapa) };
+    });
+    return { data: enriquecido, total, skip, take };
   }
 
   async findOne(id: number) {

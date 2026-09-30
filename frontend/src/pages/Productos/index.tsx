@@ -35,6 +35,7 @@ interface Ingrediente {
 interface Producto {
   id: number
   idProveedor?: number | null
+  proveedores?: Array<{ idProveedor: number; razonSocial: string; finalCostoLote: number; cantidadTotal: number }>
   codigo_barras: string
   nombre: string
   tipo: 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'
@@ -90,6 +91,12 @@ const Productos = () => {
       const mapped: Producto[] = raw.map((p: any) => ({
         id: Number(p.idProducto),
         idProveedor: (p.idProveedor as number | null) ?? null,
+        proveedores: (p.proveedores || []).map((x: any) => ({
+          idProveedor: Number(x.idProveedor),
+          razonSocial: x.razonSocial || '',
+          finalCostoLote: Number(x.finalCostoLote || 0),
+          cantidadTotal: Number(x.cantidadTotal || 0),
+        })),
         codigo_barras: p.codigoBarras || p.codigo_barras || '',
         nombre: p.nombreProducto || p.nombre_producto || p.nombre || '',
         tipo: normalizeTipo(p.tipoProducto ?? p.Tipo_Producto ?? p.tipo),
@@ -295,10 +302,25 @@ const Productos = () => {
     { title: 'Código Barras', dataIndex: 'codigo_barras', key: 'codigo_barras', width: 160 },
     { title: 'Nombre', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
     {
-      title: 'Proveedor',
+      title: 'Proveedores',
       key: 'proveedor',
-      width: 200,
+      width: 260,
       render: (_: any, r: Producto) => {
+        const provs = r.proveedores || []
+        if (provs.length > 0) {
+          return (
+            <Space wrap size={2}>
+              {provs.map((x) => (
+                <Tooltip
+                  key={x.idProveedor}
+                  title={`Costo lote: $ ${Number(x.finalCostoLote || 0).toLocaleString('es-CO')} · ${x.cantidadTotal} und`}
+                >
+                  <Tag color="cyan" style={{ cursor: 'help', margin: 0 }}>{x.razonSocial}</Tag>
+                </Tooltip>
+              ))}
+            </Space>
+          )
+        }
         const n = proveedorNombrePorId(r.idProveedor || null)
         return n ? <Tag color="cyan">{n}</Tag> : <span style={{ color: '#999' }}>Sin asignar</span>
       },
