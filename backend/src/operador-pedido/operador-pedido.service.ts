@@ -73,6 +73,7 @@ export class OperadorPedidoService {
           idOperador: dto.idOperador,
           idProducto: item.idProducto,
           idMapaMp: idMapaMpFinal,
+          idProveedor: mpMatch?.idProveedor ?? null,
           fisicoDigitado: item.fisicoDigitado,
           cantSugerida,
           nrActualMedido: dto.nrActual ? BigInt(dto.nrActual) : null,
@@ -82,7 +83,7 @@ export class OperadorPedidoService {
       pedidosCreados.push(pedido);
     }
 
-    const mpConsolidado = new Map<number, { mp: any; consumoUnidadConsumo: number; idMapaMp?: number; vendidasTotal: number }>();
+    const mpConsolidado = new Map<number, { mp: any; consumoUnidadConsumo: number; idMapaMp?: number; idProveedor?: number | null; vendidasTotal: number }>();
     let totalNrqVendidas = 0;
 
     for (const nrqItem of dto.nrqItems ?? []) {
@@ -115,6 +116,7 @@ export class OperadorPedidoService {
             mp,
             consumoUnidadConsumo: consumoTotalUnidadConsumo,
             idMapaMp: mpEnMapa?.idMapaMp,
+            idProveedor: mpEnMapa?.idProveedor ?? null,
             vendidasTotal: vendidas,
           });
         }
@@ -122,7 +124,7 @@ export class OperadorPedidoService {
     }
 
     for (const [, data] of mpConsolidado) {
-      const { mp, consumoUnidadConsumo, idMapaMp } = data;
+      const { mp, consumoUnidadConsumo, idMapaMp, idProveedor } = data;
       const equivalencia = Number(mp.equivalencia) || 1;
       const capacidadUnidadesMapa = idMapaMp ? (mapaMpById.get(idMapaMp)?.capacidadMax ?? 0) : 0;
       const capacidadDotacionMaxUnidadConsumo =
@@ -139,6 +141,7 @@ export class OperadorPedidoService {
           idOperador: dto.idOperador,
           idProducto: mp.idProducto,
           idMapaMp: idMapaMp ?? null,
+          idProveedor: idProveedor ?? null,
           fisicoDigitado: fisicoDigitadoUnidadCompra,
           cantSugerida: cantSugeridaUnidadCompra,
           nrqActualLectura: totalNrqVendidas ? BigInt(totalNrqVendidas) : null,

@@ -48,6 +48,7 @@ interface FilaPedido {
   idOperador: number
   idProducto: number
   idMapaMp?: number | null
+  idProveedor?: number | null
   fechaHora: string
   fisicoDigitado: number
   cantSugerida: number
@@ -71,6 +72,20 @@ interface ItemDespachoEdit {
   totalDespachadoPrevio: number
   stockActualProducto?: number
   espiralCodigo?: string | null
+  idProveedor?: number | null
+}
+
+interface ProveedorStock {
+  idStockProveedor: number
+  idProducto: number
+  idProveedor: number
+  stockActual: number
+  costoCompra: string | number
+  proveedor?: {
+    idProveedor: number
+    razonSocial: string
+    nit?: string
+  }
 }
 
 interface PedidoAgrupado {
@@ -124,6 +139,7 @@ const normalizarFila = (raw: any): FilaPedido => {
     idOperador: raw.idOperador ?? raw.id_operador ?? raw.ID_Operador ?? raw['ID_Operador'] ?? -1,
     idProducto: raw.idProducto ?? raw.id_producto ?? raw.ID_Producto ?? raw['ID_Producto'] ?? -1,
     idMapaMp: raw.idMapaMp ?? raw.id_mapa_mp ?? raw.ID_Mapa_MP ?? raw['ID_Mapa_MP'] ?? null,
+    idProveedor: raw.idProveedor ?? raw.id_proveedor ?? raw.ID_Proveedor ?? raw['ID_Proveedor'] ?? null,
     fechaHora: parseToIsoSafe(
       raw.fechaHora ?? raw.fecha_hora ?? raw.Fecha_Hora ?? raw['Fecha_Hora'] ?? null,
     ),
@@ -169,6 +185,7 @@ const agruparPorMaquina = (filas: FilaPedido[], productosStockMap: Record<number
       totalDespachadoPrevio: f.totalDespachado ?? 0,
       cantDespachada: Math.max(0, f.cantSugerida - (f.totalDespachado ?? 0)),
       stockActualProducto: stock,
+      idProveedor: f.idProveedor ?? null,
     }
     if (item.cantDespachada > stock) item.cantDespachada = stock
     if (item.cantDespachada < 0) item.cantDespachada = 0
@@ -202,6 +219,7 @@ const Despachos = () => {
   const [filasRaw, setFilasRaw] = useState<FilaPedido[]>([])
   const [grupos, setGrupos] = useState<PedidoAgrupado[]>([])
   const [procesandoMaq, setProcesandoMaq] = useState<Record<number, boolean>>({})
+  const [proveedoresStock, setProveedoresStock] = useState<Record<number, ProveedorStock[]>>({})
   const [openReport, setOpenReport] = useState(false)
   const [filtroBuscar, setFiltroBuscar] = useState('')
   const [filtroOperador, setFiltroOperador] = useState<number | undefined>()
@@ -231,6 +249,22 @@ const Despachos = () => {
       })
       setFilasRaw(normalizadas)
       setGrupos(agruparPorMaquina(normalizadas, stockMap))
+
+      // Cargar inventario por proveedor de los productos que tienen pedidos
+      const roles = Array.from(new Set(normalizadas.map((p) => p.idProducto)))
+      const provMap: Record<number, ProveedorStock[]> = {}
+      await Promise.all(
+        roles.map(async (pid) => {
+          try {
+            const res = await apiService.get<any>(`/productos/${pid}/stock-proveedores`)
+            const arr = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []
+            provMap[pid] = arr
+          } catch {
+            provMap[pid] = []
+          }
+        }),
+      )
+      setProveedoresStock(provMap)
     } catch (e: any) {
       console.error('[Despachos] error cargar:', e)
       message.error(
@@ -289,6 +323,21 @@ const Despachos = () => {
     )
   }
 
+  const cambiarProveedor = (idMaquina: number, idPedido: number, idProveedor: number | null) => {
+    setGrupos((prev) =>
+      prev.map((g) =>
+        g.idMaquina === idMaquina
+          ? {
+              ...g,
+              items: g.items.map((it) =>
+                it.idPedido === idPedido ? { ...it, idProveedor } : it,
+              ),
+            }
+          : g,
+      ),
+    )
+  }
+
   const ajustarASugerido = (idMaquina: number) => {
     setGrupos((prev) =>
       prev.map((g) =>
@@ -327,9 +376,13 @@ const Despachos = () => {
       return
     }
     for (const it of items) {
-      if (it.cantDespachada > (it.stockActualProducto ?? Number.MAX_SAFE_INTEGER)) {
+      const provStock = it.idProveedor
+        ? (proveedoresStock[it.idProducto] ?? []).find((ps) => ps.idProveedor === it.idProveedor)
+        : undefined
+      const disponible = provStock?.stockActual ?? it.stockActualProducto ?? Number.MAX_SAFE_INTEGER
+      if (it.cantDespachada > disponible) {
         message.error(
-          `${it.nombreProducto}: Cantidad despachada ${it.cantDespachada} supera el stock actual (${it.stockActualProducto}).`,
+          `${it.nombreProducto}: Cantidad despachada ${it.cantDespachada} supera el stock del proveedor (${disponible}).`,
         )
         return
       }
@@ -341,7 +394,10 @@ const Despachos = () => {
         items: items.map((i) => ({
           idPedido: i.idPedido,
           cantDespachada: i.cantDespachada,
-          observaciones: `Despacho ${grupo.serial} - ${i.nombreProducto}`,
+          idProveedor: i.idProveedor ?? undefined,
+          observaciones: `Despacho ${grupo.serial} - ${i.nombreProducto}${
+            i.idProveedor ? ` (Prov ${i.idProveedor})` : ''
+          }`,
         })),
       }
       const res = await apiService.post('/despachos', body)
@@ -446,6 +502,36 @@ const Despachos = () => {
               {ok ? <CheckCircleOutlined /> : <WarningOutlined />} {stock}
             </Tag>
           </Tooltip>
+        )
+      },
+    },
+    {
+      title: 'Proveedor a despachar',
+      dataIndex: 'idProveedor',
+      width: 220,
+      render: (_: any, r: ItemDespachoEdit) => {
+        const provs = proveedoresStock[r.idProducto] ?? []
+        if (provs.length === 0) {
+          return <Tag color="default">Solo global</Tag>
+        }
+        if (!perm.editar) {
+          const sel = provs.find((p) => p.idProveedor === r.idProveedor)
+          return sel ? <Tag color="blue">{sel.proveedor?.razonSocial ?? `Prov ${sel.idProveedor}`}</Tag> : <Tag>Global</Tag>
+        }
+        return (
+          <Select
+            allowClear
+            placeholder="Global (sin proveedor)"
+            style={{ width: '100%' }}
+            value={r.idProveedor ?? undefined}
+            onChange={(v) => cambiarProveedor(grupo.idMaquina, r.idPedido, v != null ? Number(v) : null)}
+          >
+            {provs.map((p) => (
+              <Option key={p.idProveedor} value={p.idProveedor}>
+                {p.proveedor?.razonSocial ?? `Proveedor ${p.idProveedor}`} · {p.stockActual} u
+              </Option>
+            ))}
+          </Select>
         )
       },
     },

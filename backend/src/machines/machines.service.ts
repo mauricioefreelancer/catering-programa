@@ -33,8 +33,8 @@ export class MachinesService {
         skip, take, where, orderBy: { fechaCreacion: 'desc' },
         include: {
           cliente: true, operador: true,
-          mapaMateriaPrima: { include: { producto: true }, orderBy: { espiralCodigo: 'asc' } },
-          mapaCafeNrq: { include: { productoTerminado: true }, orderBy: { opcionBoton: 'asc' } },
+          mapaMateriaPrima: { include: { producto: true, proveedor: true }, orderBy: { espiralCodigo: 'asc' } },
+          mapaCafeNrq: { include: { productoTerminado: true, proveedor: true }, orderBy: { opcionBoton: 'asc' } },
         },
       }),
       this.prisma.maquinasYTiendas.count({ where }),
@@ -47,8 +47,8 @@ export class MachinesService {
       where: { idMaquina: id },
       include: {
         cliente: true, operador: true,
-        mapaMateriaPrima: { include: { producto: true }, orderBy: { espiralCodigo: 'asc' } },
-        mapaCafeNrq: { include: { productoTerminado: true }, orderBy: { opcionBoton: 'asc' } },
+        mapaMateriaPrima: { include: { producto: true, proveedor: true }, orderBy: { espiralCodigo: 'asc' } },
+        mapaCafeNrq: { include: { productoTerminado: true, proveedor: true }, orderBy: { opcionBoton: 'asc' } },
       },
     });
     if (!m) throw new NotFoundException('Máquina no encontrada');
@@ -109,7 +109,7 @@ export class MachinesService {
 
   async getMapaMP(id: number) {
     await this.findOne(id);
-    return this.prisma.mapaMateriaPrima.findMany({ where: { idMaquina: id }, include: { producto: true }, orderBy: { espiralCodigo: 'asc' } });
+    return this.prisma.mapaMateriaPrima.findMany({ where: { idMaquina: id }, include: { producto: true, proveedor: true }, orderBy: { espiralCodigo: 'asc' } });
   }
 
   async addMapaMP(id: number, dto: CreateMapaMPDto) {
@@ -134,7 +134,7 @@ export class MachinesService {
   async getMapaNRQ(id: number) {
     const maq = await this.findOne(id);
     if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
-    return this.prisma.mapaCafeNrq.findMany({ where: { idMaquina: id }, include: { productoTerminado: true }, orderBy: { opcionBoton: 'asc' } });
+    return this.prisma.mapaCafeNrq.findMany({ where: { idMaquina: id }, include: { productoTerminado: true, proveedor: true }, orderBy: { opcionBoton: 'asc' } });
   }
 
   async addMapaNRQ(id: number, dto: CreateMapaNRQDto) {
@@ -314,16 +314,20 @@ export class MachinesService {
       if (!e?.espiral || e?.espiral === '') continue;
       const idProducto = Number(e.productoId ?? e.idProducto);
       if (!idProducto) throw new BadRequestException('Cada espiral debe tener un producto asignado');
+      const rawProv = e.proveedorId ?? e.idProveedor;
+      const idProveedor = rawProv ? Number(rawProv) : null;
       await this.prisma.mapaMateriaPrima.upsert({
         where: { idMaquina_espiralCodigo: { idMaquina: id, espiralCodigo: String(e.espiral) } },
         update: {
           idProducto,
+          idProveedor: idProveedor || null,
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
         },
         create: {
           idMaquina: id,
           idProducto,
+          idProveedor: idProveedor || null,
           espiralCodigo: String(e.espiral),
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
@@ -355,10 +359,12 @@ export class MachinesService {
       if (!tipoProd.includes('DOSIF')) {
         throw new BadRequestException(`El botón ${b?.boton} debe ser un producto DOSIFICADO (receta café). '${prodTerm.tipoProducto}' no es válido.`);
       }
+      const rawProv = b.proveedorId ?? b.idProveedor;
+      const idProveedor = rawProv ? Number(rawProv) : null;
       await this.prisma.mapaCafeNrq.upsert({
         where: { idMaquina_opcionBoton: { idMaquina: id, opcionBoton: String(b.boton) } },
-        update: { idProdTerm },
-        create: { idMaquina: id, idProdTerm, opcionBoton: String(b.boton) },
+        update: { idProdTerm, idProveedor: idProveedor || null },
+        create: { idMaquina: id, idProdTerm, idProveedor: idProveedor || null, opcionBoton: String(b.boton) },
       });
     }
     // Eliminar botones que ya no están en el mapa

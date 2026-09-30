@@ -100,6 +100,17 @@ export class ProductsService {
     });
   }
 
+  // Inventario desglosado por proveedor de un producto (para elegir de qué
+  // proveedor despachar a las máquinas sin mezclar costos).
+  async stockProveedoresPorProducto(idProducto: number) {
+    await this.findOne(idProducto);
+    return this.prisma.stockProveedor.findMany({
+      where: { idProducto },
+      include: { proveedor: true },
+      orderBy: { idStockProveedor: 'asc' },
+    });
+  }
+
   async create(dto: CreateProductoDto) {
     const data = normalizeProductoInput(dto);
     data.tipoProducto = data.tipoProducto ?? 'ESTANDAR';

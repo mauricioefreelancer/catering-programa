@@ -5,6 +5,7 @@ export class DespachoItemDto {
   @IsInt() @IsNotEmpty() idPedido: number;
   @IsOptional() @IsInt() cantDespachada?: number;
   @IsOptional() @IsString() observaciones?: string;
+  @IsOptional() @IsInt() idProveedor?: number;
 }
 
 export class CreateDespachoDto {
