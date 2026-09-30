@@ -646,9 +646,9 @@ async function main() {
   }
   console.log('✅ 6 Máquinas creadas (2 por Operador): 3 CAFE + 3 SNACK/BEBIDA/COMBINADA · Cliente = Empresa Demo');
 
-  const cafeNegro = await prisma.productos.findFirst({ where: { codigoBarras: '7703001' } });
-  const cafeConLeche = await prisma.productos.findFirst({ where: { codigoBarras: '7703002' } });
-  const chocolate = await prisma.productos.findFirst({ where: { codigoBarras: '7703003' } });
+  const cafeNegro = await prisma.productos.findUnique({ where: { codigoBarras: '7703001' } });
+  const cafeConLeche = await prisma.productos.findUnique({ where: { codigoBarras: '7703002' } });
+  const chocolate = await prisma.productos.findUnique({ where: { codigoBarras: '7703003' } });
   const maqsCafe = (await prisma.maquinasYTiendas.findMany({ where: { tipo: 'CAFE' } }));
   for (const mc of maqsCafe) {
     if (cafeNegro) {

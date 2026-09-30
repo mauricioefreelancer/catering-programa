@@ -41,7 +41,6 @@ export class InventoryService {
     const prov = await this.prisma.proveedores.findUnique({ where: { idProveedor: dto.idProveedor } });
     if (!prov) throw new NotFoundException('Proveedor no encontrado');
 
-    // Validamos que los items del detalle hagan referencia a productos existentes
     for (const d of dto.detalle) {
       const p = await this.prisma.productos.findUnique({ where: { idProducto: d.idProducto } });
       if (!p) throw new BadRequestException(`Producto ${d.idProducto} no existe`);
@@ -58,42 +57,72 @@ export class InventoryService {
         },
       });
 
+      // Productos e insumos afectados por este ingreso, para recalcular el agregado global
+      const productoIds = new Set<number>();
+
       for (const d of dto.detalle) {
-        const producto = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
-        if (!producto) continue;
-
-        // Modelo GS1: el código de barras identifica al producto (único), NO al proveedor.
-        // Un solo artículo (p.ej. CocaCola) se compra a distintos proveedores, pero el stock y
-        // el costo base son ÚNICOS del producto. El proveedor y el costo de cada lote quedan
-        // registrados aquí en DETALLE_INGRESOS (y en INGRESOS_BODEGA.idProveedor) para tener
-        // trazabilidad de a quién y a cuánto se compró, sin duplicar el catálogo.
-        const idProductoDestino = producto.idProducto;
-
         await tx.detalleIngresos.create({
           data: {
             idIngreso: ingreso.idIngreso,
-            idProducto: idProductoDestino,
+            idProducto: d.idProducto,
             cantidadRecib: d.cantidadRecib,
             costoUnitarioCompra: new Prisma.Decimal(d.costoUnitarioCompra),
             fechaVenc: d.fechaVenc ? new Date(d.fechaVenc) : null,
           },
         });
 
-        const stockAnt = producto.stockActual;
-        const costoAnt = Number(producto.costoBase);
-        const stockNuevo = stockAnt + d.cantidadRecib;
-        // Costo promedio ponderado: aplica a todos los productos excepto los DOSIFICADOS
-        // (CocaCola comprada a $100 con prov A y a $120 con prov B queda en ~$110).
-        // Garantiza un costo base único y realista del artículo, sin duplicar el catálogo.
-        let costoNuevo = costoAnt;
-        if (producto.tipoProducto !== 'DOSIFICADO' && d.costoUnitarioCompra > 0 && stockNuevo > 0) {
-          costoNuevo = (stockAnt * costoAnt + d.cantidadRecib * d.costoUnitarioCompra) / stockNuevo;
+        // Stock por PROVEEDOR (par producto+proveedor del encabezado del ingreso)
+        const costo = Number(d.costoUnitarioCompra) || 0;
+        const exists = await tx.productosProveedor.findUnique({
+          where: { idProducto_idProveedor: { idProducto: d.idProducto, idProveedor: dto.idProveedor } },
+        });
+
+        if (exists) {
+          // Caso 1: mismo producto + mismo proveedor → se SUMA al stock existente
+          const nuevoStockPar = exists.stockActual + d.cantidadRecib;
+          let nuevoCosto = Number(exists.costoCompra);
+          if (exists.stockActual > 0) {
+            nuevoCosto = (exists.stockActual * Number(exists.costoCompra) + d.cantidadRecib * costo) / nuevoStockPar;
+          } else if (costo > 0) {
+            nuevoCosto = costo;
+          }
+          await tx.productosProveedor.update({
+            where: { idProducto_idProveedor: { idProducto: d.idProducto, idProveedor: dto.idProveedor } },
+            data: {
+              stockActual: nuevoStockPar,
+              costoCompra: new Prisma.Decimal(Math.round(nuevoCosto * 100) / 100),
+              fechaUltimaActualizacion: new Date(),
+            },
+          });
+        } else {
+          // Caso 2: mismo producto pero NUEVO proveedor → se crea un registro independiente
+          // con el precio de compra específico que dio ese proveedor.
+          await tx.productosProveedor.create({
+            data: {
+              idProducto: d.idProducto,
+              idProveedor: dto.idProveedor,
+              stockActual: d.cantidadRecib,
+              costoCompra: new Prisma.Decimal(Math.round(costo * 100) / 100),
+            },
+          });
         }
+
+        productoIds.add(d.idProducto);
+      }
+
+      // Recalcular el agregado del PRODUCTO (stock total y costo promedio ponderado global)
+      // para mantener compatibilidad con dashboard, despachos y stock crítico.
+      for (const idProducto of productoIds) {
+        const pps = await tx.productosProveedor.findMany({ where: { idProducto } });
+        if (!pps.length) continue;
+        const stockTotal = pps.reduce((s, p) => s + p.stockActual, 0);
+        const costoTotalG = pps.reduce((s, p) => s + Number(p.costoCompra) * p.stockActual, 0);
+        const costoPromedio = stockTotal > 0 ? costoTotalG / stockTotal : 0;
         await tx.productos.update({
-          where: { idProducto: idProductoDestino },
+          where: { idProducto },
           data: {
-            stockActual: stockNuevo,
-            costoBase: new Prisma.Decimal(costoNuevo),
+            stockActual: stockTotal,
+            costoBase: new Prisma.Decimal(Math.round(costoPromedio * 100) / 100),
           },
         });
       }

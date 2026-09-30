@@ -75,33 +75,10 @@ export class ProductsService {
     }
     if (query.tipo) where.tipoProducto = query.tipo;
     const [data, total] = await Promise.all([
-      this.prisma.productos.findMany({
-        skip, take, where,
-        include: {
-          proveedor: true,
-          detalleIngresos: {
-            include: { ingreso: { include: { proveedor: true } } },
-            orderBy: { idDetIngreso: 'desc' },
-          },
-        },
-        orderBy: { fechaCreacion: 'desc' },
-      }),
+      this.prisma.productos.findMany({ skip, take, where, orderBy: { fechaCreacion: 'desc' } }),
       this.prisma.productos.count({ where }),
     ]);
-    // Proveedores que manejan cada producto, con su último costo de lote y cantidad total
-    const enriquecido = data.map((p: any) => {
-      const mapa: Record<number, any> = {};
-      for (const d of p.detalleIngresos || []) {
-        const prov = d.ingreso?.proveedor;
-        if (!prov) continue;
-        const pid = prov.idProveedor;
-        if (mapa[pid]) mapa[pid].cantidadTotal += d.cantidadRecib;
-        else mapa[pid] = { idProveedor: pid, razonSocial: prov.razonSocial, finalCostoLote: Number(d.costoUnitarioCompra), cantidadTotal: d.cantidadRecib };
-      }
-      const { detalleIngresos, ...resto } = p;
-      return { ...resto, proveedores: Object.values(mapa) };
-    });
-    return { data: enriquecido, total, skip, take };
+    return { data, total, skip, take };
   }
 
   async findOne(id: number) {
@@ -123,43 +100,6 @@ export class ProductsService {
     });
   }
 
-  // Proveedores que manejan un producto, según los ingresos a bodega registrados.
-  // Cada proveedor trae: id, razon social, costo del último lote (costoUnitarioCompra),
-  // unidades totales recibidas y fecha del último ingreso.
-  async proveedoresDeProducto(idProducto: number) {
-    await this.findOne(idProducto);
-    const detalles = await this.prisma.detalleIngresos.findMany({
-      where: { idProducto },
-      include: {
-        ingreso: {
-          include: {
-            proveedor: true,
-          },
-        },
-      },
-      orderBy: { ingreso: { fechaHora: 'desc' as const } },
-    });
-    const mapa = new Map<number, any>();
-    for (const d of detalles) {
-      const prov = d.ingreso?.proveedor;
-      if (!prov) continue;
-      const pid = prov.idProveedor;
-      const existente = mapa.get(pid);
-      if (existente) {
-        existente.cantidadTotal += d.cantidadRecib;
-      } else {
-        mapa.set(pid, {
-          idProveedor: pid,
-          razonSocial: prov.razonSocial,
-          finalCostoLote: Number(d.costoUnitarioCompra),
-          finalFecha: d.ingreso.fechaHora,
-          cantidadTotal: d.cantidadRecib,
-        });
-      }
-    }
-    return Array.from(mapa.values());
-  }
-
   async create(dto: CreateProductoDto) {
     const data = normalizeProductoInput(dto);
     data.tipoProducto = data.tipoProducto ?? 'ESTANDAR';
@@ -173,27 +113,13 @@ export class ProductsService {
     data.stockMin = data.stockMin ?? 0;
     data.stockMax = data.stockMax ?? 0;
     data.stockActual = data.stockActual ?? 0;
-    try {
-      return await this.prisma.productos.create({ data });
-    } catch (e: any) {
-      if (e?.code === 'P2002') {
-        throw new BadRequestException('Ya existe un producto con ese Código de Barras. Si es el mismo artículo comprado a otro proveedor, regístrelo como ingreso a bodega sin duplicarlo (el producto es único).');
-      }
-      throw e;
-    }
+    return this.prisma.productos.create({ data });
   }
 
   async update(id: number, dto: UpdateProductoDto) {
     await this.findOne(id);
     const data = normalizeProductoInput(dto);
-    try {
-      return await this.prisma.productos.update({ where: { idProducto: id }, data });
-    } catch (e: any) {
-      if (e?.code === 'P2002') {
-        throw new BadRequestException('Ya existe un producto con ese Código de Barras.');
-      }
-      throw e;
-    }
+    return this.prisma.productos.update({ where: { idProducto: id }, data });
   }
 
   async remove(id: number) {

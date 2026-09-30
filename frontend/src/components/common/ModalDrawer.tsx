@@ -12,7 +12,6 @@ interface ModalDrawerProps {
   loading?: boolean
   submitText?: string
   footerExtra?: ReactNode
-  formInstance?: any
 }
 
 const ModalDrawer = ({
@@ -26,10 +25,8 @@ const ModalDrawer = ({
   loading = false,
   submitText = 'Guardar',
   footerExtra,
-  formInstance,
 }: ModalDrawerProps) => {
-  const [formInt] = Form.useForm()
-  const form = formInstance || formInt
+  const [form] = Form.useForm()
 
   useEffect(() => {
     if (open) {

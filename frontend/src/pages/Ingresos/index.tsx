@@ -19,8 +19,6 @@ import {
   Modal,
   Radio,
   Tag,
-  Tabs,
-  Tooltip,
 } from 'antd'
 import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined, FileAddOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -49,7 +47,6 @@ const Ingresos = () => {
   const [loading, setLoading] = useState(false)
   const [proveedores, setProveedores] = useState<any[]>([])
   const [productos, setProductos] = useState<any[]>([])
-  const [ingresos, setIngresos] = useState<any[]>([])
   const [fetching, setFetching] = useState(true)
   const [initialLoading, setInitialLoading] = useState(true)
   const perm = usePermissions('inventario')
@@ -65,17 +62,13 @@ const Ingresos = () => {
   const loadData = useCallback(async () => {
     setFetching(true)
     try {
-      const [proveedoresRes, productosRes, ingresosRes] = await Promise.all([
+      const [proveedoresRes, productosRes] = await Promise.all([
         apiService.get('/proveedores'),
         apiService.get('/productos?limit=2000&take=2000'),
-        apiService.get('/ingresos-bodega?take=2000'),
       ])
 
       const proveedoresList = Array.isArray(proveedoresRes) ? proveedoresRes : (proveedoresRes?.data || [])
       const productosList = Array.isArray(productosRes) ? productosRes : (productosRes?.data || [])
-      const ingresosList = Array.isArray(ingresosRes)
-        ? ingresosRes
-        : Array.isArray(ingresosRes?.data) ? ingresosRes.data : []
 
       const proveedoresMapeados = proveedoresList.map((p: any) => ({
         id: p.idProveedor ?? p.id,
@@ -86,40 +79,10 @@ const Ingresos = () => {
         id: p.idProducto ?? p.id,
         nombre: p.nombreProducto ?? p.nombre ?? '',
         costo: p.costoBase ?? p.costo ?? 0,
-        codigo_barras: p.codigoBarras ?? p.codigo_barras ?? '',
-        idProveedor: p.idProveedor ?? p.id_proveedor ?? null,
-        proveedor: p.proveedor?.razonSocial ?? p.proveedor?.razon_social ?? p.proveedorNombre ?? '',
       }))
-
-      const proveedorPorId: Record<number, string> = {}
-      proveedoresMapeados.forEach((p) => { proveedorPorId[p.id] = p.nombre })
-
-      // Mapeo limpio del historial para mostrar proveedor y costo de cada lote
-      const ingresosMapeados = ingresosList.map((ing: any) => {
-        const provNombre = ing.proveedor?.razonSocial ?? ing.proveedor?.razon_social ?? proveedorPorId[ing.idProveedor] ?? (ing.idProveedor ? `Proveedor ${ing.idProveedor}` : '—')
-        const detalle = (ing.detalleIngresos || []).map((d: any) => ({
-          idProducto: d.producto?.idProducto ?? d.idProducto,
-          productoNombre: d.producto?.nombreProducto ?? d.producto?.nombre ?? `Producto ${d.idProducto}`,
-          codigo_barras: d.producto?.codigoBarras ?? d.producto?.codigo_barras ?? '',
-          cantidad: d.cantidadRecib,
-          costo: d.costoUnitarioCompra,
-          vencimiento: d.fechaVenc,
-        }))
-        return {
-          id: ing.idIngreso,
-          idProveedor: ing.idProveedor,
-          proveedor: provNombre,
-          factura: ing.facturaNum,
-          fecha: ing.fechaHora,
-          observaciones: ing.observaciones,
-          usuario: ing.usuario?.nombreCompleto ?? ing.usuario?.nombre ?? '',
-          detalle,
-        }
-      })
 
       setProveedores(proveedoresMapeados)
       setProductos(productosMapeados)
-      setIngresos(ingresosMapeados)
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al cargar datos')
     } finally {
@@ -248,7 +211,6 @@ const Ingresos = () => {
       message.success(`Ingreso #${res?.idIngreso ?? res?.id ?? Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
       form.resetFields()
       setItems([])
-      loadData()
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al guardar ingreso')
     } finally {
@@ -266,21 +228,12 @@ const Ingresos = () => {
           showSearch
           value={r.productoId}
           style={{ width: '100%' }}
-          optionFilterProp="label"
           onChange={(v: any) => {
             const p = productos.find((x) => x.id === v)!
             updateItem(i, { productoId: v, productoNombre: p?.nombre ?? '', costo: p?.costo ?? 0 })
           }}
         >
-          {productos.map((p) => (
-            <Option
-              key={p.id}
-              value={p.id}
-              label={`${p.nombre}${p.codigo_barras ? ` | ${p.codigo_barras}` : ''}`}
-            >
-              {p.nombre}{p.codigo_barras ? ` · ${p.codigo_barras}` : ''}
-            </Option>
-          ))}
+          {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
         </Select>
       ),
     },
@@ -349,17 +302,9 @@ const Ingresos = () => {
         <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>Recargar</Button>
       </Space>
 
-      <Tabs
-        size="large"
-        items={[
-          {
-            key: 'nuevo',
-            label: '📥 Nuevo Ingreso',
-            children: (
-              <>
-                <Spin spinning={initialLoading}>
-                  <Card title="Encabezado del Ingreso" style={{ marginBottom: 16 }}>
-                  <Form form={form} layout="vertical" initialValues={{ fecha: dayjs() }}>
+      <Spin spinning={initialLoading}>
+        <Card title="Encabezado del Ingreso" style={{ marginBottom: 16 }}>
+          <Form form={form} layout="vertical" initialValues={{ fecha: dayjs() }}>
             <Row gutter={16}>
               <Col xs={24} md={8}>
                 <Form.Item label="Proveedor" name="proveedorId" rules={[{ required: true, message: 'Seleccione proveedor' }]}>
@@ -427,16 +372,6 @@ const Ingresos = () => {
           )}
         </Space>
       </div>
-              </>
-            ),
-          },
-          {
-            key: 'historial',
-            label: '🗂 Historial de Ingresos',
-            children: <HistorialIngresos ingresos={ingresos} loading={fetching} />,
-          },
-        ]}
-      />
 
       <Modal
         title="Nuevo Producto (desde Ingreso a Bodega)"
@@ -510,84 +445,3 @@ const Ingresos = () => {
 }
 
 export default Ingresos
-
-function HistorialIngresos({ ingresos, loading }: { ingresos: any[]; loading: boolean }) {
-  const detalleCols = [
-    { title: 'Producto', dataIndex: 'productoNombre', key: 'productoNombre' },
-    { title: 'Código', dataIndex: 'codigo_barras', key: 'codigo_barras' },
-    { title: 'Cantidad', dataIndex: 'cantidad', key: 'cantidad', width: 100 },
-    {
-      title: 'Costo Lote',
-      dataIndex: 'costo',
-      key: 'costo',
-      width: 130,
-      render: (v: any) => (v !== null && v !== undefined) ? `$ ${Number(v).toLocaleString('es-CO', { minimumFractionDigits: 2 })}` : '—',
-    },
-    {
-      title: 'Vencimiento',
-      dataIndex: 'vencimiento',
-      key: 'vencimiento',
-      width: 120,
-      render: (v: any) => v ? dayjs(String(v).slice(0, 10)).format('DD/MM/YYYY') : '—',
-    },
-  ]
-
-  const cols = [
-    {
-      title: 'Fecha',
-      dataIndex: 'fecha',
-      key: 'fecha',
-      width: 120,
-      render: (v: any) => v ? dayjs(v).format('DD/MM/YYYY') : '—',
-    },
-    { title: 'N° Factura', dataIndex: 'factura', key: 'factura', width: 150 },
-    {
-      title: 'Proveedor',
-      dataIndex: 'proveedor',
-      key: 'proveedor',
-      width: 220,
-      render: (v: any) => <Tag color="purple">{v || '—'}</Tag>,
-    },
-    { title: 'Usuario', dataIndex: 'usuario', key: 'usuario', width: 160 },
-    {
-      title: 'Items',
-      key: 'items',
-      width: 80,
-      render: (_: any, r: any) => (r.detalle || []).length,
-    },
-    {
-      title: 'Total',
-      key: 'total',
-      width: 140,
-      align: 'right' as const,
-      render: (_: any, r: any) => {
-        const t = (r.detalle || []).reduce((acc: number, d: any) => acc + Number(d.cantidad || 0) * Number(d.costo || 0), 0)
-        return `$ ${t.toLocaleString('es-CO', { minimumFractionDigits: 2 })}`
-      },
-    },
-  ]
-
-  return (
-    <Table
-      rowKey="id"
-      loading={loading}
-      dataSource={ingresos}
-      columns={cols}
-      pagination={{ pageSize: 10, showSizeChanger: true }}
-      scroll={{ x: 900 }}
-      expandable={{
-        rowExpandable: (r: any) => (r.detalle || []).length > 0,
-        expandedRowRender: (r: any) => (
-          <Table
-            rowKey="idProducto"
-            size="small"
-            dataSource={r.detalle || []}
-            columns={detalleCols}
-            pagination={false}
-            title={() => <b>Detalle del ingreso · {r.proveedor}</b>}
-          />
-        ),
-      }}
-    />
-  )
-}

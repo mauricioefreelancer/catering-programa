@@ -15,7 +15,6 @@ export class ProductsController {
 
   @Get() @Permissions('productos', 'ver') findAll(@Query() q: QueryProductoDto) { return this.srv.findAll(q); }
   @Get('stock-critico') @Permissions('productos', 'ver') stockCritico() { return this.srv.stockCritico(); }
-  @Get(':id/proveedores') @Permissions('productos', 'ver') proveedoresDeProducto(@Param('id') id: string) { return this.srv.proveedoresDeProducto(+id); }
   @Get(':id') @Permissions('productos', 'ver') findOne(@Param('id') id: string) { return this.srv.findOne(+id); }
   @Post() @Permissions('productos', 'crear') create(@Body() dto: CreateProductoDto) { return this.srv.create(dto); }
   @Patch(':id') @Permissions('productos', 'editar') update(@Param('id') id: string, @Body() dto: UpdateProductoDto) { return this.srv.update(+id, dto); }

@@ -82,6 +82,7 @@ model Proveedores {
 
   productos          Productos[]
   ingresosBodega IngresosBodega[]
+  productoProveedores ProductosProveedor[]
 
   @@map("PROVEEDORES")
 }
@@ -132,6 +133,7 @@ model Productos {
   detalleIngresos DetalleIngresos[]
   pedidosOperador PedidosOperador[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+  productoProveedores ProductosProveedor[]
 
   @@map("PRODUCTOS")
 }
@@ -254,6 +256,21 @@ model DetalleIngresos {
   producto  Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
 
   @@map("DETALLE_INGRESOS")
+}
+
+model ProductosProveedor {
+  idProductoProveedor Int                       @id @default(autoincrement()) @map("ID_Producto_Proveedor")
+  idProducto          Int                       @map("ID_Producto")
+  idProveedor         Int                       @map("ID_Proveedor")
+  stockActual         Int                       @default(0) @map("Stock_Actual")
+  costoCompra         Decimal                   @default(0) @map("Costo_Compra") @db.Decimal(18, 2)
+  fechaUltimaActualizacion DateTime             @default(now()) @map("Fecha_Ultima_Actualizacion")
+
+  producto  Productos   @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  proveedor Proveedores @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([idProducto, idProveedor], map: "uq_producto_proveedor")
+  @@map("PRODUCTO_PROVEEDOR")
 }
 
 model PedidosOperador {
