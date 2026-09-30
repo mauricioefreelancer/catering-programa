@@ -16,10 +16,14 @@ import {
   Col,
   Statistic,
   Spin,
+  Modal,
+  Radio,
+  Tag,
 } from 'antd'
-import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined, FileAddOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useAuth } from '../../hooks/useAuth'
 import { apiService } from '../../api/services/api'
 
 const { Title, Text } = Typography
@@ -37,6 +41,7 @@ interface ItemIngreso {
 }
 
 const Ingresos = () => {
+  const { usuario } = useAuth()
   const [form] = Form.useForm()
   const [items, setItems] = useState<ItemIngreso[]>([])
   const [loading, setLoading] = useState(false)
@@ -45,13 +50,21 @@ const Ingresos = () => {
   const [fetching, setFetching] = useState(true)
   const [initialLoading, setInitialLoading] = useState(true)
   const perm = usePermissions('inventario')
+  const permProductos = usePermissions('productos')
+
+  // --- Creación de producto nuevo desde el ingreso ---
+  const [openNuevo, setOpenNuevo] = useState(false)
+  const [nuevoParaItem, setNuevoParaItem] = useState<number | null>(null)
+  const [formNuevo] = Form.useForm()
+  const [tipoNuevo, setTipoNuevo] = useState<'ESTANDAR' | 'MATERIA_PRIMA'>('ESTANDAR')
+  const [creandoNuevo, setCreandoNuevo] = useState(false)
 
   const loadData = useCallback(async () => {
     setFetching(true)
     try {
       const [proveedoresRes, productosRes] = await Promise.all([
         apiService.get('/proveedores'),
-        apiService.get('/productos'),
+        apiService.get('/productos?limit=2000&take=2000'),
       ])
 
       const proveedoresList = Array.isArray(proveedoresRes) ? proveedoresRes : (proveedoresRes?.data || [])
@@ -110,40 +123,97 @@ const Ingresos = () => {
 
   const total = items.reduce((s, i) => s + i.subtotal, 0)
 
-  const handleConfirm = async () => {
+  // --- Confirmar creación de producto nuevo (Estándar / Materia Prima) ---
+  const confirmarNuevo = async () => {
+    let values: any
     try {
-      const values = await form.validateFields()
-      if (items.length === 0) {
-        message.error('Debe agregar al menos un producto')
-        return
+      values = await formNuevo.validateFields()
+    } catch {
+      return
+    }
+    setCreandoNuevo(true)
+    try {
+      const costoBase = Number(values.costo_base || 0)
+      const iva = Number(values.iva || 0)
+      const payload: any = {
+        idProveedor: values.idProveedor ? Number(values.idProveedor) : null,
+        codigoBarras: values.codigo_barras,
+        nombre: values.nombre,
+        Tipo_Producto: tipoNuevo,
+        unidadCompra: values.unidad_compra,
+        unidadConsumo: values.unidad_consumo,
+        equivalencia: Number(values.equivalencia || 1),
+        costoBase,
+        IVA: iva,
+        costoTotal: Math.round(costoBase * (1 + iva) * 100) / 100,
+        stockActual: Number(values.stock_actual || 0),
+        stockMin: Number(values.stock_min || 0),
+        stockMax: Number(values.stock_max || 0),
       }
-      setLoading(true)
-      try {
-        const body = {
-          idProveedor: values.proveedorId,
-          numeroFactura: values.factura,
-          fechaIngreso: values.fecha ? dayjs(values.fecha).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
-          observaciones: values.observaciones,
-          items: items.map((i) => ({
-            idProducto: i.productoId,
-            cantidad: i.cantidad,
-            costoUnitario: i.costo,
-            fechaVencimiento: i.vencimiento,
-          })),
-        }
-        const res: any = await apiService.post('/inventory/ingresos', body)
-        message.success(`Ingreso #${res?.idIngreso ?? res?.id ?? Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
-        form.resetFields()
-        setItems([])
-      } catch (err: any) {
-        const status = err?.response?.status
-        if (status === 404 || status === undefined) {
-          message.error('Endpoint no implementado')
-        } else {
-          message.error(err?.response?.data?.message || 'Error al guardar ingreso')
+      const nuevo: any = await apiService.post('/productos', payload)
+      const idNuevo = nuevo?.idProducto ?? nuevo?.id
+      if (!idNuevo) throw new Error('No se obtuvo el id del producto creado')
+      message.success(`Producto "${values.nombre}" creado`)
+
+      // Refrescar la lista de productos para que el Select lo incluya
+      await loadData()
+
+      // Si el modal se abrió desde un item del ingreso, seleccionarlo ahí
+      if (nuevoParaItem != null) {
+        const idx = items.findIndex((i) => i.id === nuevoParaItem)
+        if (idx >= 0) {
+          updateItem(idx, { productoId: idNuevo, productoNombre: values.nombre, costo: costoBase })
         }
       }
-    } catch {} finally {
+
+      formNuevo.resetFields()
+      setTipoNuevo('ESTANDAR')
+      setOpenNuevo(false)
+      setNuevoParaItem(null)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || err?.message || 'Error al crear el producto')
+    } finally {
+      setCreandoNuevo(false)
+    }
+  }
+
+  const handleConfirm = async () => {
+    let values: any
+    try {
+      values = await form.validateFields()
+    } catch {
+      return
+    }
+    if (items.length === 0) {
+      message.error('Debe agregar al menos un producto')
+      return
+    }
+    if (!(usuario?.idUsuario) && !(usuario?.id)) {
+      message.error('No hay sesión de usuario válida (idUsuario) para registrar quién hace el ingreso. Re-inicia sesión.')
+      return
+    }
+    setLoading(true)
+    try {
+      const body = {
+        idProveedor: Number(values.proveedorId),
+        facturaNum: values.factura,
+        fechaHora: values.fecha ? dayjs(values.fecha).format('YYYY-MM-DDTHH:mm:ss') : dayjs().format('YYYY-MM-DDTHH:mm:ss'),
+        observaciones: values.observaciones,
+        idUsuario: Number(usuario?.idUsuario ?? usuario?.id),
+        detalle: items.map((i) => ({
+          idProducto: Number(i.productoId),
+          cantidadRecib: Number(i.cantidad),
+          costoUnitarioCompra: Number(i.costo),
+          fechaVenc: i.vencimiento ? dayjs(i.vencimiento).format('YYYY-MM-DD') : undefined,
+        })),
+      }
+      const res: any = await apiService.post('/ingresos-bodega', body)
+      message.success(`Ingreso #${res?.idIngreso ?? res?.id ?? Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
+      form.resetFields()
+      setItems([])
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al guardar ingreso')
+    } finally {
       setLoading(false)
     }
   }
@@ -152,7 +222,7 @@ const Ingresos = () => {
     {
       title: 'Producto',
       dataIndex: 'productoId',
-      width: 260,
+      width: 300,
       render: (_: any, r: ItemIngreso, i: number) => (
         <Select
           showSearch
@@ -160,7 +230,7 @@ const Ingresos = () => {
           style={{ width: '100%' }}
           onChange={(v: any) => {
             const p = productos.find((x) => x.id === v)!
-            updateItem(i, { productoId: v, productoNombre: p.nombre, costo: p.costo })
+            updateItem(i, { productoId: v, productoNombre: p?.nombre ?? '', costo: p?.costo ?? 0 })
           }}
         >
           {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
@@ -170,7 +240,7 @@ const Ingresos = () => {
     {
       title: 'Cantidad',
       dataIndex: 'cantidad',
-      width: 130,
+      width: 120,
       render: (_: any, r: ItemIngreso, i: number) => (
         <InputNumber min={1} value={r.cantidad} style={{ width: '100%' }} onChange={(v: any) => updateItem(i, { cantidad: Number(v) })} />
       ),
@@ -178,7 +248,7 @@ const Ingresos = () => {
     {
       title: 'Costo Und',
       dataIndex: 'costo',
-      width: 150,
+      width: 140,
       render: (_: any, r: ItemIngreso, i: number) => (
         <InputNumber min={0} prefix="$" value={r.costo} style={{ width: '100%' }} onChange={(v: any) => updateItem(i, { costo: Number(v) })} />
       ),
@@ -186,7 +256,7 @@ const Ingresos = () => {
     {
       title: 'Vencimiento',
       dataIndex: 'vencimiento',
-      width: 180,
+      width: 160,
       render: (_: any, r: ItemIngreso, i: number) => (
         <DatePicker
           value={r.vencimiento ? dayjs(r.vencimiento) : null}
@@ -198,15 +268,27 @@ const Ingresos = () => {
     {
       title: 'Subtotal',
       dataIndex: 'subtotal',
-      width: 140,
+      width: 130,
       align: 'right' as const,
       render: (v: number) => <strong>$ {v.toLocaleString('es-CO')}</strong>,
     },
     {
       title: '',
-      width: 60,
-      render: (_: any, r: ItemIngreso) => (
-        <Button danger type="text" icon={<MinusCircleOutlined />} onClick={() => removeItem(r.id)} />
+      width: 140,
+      render: (_: any, r: ItemIngreso, i: number) => (
+        <Space>
+          {permProductos.crear && (
+            <Button
+              type="link"
+              size="small"
+              icon={<FileAddOutlined />}
+              onClick={() => { setNuevoParaItem(r.id); formNuevo.resetFields(); setTipoNuevo('ESTANDAR'); setOpenNuevo(true) }}
+            >
+              Nuevo
+            </Button>
+          )}
+          <Button danger type="text" icon={<MinusCircleOutlined />} onClick={() => removeItem(r.id)} />
+        </Space>
       ),
     },
   ]
@@ -258,11 +340,16 @@ const Ingresos = () => {
             columns={columns}
             pagination={false}
             locale={{ emptyText: 'No hay productos agregados. Haga clic en "Agregar Producto".' }}
-            scroll={{ x: 900 }}
+            scroll={{ x: 990 }}
           />
           {items.length > 0 && (
             <>
               <Divider />
+              <div style={{ textAlign: 'right', marginBottom: 8 }}>
+                <Tag color="geekblue" style={{ fontSize: 12 }}>
+                  Si el artículo recibido no está en la lista (producto nuevo), use el botón <b>Nuevo</b> de la fila para crearlo directamente.
+                </Tag>
+              </div>
               <Row justify="end" gutter={16}>
                 <Col xs={24} md={8}>
                   <Card size="small" style={{ background: '#f0f5ff' }}>
@@ -285,6 +372,74 @@ const Ingresos = () => {
           )}
         </Space>
       </div>
+
+      <Modal
+        title="Nuevo Producto (desde Ingreso a Bodega)"
+        open={openNuevo}
+        onOk={confirmarNuevo}
+        onCancel={() => { setOpenNuevo(false); setNuevoParaItem(null); formNuevo.resetFields() }}
+        confirmLoading={creandoNuevo}
+        okText="Crear producto"
+        cancelText="Cancelar"
+        width={680}
+        destroyOnClose
+      >
+        <Form form={formNuevo} layout="vertical" initialValues={{ tipo: 'ESTANDAR', equivalencia: 1, iva: 0 }}>
+          <Form.Item name="tipo" label="Clasificación del producto" extra="Se creará con la misma lógica de la sección Productos. Los DOSIFICADOS no se crean desde aquí (vienen parametrizados).">
+            <Radio.Group onChange={(e: any) => setTipoNuevo(e.target.value)}>
+              <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
+              <Radio.Button value="MATERIA_PRIMA">🟣 Materia Prima (insumo)</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Form.Item name="idProveedor" label="Proveedor (Opcional)">
+              <Select allowClear placeholder="Seleccione el proveedor de este producto">
+                {proveedores.map((pr) => (
+                  <Option key={pr.id} value={pr.id}>{pr.nombre}</Option>
+                ))}
+              </Select>
+            </Form.Item>
+            <Form.Item name="codigo_barras" label="Código Barras" rules={[{ required: true, message: 'Código requerido' }]}>
+              <Input />
+            </Form.Item>
+          </div>
+          <Form.Item name="nombre" label="Nombre" rules={[{ required: true, message: 'Nombre requerido' }]}>
+            <Input />
+          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true, message: 'Requerido' }]}>
+              <Input placeholder="Ej: CAJA 24 / KILO / BOLSA" />
+            </Form.Item>
+            <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true, message: 'Requerido' }]}>
+              <Input placeholder="Ej: UND / Gramo / ml" />
+            </Form.Item>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Form.Item name="equivalencia" label="Equivalencia (und x empaque)" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} min={1} />
+            </Form.Item>
+            <Form.Item name="iva" label="IVA (decimal)" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} min={0} max={1} step={0.01} />
+            </Form.Item>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Form.Item name="costo_base" label="Costo Base" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} min={0} prefix="$" />
+            </Form.Item>
+            <Form.Item name="stock_actual" label="Stock Actual" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} min={0} />
+            </Form.Item>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Form.Item name="stock_min" label="Stock Mínimo" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} min={0} />
+            </Form.Item>
+            <Form.Item name="stock_max" label="Stock Máximo" rules={[{ required: true }]}>
+              <InputNumber style={{ width: '100%' }} min={0} />
+            </Form.Item>
+          </div>
+        </Form>
+      </Modal>
     </div>
   )
 }
