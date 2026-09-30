@@ -32,6 +32,12 @@ function normalizeProductoInput(dto: CreateProductoDto | UpdateProductoDto) {
   if (uc !== undefined) result.unidadCompra = String(uc).slice(0, 50);
   const ucons = firstNonEmpty(dto.unidadConsumo, dto.unidad_consumo, dto.unidad_medida);
   if (ucons !== undefined) result.unidadConsumo = String(ucons).slice(0, 50);
+  const tipoCafeRaw = firstNonEmpty(dto.tipoCafe, dto.tipo_cafe, dto.tipoCafeId);
+  if (tipoCafeRaw !== undefined) {
+    const up = String(tipoCafeRaw).trim().toUpperCase();
+    if (['SOLUBLE', 'GRANO'].includes(up)) result.tipoCafe = up;
+    else if (tipoCafeRaw === null || up === '' || up === 'NINGUNO' || up === 'NO') result.tipoCafe = null;
+  }
   const equiv = firstNonEmpty(dto.equivalencia);
   if (equiv !== undefined && !isNaN(Number(equiv))) result.equivalencia = Number(equiv);
   const costoBase = firstNonEmpty(dto.costoBase, dto.costo_base, dto.costo_unitario);

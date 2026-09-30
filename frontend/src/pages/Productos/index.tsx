@@ -38,6 +38,7 @@ interface Producto {
   codigo_barras: string
   nombre: string
   tipo: 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'
+  tipo_cafe?: 'SOLUBLE' | 'GRANO' | null
   unidad_compra: string
   unidad_consumo: string
   equivalencia: number
@@ -89,6 +90,7 @@ const Productos = () => {
         codigo_barras: p.codigoBarras || p.codigo_barras || '',
         nombre: p.nombreProducto || p.nombre_producto || p.nombre || '',
         tipo: normalizeTipo(p.tipoProducto ?? p.Tipo_Producto ?? p.tipo),
+        tipo_cafe: (p.tipoCafe ?? p.tipo_cafe ?? null) || null,
         unidad_compra: p.unidadCompra || p.unidad_compra || 'UND',
         unidad_consumo: p.unidadConsumo || p.unidad_consumo || 'UND',
         equivalencia: Number(p.equivalencia || 1),
@@ -144,6 +146,7 @@ const Productos = () => {
         ...(editing?.tipo !== 'DOSIFICADO' ? { Tipo_Producto: values.tipo || 'ESTANDAR' } : {}),
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
+        ...(values.tipo_cafe ? { tipoCafe: values.tipo_cafe } : {}),
         equivalencia: Number(values.equivalencia || 1),
         costoBase: Number(values.costo_base || 0),
         IVA: Number(values.iva || 0),
@@ -288,6 +291,18 @@ const Productos = () => {
       },
     },
     { title: 'Tipo', dataIndex: 'tipo', key: 'tipo', render: (v: string) => <Tag color={tipoColor(v)}>{tipoLabel(v)}</Tag>, width: 280 },
+    {
+      title: 'Tipo Café',
+      dataIndex: 'tipo_cafe',
+      key: 'tipo_cafe',
+      width: 130,
+      render: (v: string | null, r: Producto) => {
+        if (r.tipo !== 'MATERIA_PRIMA' || !v) return <span style={{ color: '#bbb' }}>—</span>
+        return v === 'SOLUBLE'
+          ? <Tag color="green">☕ Soluble · 2gr</Tag>
+          : <Tag color="geekblue">☕ Grano · 8gr</Tag>
+      },
+    },
     { title: 'Costo Base', dataIndex: 'costo_base', key: 'costo_base', render: (v: number) => `$ ${v.toLocaleString('es-CO')}` },
     { title: 'Costo Total + IVA', dataIndex: 'costo_total', key: 'costo_total', render: (v: number) => `$ ${v.toLocaleString('es-CO')}`, width: 160 },
     {
@@ -409,6 +424,18 @@ const Productos = () => {
                     <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true }]}><Input placeholder="Ej: UND / Gramo / ml" /></Form.Item>
                   </div>
+                  {tipoSel === 'MATERIA_PRIMA' && (
+                    <Form.Item
+                      name="tipo_cafe"
+                      label="Tipo de Café (solo si este insumo es café)"
+                      extra="Define la dosificación por calibración: Soluble = 2 gr por bebida · Grano (molino) = 8 gr por bebida."
+                    >
+                      <Select allowClear placeholder="No es café / no aplica">
+                        <Option value="SOLUBLE">☕ Café SOLUBLE (2 gr por bebida)</Option>
+                        <Option value="GRANO">☕ Café en GRANO (8 gr por bebida)</Option>
+                      </Select>
+                    </Form.Item>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="equivalencia" label="Equivalencia (und x empaque)" rules={[{ required: true }]}>
                       <InputNumber style={{ width: '100%' }} min={1} />

@@ -15,6 +15,7 @@ export class CreateProductoDto {
   @IsOptional() @IsString() codigoBarras?: string;
   @IsOptional() @IsString() nombreProducto?: string;
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) tipoProducto?: string;
+  @IsOptional() @IsString() tipoCafe?: string;
   @IsOptional() @IsString() unidadCompra?: string;
   @IsOptional() @IsString() unidadConsumo?: string;
   @IsOptional() @IsNumber() equivalencia?: number;
@@ -38,6 +39,8 @@ export class CreateProductoDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) Tipo_Producto?: string;
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) tipo?: string;
+  @IsOptional() @IsString() tipo_cafe?: string;
+  @IsOptional() @IsString() tipoCafeId?: string;
   @IsOptional() @IsString() unidad_compra?: string;
   @IsOptional() @IsString() unidad_consumo?: string;
   @IsOptional() @IsNumber() costo_base?: number;
@@ -58,6 +61,7 @@ export class UpdateProductoDto {
   @IsOptional() @IsString() codigoBarras?: string;
   @IsOptional() @IsString() nombreProducto?: string;
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) tipoProducto?: string;
+  @IsOptional() @IsString() tipoCafe?: string;
   @IsOptional() @IsString() unidadCompra?: string;
   @IsOptional() @IsString() unidadConsumo?: string;
   @IsOptional() @IsNumber() equivalencia?: number;
@@ -78,6 +82,8 @@ export class UpdateProductoDto {
   @IsOptional() @IsString() sku?: string;
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) Tipo_Producto?: string;
   @IsOptional() @IsIn(['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO']) tipo?: string;
+  @IsOptional() @IsString() tipo_cafe?: string;
+  @IsOptional() @IsString() tipoCafeId?: string;
   @IsOptional() @IsString() unidad_compra?: string;
   @IsOptional() @IsString() unidad_consumo?: string;
   @IsOptional() @IsNumber() costo_base?: number;

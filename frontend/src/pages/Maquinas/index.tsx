@@ -772,8 +772,9 @@ const Maquinas = () => {
                                   <Space wrap size={4}>
                                     {r.ingredientes && r.ingredientes.length > 0
                                       ? r.ingredientes.map((ing: any, i: number) => (
-                                          <Tag key={i} color={ing.tazasPosibles === 0 ? 'red' : 'blue'} title={`$ ${(ing.costoPorTaza ?? 0).toLocaleString('es-CO')}/taza`}>
+                                          <Tag key={i} color={ing.tazasPosibles === 0 ? 'red' : ing.tipoCafe ? 'geekblue' : 'blue'} title={`$ ${(ing.costoPorTaza ?? 0).toLocaleString('es-CO')}/taza`}>
                                             {ing.dosis} {ing.unidad} {ing.nombre}
+                                            {ing.tipoCafe ? ` (${ing.tipoCafe === 'SOLUBLE' ? 'soluble·2g' : 'grano·8g'})` : ''}
                                             {ing.tazasPosibles === 0 ? ' (sin MP)' : ''}
                                           </Tag>
                                         ))

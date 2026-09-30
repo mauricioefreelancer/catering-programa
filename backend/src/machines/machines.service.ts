@@ -226,6 +226,7 @@ export class MachinesService {
           costoTotal: costoTotal,
           costoPorUnidad: costoPorUnidad,
           proveedor: prod.proveedor?.razonSocial ?? prod.proveedor?.razon_social ?? '',
+          tipoCafe: prod.tipoCafe ?? prod.tipo_cafe ?? null,
         });
       }
     }
@@ -240,6 +241,8 @@ export class MachinesService {
         const unidades = mpInfo?.unidadesDisponibles ?? 0;
         const tazasMP = dosis > 0 ? Math.floor(unidades / dosis) : 0;
         const costoIng = (mpInfo?.costoPorUnidad ?? 0) * dosis;
+        const tipoCafe = mpInfo?.tipoCafe ?? r.materiaPrima?.tipoCafe ?? null;
+        const dosisSugerida = tipoCafe === 'SOLUBLE' ? 2 : tipoCafe === 'GRANO' ? 8 : null;
         return {
           idMatPrima: r.idMatPrima,
           nombre: mpInfo?.nombre ?? r.materiaPrima?.nombreProducto ?? '',
@@ -248,6 +251,8 @@ export class MachinesService {
           equivalencia: mpInfo?.equivalencia ?? 1,
           unidadesDisponibles: unidades,
           dosis,
+          tipoCafe,
+          dosisSugerida,
           tazasPosibles: Math.max(0, tazasMP),
           costoPorTaza: Math.round(costoIng * 100) / 100,
         };

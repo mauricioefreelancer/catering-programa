@@ -112,6 +112,7 @@ model Productos {
   tipoProducto      String                    @default("ESTANDAR") @map("Tipo_Producto") @db.VarChar(30)
   unidadCompra      String                    @default("Unidad") @map("Unidad_Compra") @db.VarChar(50)
   unidadConsumo     String                    @default("Unidad") @map("Unidad_Consumo") @db.VarChar(50)
+  tipoCafe          String?                   @map("Tipo_Cafe") @db.VarChar(20)
   equivalencia       Decimal                   @default(1.0000) @map("Equivalencia") @db.Decimal(18, 4)
   costoBase         Decimal                   @default(0) @map("Costo_Base") @db.Decimal(18, 2)
   porcentajeImp     Decimal                   @default(0) @map("Porcentaje_Imp") @db.Decimal(8, 4)
