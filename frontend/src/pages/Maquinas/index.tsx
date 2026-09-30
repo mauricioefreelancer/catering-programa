@@ -330,13 +330,18 @@ const Maquinas = () => {
       const values = await formEsp.validateFields()
       const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
       const prodName = prod?.nombreProducto ?? prod?.nombre
+      const esCafe = editing?.tipo === 'CAFE'
+      // En café no se pide código de espiral; se genera internamente (tolera: I01, I02…)
+      const codEspiral = esCafe
+        ? String(values.espiral && String(values.espiral).trim() ? String(values.espiral).trim().toUpperCase() : `I${String(espirales.length + 1).padStart(2, '0')}`)
+        : String(values.espiral).trim().toUpperCase()
 
       let ns: Espiral[]
       if (editEspIdx === null) {
         const newId = Math.max(0, ...espirales.map((e) => e.id), 0) + 1
         const nuevo: Espiral = {
           id: newId,
-          espiral: String(values.espiral).trim().toUpperCase(),
+          espiral: codEspiral,
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
           productoId: values.productoId,
@@ -344,20 +349,20 @@ const Maquinas = () => {
           precio_venta_cliente: undefined,
         }
         ns = [...espirales, nuevo]
-        message.success(`Espiral ${nuevo.espiral} agregada`)
+        message.success(esCafe ? 'Insumo agregado' : `Espiral ${nuevo.espiral} agregada`)
       } else {
         ns = [...espirales]
         const original = ns[editEspIdx]
         ns[editEspIdx] = {
           ...original,
-          espiral: String(values.espiral).trim().toUpperCase(),
+          espiral: codEspiral,
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: original?.precio_venta_cliente,
         }
-        message.success(`Espiral ${ns[editEspIdx].espiral} actualizada`)
+        message.success(esCafe ? 'Insumo actualizado' : `Espiral ${ns[editEspIdx].espiral} actualizada`)
       }
 
       setEspirales(ns)
@@ -367,7 +372,7 @@ const Maquinas = () => {
           await apiService.post(`/maquinas/${editing.id}/espirales`, { espirales: ns })
           if (editing.tipo === 'CAFE') loadRendimiento(editing.id)
         } catch {
-          message.warning('El espiral quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
+          message.warning(esCafe ? 'El insumo quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)' : 'El espiral quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
         }
       }
       closeEspModal()
@@ -378,7 +383,7 @@ const Maquinas = () => {
     const ns = [...espirales]
     const removed = ns.splice(idx, 1)[0]
     setEspirales(ns)
-    message.success(`Espiral ${removed.espiral} eliminada`)
+    message.success(editing?.tipo === 'CAFE' ? 'Insumo quitado' : `Espiral ${removed.espiral} eliminada`)
     if (editing?.id && editing.tipo === 'CAFE') {
       apiService.post(`/maquinas/${editing.id}/espirales`, { espirales: ns }).then(() => loadRendimiento(editing.id)).catch(() => {})
     }
@@ -566,98 +571,109 @@ const Maquinas = () => {
               ),
             },
             ...[
-              {
-                key: 'MAPA',
-                label: `🗂️ Mapa MP (Espirales) ${totalEspirales > 0 ? `· ${totalEspirales}` : ''}`,
-                children: (
-                  <Card
-                    size="small"
-                    title="Configurar espirales y productos — defínelas una a una"
-                    type="inner"
-                    extra={
-                      <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openAddEspiral}>
-                        Agregar Espiral
-                      </Button>
-                    }
-                  >
-                    <Table
+              (() => {
+                const esCafe = editing?.tipo === 'CAFE'
+                return {
+                  key: 'MAPA',
+                  label: esCafe
+                    ? `🧺 Mapa de Insumos ${totalEspirales > 0 ? `· ${totalEspirales}` : ''}`
+                    : `🗂️ Mapa MP (Espirales) ${totalEspirales > 0 ? `· ${totalEspirales}` : ''}`,
+                  children: (
+                    <Card
                       size="small"
-                      rowKey="id"
-                      dataSource={espirales}
-                      pagination={false}
-                      locale={{ emptyText: 'Sin espirales asignadas. Clic en "Agregar Espiral" para crear una.' }}
-                      columns={[
-                        {
-                          title: 'Espiral',
-                          dataIndex: 'espiral',
-                          width: 100,
-                          render: (v: string) => <Tag color="blue" style={{ fontFamily: 'monospace' }}>{v}</Tag>,
-                        },
-                        {
-                          title: 'Producto Asignado',
-                          dataIndex: 'productoNombre',
-                          render: (v: string) => v ? <span>{v}</span> : <Tag color="default">Sin asignar</Tag>,
-                        },
-                        {
-                          title: 'Precio Venta',
-                          dataIndex: 'precio_venta_cliente',
-                          width: 120,
-                          align: 'right',
-                          render: (v: number) =>
-                            v != null && !isNaN(v) ? (
-                              <b style={{ color: '#1677ff' }}>${Number(v).toLocaleString('es-CO')}</b>
-                            ) : (
-                              <Tag color="gold">Sin precio</Tag>
-                            ),
-                        },
-                        {
-                          title: 'Capacidad Actual',
-                          dataIndex: 'cantidad_actual',
-                          width: 130,
-                          align: 'right',
-                          render: (v: number, r: Espiral) => {
-                            const val = v ?? 0
-                            const max = r.capacidad_max ?? 1
-                            const pct = Math.min(100, Math.round((val / max) * 100))
-                            return (
-                              <Space>
-                                <b>{val}</b>
-                                <Tag color={val === 0 ? 'red' : pct > 50 ? 'green' : 'gold'}>
-                                  {pct}%
-                                </Tag>
-                              </Space>
-                            )
+                      title={esCafe
+                        ? 'Insumos de la máquina de café — los productos (materia prima) que se le asignan'
+                        : 'Configurar espirales y productos — defínelas una a una'}
+                      type="inner"
+                      extra={
+                        <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openAddEspiral}>
+                          {esCafe ? 'Agregar Insumo' : 'Agregar Espiral'}
+                        </Button>
+                      }
+                    >
+                      <Table
+                        size="small"
+                        rowKey="id"
+                        dataSource={espirales}
+                        pagination={false}
+                        locale={{ emptyText: esCafe ? 'Sin insumos asignados. Clic en "Agregar Insumo" para asignar un producto.' : 'Sin espirales asignadas. Clic en "Agregar Espiral" para crear una.' }}
+                        columns={[
+                          ...(esCafe
+                            ? []
+                            : [
+                                {
+                                  title: 'Espiral',
+                                  dataIndex: 'espiral',
+                                  width: 100,
+                                  render: (v: string) => <Tag color="blue" style={{ fontFamily: 'monospace' }}>{v}</Tag>,
+                                },
+                              ]),
+                          {
+                            title: esCafe ? 'Insumo Asignado' : 'Producto Asignado',
+                            dataIndex: 'productoNombre',
+                            render: (v: string) => v ? <span>{v}</span> : <Tag color="default">Sin asignar</Tag>,
                           },
-                        },
-                        {
-                          title: 'Capacidad Máx.',
-                          dataIndex: 'capacidad_max',
-                          width: 120,
-                          align: 'right',
-                          render: (v: number) => <span>{v ?? 0}</span>,
-                        },
-                        {
-                          title: 'Acciones',
-                          key: 'acc',
-                          width: 140,
-                          render: (_: any, r: Espiral, i: number) => (
-                            <Space size={4}>
-                              <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditEspiral(i)}>
-                                Editar
-                              </Button>
-                              <Popconfirm title={`¿Eliminar espiral ${r.espiral}?`} onConfirm={() => deleteEspiral(i)}>
-                                <Button size="small" type="link" danger icon={<DeleteOutlined />}>
-                                  Quitar
+                          {
+                            title: 'Precio Venta',
+                            dataIndex: 'precio_venta_cliente',
+                            width: 120,
+                            align: 'right',
+                            render: (v: number) =>
+                              v != null && !isNaN(v) ? (
+                                <b style={{ color: '#1677ff' }}>${Number(v).toLocaleString('es-CO')}</b>
+                              ) : (
+                                <Tag color="gold">Sin precio</Tag>
+                              ),
+                          },
+                          {
+                            title: 'Capacidad Actual',
+                            dataIndex: 'cantidad_actual',
+                            width: 130,
+                            align: 'right',
+                            render: (v: number, r: Espiral) => {
+                              const val = v ?? 0
+                              const max = r.capacidad_max ?? 1
+                              const pct = Math.min(100, Math.round((val / max) * 100))
+                              return (
+                                <Space>
+                                  <b>{val}</b>
+                                  <Tag color={val === 0 ? 'red' : pct > 50 ? 'green' : 'gold'}>
+                                    {pct}%
+                                  </Tag>
+                                </Space>
+                              )
+                            },
+                          },
+                          {
+                            title: 'Capacidad Máx.',
+                            dataIndex: 'capacidad_max',
+                            width: 120,
+                            align: 'right',
+                            render: (v: number) => <span>{v ?? 0}</span>,
+                          },
+                          {
+                            title: 'Acciones',
+                            key: 'acc',
+                            width: 140,
+                            render: (_: any, r: Espiral, i: number) => (
+                              <Space size={4}>
+                                <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditEspiral(i)}>
+                                  Editar
                                 </Button>
-                              </Popconfirm>
-                            </Space>
-                          ),
-                        },
-                      ]}
-                    />
-                  </Card>
-                ),
-              },
+                                <Popconfirm title={esCafe ? '¿Quitar este insumo?' : `¿Eliminar espiral ${r.espiral}?`} onConfirm={() => deleteEspiral(i)}>
+                                  <Button size="small" type="link" danger icon={<DeleteOutlined />}>
+                                    Quitar
+                                  </Button>
+                                </Popconfirm>
+                              </Space>
+                            ),
+                          },
+                        ]}
+                      />
+                    </Card>
+                  ),
+                }
+              })(),
               ...(editing?.tipo === 'CAFE'
                 ? [
                     {
@@ -727,7 +743,7 @@ const Maquinas = () => {
                       </Card>
                       <Card
                         size="small"
-                        title="📈 Rendimiento de Producción (tazas servibles según Materia Prima en las espirales)"
+                        title="📈 Rendimiento de Producción (tazas servibles según los insumos asignados)"
                         type="inner"
                         style={{ marginTop: 12 }}
                         extra={
@@ -807,12 +823,12 @@ const Maquinas = () => {
                             ]}
                           />
                         ) : (
-                          <Tag style={{ display: 'block' }}>Asigne los botones y guarde (o ajuste las cantidades de MP en las espirales) para ver el cálculo de tazas.</Tag>
+                          <Tag style={{ display: 'block' }}>Asigne los botones y guarde (o ajuste la cantidad actual de los insumos en "Mapa de Insumos") para ver el cálculo de tazas.</Tag>
                         )}
                       </Card>
                       <Card
                         size="small"
-                        title="🗂️ Resumen Materias Primas (empaque → unidades → consumo de los botones)"
+                        title="🗂️ Resumen de Insumos (cantidad → unidades → consumo de los botones)"
                         type="inner"
                         style={{ marginTop: 12 }}
                       >
@@ -828,7 +844,6 @@ const Maquinas = () => {
                                 dataIndex: 'nombre',
                                 render: (v: string) => <strong>{v || '—'}</strong>,
                               },
-                              { title: 'Espiral', dataIndex: 'espiral', width: 80, render: (v: string) => <Tag color="blue">{v}</Tag> },
                               { title: 'Proveedor', dataIndex: 'proveedor', width: 150, render: (v: string) => (v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: '#999' }}>Sin proveedor</span>) },
                               { title: 'Empaques', dataIndex: 'empaques', width: 90, align: 'right', render: (v: number) => <span>{v}</span> },
                               { title: 'Und/empaque', dataIndex: 'equivalencia', width: 100, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v}</span> },
@@ -864,7 +879,7 @@ const Maquinas = () => {
                             ]}
                           />
                         ) : (
-                          <Tag style={{ display: 'block' }}>No hay Materias Primas en las espirales de esta máquina café. Asigne MP en "Capacidad Actual" de las espirales para calcular el despacho.</Tag>
+                          <Tag style={{ display: 'block' }}>No hay insumos asignados en esta máquina café. Asigne los productos en "Capacidad Actual" del Mapa de Insumos para calcular el despacho.</Tag>
                         )}
                       </Card>
                       </>
@@ -878,7 +893,12 @@ const Maquinas = () => {
       </ModalDrawer>
 
       <Drawer
-        title={editEspIdx === null ? 'Agregar Espiral' : `Editar Espiral ${editEspIdx !== null && espirales[editEspIdx] ? espirales[editEspIdx].espiral : ''}`}
+        title={(() => {
+          const esCafe = editing?.tipo === 'CAFE'
+          return editEspIdx === null
+            ? (esCafe ? 'Agregar Insumo' : 'Agregar Espiral')
+            : `Editar ${esCafe ? 'Insumo' : `Espiral ${editEspIdx !== null && espirales[editEspIdx] ? espirales[editEspIdx].espiral : ''}`}`
+        })()}
         width={520}
         open={openEspModal}
         onClose={closeEspModal}
@@ -894,24 +914,26 @@ const Maquinas = () => {
       >
         <Spin spinning={false}>
           <Form form={formEsp} layout="vertical" requiredMark={false} style={{ maxWidth: '100%' }} preserve>
-            <Form.Item
-              label="Código Espiral"
-              name="espiral"
-              rules={[
-                { required: true, message: 'Digite el código de la espiral' },
-                { max: 3, message: 'Máximo 3 caracteres permitidos' },
-                { pattern: /^[A-Za-z0-9_-]+$/, message: 'Solo letras, números, _ o -' },
-              ]}
-              extra="Escriba el código manualmente (máx 3 carácteres). Ej: A1, ZZ, 01, -A"
-            >
-              <Input
-                maxLength={3}
-                placeholder="Ej: A1"
-                style={{ textTransform: 'uppercase', letterSpacing: 2, fontSize: 18, fontFamily: 'monospace', fontWeight: 600 }}
-              />
-            </Form.Item>
-            <Form.Item label="Producto Asignado" name="productoId">
-              <Select allowClear placeholder="Seleccione el producto para esta espiral">
+            {editing?.tipo !== 'CAFE' && (
+              <Form.Item
+                label="Código Espiral"
+                name="espiral"
+                rules={[
+                  { required: true, message: 'Digite el código de la espiral' },
+                  { max: 3, message: 'Máximo 3 caracteres permitidos' },
+                  { pattern: /^[A-Za-z0-9_-]+$/, message: 'Solo letras, números, _ o -' },
+                ]}
+                extra="Escriba el código manualmente (máx 3 carácteres). Ej: A1, ZZ, 01, -A"
+              >
+                <Input
+                  maxLength={3}
+                  placeholder="Ej: A1"
+                  style={{ textTransform: 'uppercase', letterSpacing: 2, fontSize: 18, fontFamily: 'monospace', fontWeight: 600 }}
+                />
+              </Form.Item>
+            )}
+            <Form.Item label={editing?.tipo === 'CAFE' ? 'Insumo (Producto Materia Prima)' : 'Producto Asignado'} name="productoId">
+              <Select allowClear placeholder={editing?.tipo === 'CAFE' ? 'Seleccione el insumo para esta máquina' : 'Seleccione el producto para esta espiral'}>
                 {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
               </Select>
             </Form.Item>
@@ -929,7 +951,7 @@ const Maquinas = () => {
                 name="cantidad_actual"
                 rules={[{ required: true }]}
                 initialValue={0}
-                extra="Stock actual del producto en la espiral."
+                extra={editing?.tipo === 'CAFE' ? 'Stock actual del insumo en la tolva de la máquina.' : 'Stock actual del producto en la espiral.'}
               >
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
