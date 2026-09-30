@@ -261,16 +261,26 @@ const Maquinas = () => {
         message.success('Máquina creada')
       }
 
-      if (espirales.length > 0 || botones.length > 0) {
+      // En máquinas CAFÉ existentes, insumos y botones ya se guardan en vivo
+      // (al agregar/quitar). Solo se re-persisten aquí para máquinas NO-CAFÉ
+      // (donde se guardan al cerrar) y para máquinas CAFÉ recién creadas
+      // (que aún no tienen id para guardarse en vivo).
+      const cafeExistente = editing?.tipo === 'CAFE' && editing?.id != null
+      if ((!cafeExistente) && (espirales.length > 0 || botones.length > 0)) {
+        const mid = savedMaquina?.idMaquina ?? savedMaquina?.id ?? editing?.id
+        const fallos: string[] = []
         try {
           if (espirales.length > 0) {
-            await apiService.post(`/maquinas/${savedMaquina?.idMaquina ?? savedMaquina?.id ?? editing?.id}/espirales`, { espirales })
+            await apiService.post(`/maquinas/${mid}/espirales`, { espirales })
           }
           if (botones.length > 0) {
-            await apiService.post(`/maquinas/${savedMaquina?.idMaquina ?? savedMaquina?.id ?? editing?.id}/botones`, { botones })
+            await apiService.post(`/maquinas/${mid}/botones`, { botones })
           }
-        } catch {
-          message.warning('Espirales/Botones guardados localmente (endpoint no disponible en API')
+        } catch (err: any) {
+          fallos.push(String(err?.response?.data?.message || err?.message || 'error desconocido'))
+        }
+        if (fallos.length) {
+          message.warning(`La máquina se guardó, pero no se pudieron persistir espirales/botones: ${fallos.join('; ')}`)
         }
       }
 
