@@ -307,8 +307,7 @@ export class MachinesService {
   // Reemplazan el mapa completo con upsert por clave única.
   // ============================================================
   async saveMapaEspirales(id: number, espirales: any[]) {
-    const maq = await this.findOne(id);
-    if (maq.tipo === 'CAFE') throw new BadRequestException('La máquina es de tipo CAFE, use botones NRQ.');
+    await this.findOne(id); // valida que la máquina exista
     if (!Array.isArray(espirales)) throw new BadRequestException('espirales debe ser un arreglo');
     const codigos = espirales.map((e) => String(e.espiral)).filter((c) => !!c);
     for (const e of espirales) {

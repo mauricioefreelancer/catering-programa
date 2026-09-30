@@ -331,9 +331,17 @@ const Maquinas = () => {
       const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
       const prodName = prod?.nombreProducto ?? prod?.nombre
       const esCafe = editing?.tipo === 'CAFE'
-      // En café no se pide código de espiral; se genera internamente (tolera: I01, I02…)
+      // En café no se pide código de espiral; se genera internamente (I01, I02…) con un secuencial único
+      const nextInsumo = (() => {
+        let maxN = 0
+        for (const e of espirales) {
+          const n = parseInt(String(e.espiral).replace(/\D/g, ''), 10) || 0
+          if (n > maxN) maxN = n
+        }
+        return String(maxN + 1).padStart(2, '0')
+      })()
       const codEspiral = esCafe
-        ? String(values.espiral && String(values.espiral).trim() ? String(values.espiral).trim().toUpperCase() : `I${String(espirales.length + 1).padStart(2, '0')}`)
+        ? `I${nextInsumo}`
         : String(values.espiral).trim().toUpperCase()
 
       let ns: Espiral[]
