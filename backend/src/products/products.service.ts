@@ -121,7 +121,7 @@ export class ProductsService {
       return await this.prisma.productos.create({ data });
     } catch (e: any) {
       if (e?.code === 'P2002') {
-        throw new BadRequestException('Ya existe un producto con ese Código de Barras y Proveedor. Si es el mismo artículo de otro proveedor, use el ingreso a bodega con ese proveedor.');
+        throw new BadRequestException('Ya existe un producto con ese Código de Barras. Si es el mismo artículo comprado a otro proveedor, regístrelo como ingreso a bodega sin duplicarlo (el producto es único).');
       }
       throw e;
     }
@@ -134,7 +134,7 @@ export class ProductsService {
       return await this.prisma.productos.update({ where: { idProducto: id }, data });
     } catch (e: any) {
       if (e?.code === 'P2002') {
-        throw new BadRequestException('Ya existe un producto con ese Código de Barras y Proveedor.');
+        throw new BadRequestException('Ya existe un producto con ese Código de Barras.');
       }
       throw e;
     }

@@ -210,7 +210,7 @@ async function main() {
   console.log('✅ Proveedor demo creado');
 
   const productoEstandar = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7701001', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7701001' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -226,7 +226,7 @@ async function main() {
   });
 
   const materiaPrima = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7702001', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7702001' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -245,7 +245,7 @@ async function main() {
   });
 
   const materiaPrima2Vasos = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7702002', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7702002' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -264,7 +264,7 @@ async function main() {
   });
 
   const materiaPrima3Leche = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7702003', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7702003' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -283,7 +283,7 @@ async function main() {
   });
 
   const materiaPrima4Azucar = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7702004', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7702004' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -302,7 +302,7 @@ async function main() {
   });
 
   const materiaPrima5Chocolate = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7702005', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7702005' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -321,7 +321,7 @@ async function main() {
   });
 
   const materiaPrima6Cafe500g = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7702006', idProveedor: proveedorDemo.idProveedor } },
+    where: { codigoBarras: '7702006' },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -340,7 +340,7 @@ async function main() {
   });
 
   const productoDosificado = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7703001', idProveedor: null } },
+    where: { codigoBarras: '7703001' },
     update: {},
     create: {
       codigoBarras: '7703001',
@@ -353,7 +353,7 @@ async function main() {
   });
 
   const productoDosificado2 = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7703002', idProveedor: null } },
+    where: { codigoBarras: '7703002' },
     update: {},
     create: {
       codigoBarras: '7703002',
@@ -366,7 +366,7 @@ async function main() {
   });
 
   const productoDosificado3 = await prisma.productos.upsert({
-    where: { codigoBarras_idProveedor: { codigoBarras: '7703003', idProveedor: null } },
+    where: { codigoBarras: '7703003' },
     update: {},
     create: {
       codigoBarras: '7703003',

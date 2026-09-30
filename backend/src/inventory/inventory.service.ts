@@ -59,52 +59,15 @@ export class InventoryService {
       });
 
       for (const d of dto.detalle) {
-        const productoOriginal = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
-        if (!productoOriginal) continue;
+        const producto = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
+        if (!producto) continue;
 
-        // Determinar el producto destino según el proveedor del ingreso:
-        //  - Si el producto del item pertenece YA al mismo proveedor del ingreso -> se suma a ese producto.
-        //  - Si el producto del item pertenece a OTRO proveedor -> se busca (o se crea) el mismo artículo
-        //    con el proveedor del ingreso, y el stock se suma AHÍ (desdoblado por proveedor).
-        let idProductoDestino = productoOriginal.idProducto;
-        if (productoOriginal.tipoProducto === 'DOSIFICADO') {
-          // Los DOSIFICADOS son productos fijos parametrizados: no se desdoblan por proveedor.
-          if (productoOriginal.idProveedor !== null && productoOriginal.idProveedor !== dto.idProveedor) {
-            throw new BadRequestException(
-              `El producto dosificado "${productoOriginal.nombreProducto}" no puede ingresarse con un proveedor distinto al asignado.`
-            );
-          }
-        } else if (productoOriginal.idProveedor !== dto.idProveedor) {
-          const mismoCodigo = await tx.productos.findFirst({
-            where: {
-              codigoBarras: productoOriginal.codigoBarras,
-              idProveedor: { equals: dto.idProveedor },
-            },
-          });
-          if (mismoCodigo) {
-            idProductoDestino = mismoCodigo.idProducto;
-          } else {
-            // No existe: crear el "clon" del artículo con el proveedor del ingreso
-            const creado = await tx.productos.create({
-              data: {
-                idProveedor: dto.idProveedor,
-                codigoBarras: productoOriginal.codigoBarras,
-                nombreProducto: productoOriginal.nombreProducto,
-                tipoProducto: productoOriginal.tipoProducto,
-                unidadCompra: productoOriginal.unidadCompra,
-                unidadConsumo: productoOriginal.unidadConsumo,
-                equivalencia: productoOriginal.equivalencia,
-                costoBase: new Prisma.Decimal(d.costoUnitarioCompra || 0),
-                porcentajeImp: productoOriginal.porcentajeImp,
-                stockActual: d.cantidadRecib,
-                stockMin: 0,
-                stockMax: 0,
-                estado: true,
-              },
-            });
-            idProductoDestino = creado.idProducto;
-          }
-        }
+        // Modelo GS1: el código de barras identifica al producto (único), NO al proveedor.
+        // Un solo artículo (p.ej. CocaCola) se compra a distintos proveedores, pero el stock y
+        // el costo base son ÚNICOS del producto. El proveedor y el costo de cada lote quedan
+        // registrados aquí en DETALLE_INGRESOS (y en INGRESOS_BODEGA.idProveedor) para tener
+        // trazabilidad de a quién y a cuánto se compró, sin duplicar el catálogo.
+        const idProductoDestino = producto.idProducto;
 
         await tx.detalleIngresos.create({
           data: {
@@ -116,16 +79,15 @@ export class InventoryService {
           },
         });
 
-        const producto = await tx.productos.findUnique({ where: { idProducto: idProductoDestino } });
-        if (!producto) continue;
         const stockAnt = producto.stockActual;
         const costoAnt = Number(producto.costoBase);
         const stockNuevo = stockAnt + d.cantidadRecib;
+        // Costo promedio ponderado: aplica a todos los productos excepto los DOSIFICADOS
+        // (CocaCola comprada a $100 con prov A y a $120 con prov B queda en ~$110).
+        // Garantiza un costo base único y realista del artículo, sin duplicar el catálogo.
         let costoNuevo = costoAnt;
-        if (producto.tipoProducto === 'MATERIA_PRIMA' && stockNuevo > 0) {
+        if (producto.tipoProducto !== 'DOSIFICADO' && d.costoUnitarioCompra > 0 && stockNuevo > 0) {
           costoNuevo = (stockAnt * costoAnt + d.cantidadRecib * d.costoUnitarioCompra) / stockNuevo;
-        } else if (d.costoUnitarioCompra > 0 && costoAnt === 0) {
-          costoNuevo = d.costoUnitarioCompra;
         }
         await tx.productos.update({
           where: { idProducto: idProductoDestino },

@@ -241,9 +241,9 @@ const Ingresos = () => {
             <Option
               key={p.id}
               value={p.id}
-              label={`${p.nombre} | ${p.codigo_barras}${p.proveedor ? ` | ${p.proveedor}` : ''}`}
+              label={`${p.nombre}${p.codigo_barras ? ` | ${p.codigo_barras}` : ''}`}
             >
-              {p.nombre}{p.codigo_barras ? ` · ${p.codigo_barras}` : ''}{p.proveedor ? ` · (${p.proveedor})` : ''}
+              {p.nombre}{p.codigo_barras ? ` · ${p.codigo_barras}` : ''}
             </Option>
           ))}
         </Select>
