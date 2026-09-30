@@ -117,7 +117,10 @@ export class ProductsService {
   }
 
   async remove(id: number) {
-    await this.findOne(id);
+    const p = await this.findOne(id);
+    if (p.tipoProducto === 'DOSIFICADO') {
+      throw new BadRequestException('No se puede eliminar un producto DOSIFICADO: son productos fijos parametrizados con fórmulas internas (recetas) del sistema.');
+    }
     return this.prisma.productos.delete({ where: { idProducto: id } });
   }
 

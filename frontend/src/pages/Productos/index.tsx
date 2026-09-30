@@ -324,7 +324,10 @@ const Productos = () => {
       render: (_: any, r: Producto) => (
         <Space>
           {perm.editar && <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>Editar</Button>}
-          {perm.eliminar && (
+          {perm.eliminar && r.tipo === 'DOSIFICADO' && (
+            <Tag color="default" style={{ cursor: 'not-allowed' }}>🔒 Fijo</Tag>
+          )}
+          {perm.eliminar && r.tipo !== 'DOSIFICADO' && (
             <Popconfirm title="¿Eliminar producto?" onConfirm={() => handleDelete(r.id)}>
               <Button type="link" danger icon={<DeleteOutlined />}>Eliminar</Button>
             </Popconfirm>
