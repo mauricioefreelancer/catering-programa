@@ -79,6 +79,9 @@ const Ingresos = () => {
         id: p.idProducto ?? p.id,
         nombre: p.nombreProducto ?? p.nombre ?? '',
         costo: p.costoBase ?? p.costo ?? 0,
+        codigo_barras: p.codigoBarras ?? p.codigo_barras ?? '',
+        idProveedor: p.idProveedor ?? p.id_proveedor ?? null,
+        proveedor: p.proveedor?.razonSocial ?? p.proveedor?.razon_social ?? p.proveedorNombre ?? '',
       }))
 
       setProveedores(proveedoresMapeados)
@@ -228,12 +231,21 @@ const Ingresos = () => {
           showSearch
           value={r.productoId}
           style={{ width: '100%' }}
+          optionFilterProp="label"
           onChange={(v: any) => {
             const p = productos.find((x) => x.id === v)!
             updateItem(i, { productoId: v, productoNombre: p?.nombre ?? '', costo: p?.costo ?? 0 })
           }}
         >
-          {productos.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
+          {productos.map((p) => (
+            <Option
+              key={p.id}
+              value={p.id}
+              label={`${p.nombre} | ${p.codigo_barras}${p.proveedor ? ` | ${p.proveedor}` : ''}`}
+            >
+              {p.nombre}{p.codigo_barras ? ` · ${p.codigo_barras}` : ''}{p.proveedor ? ` · (${p.proveedor})` : ''}
+            </Option>
+          ))}
         </Select>
       ),
     },

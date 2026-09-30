@@ -41,6 +41,7 @@ export class InventoryService {
     const prov = await this.prisma.proveedores.findUnique({ where: { idProveedor: dto.idProveedor } });
     if (!prov) throw new NotFoundException('Proveedor no encontrado');
 
+    // Validamos que los items del detalle hagan referencia a productos existentes
     for (const d of dto.detalle) {
       const p = await this.prisma.productos.findUnique({ where: { idProducto: d.idProducto } });
       if (!p) throw new BadRequestException(`Producto ${d.idProducto} no existe`);
@@ -58,17 +59,64 @@ export class InventoryService {
       });
 
       for (const d of dto.detalle) {
+        const productoOriginal = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
+        if (!productoOriginal) continue;
+
+        // Determinar el producto destino según el proveedor del ingreso:
+        //  - Si el producto del item pertenece YA al mismo proveedor del ingreso -> se suma a ese producto.
+        //  - Si el producto del item pertenece a OTRO proveedor -> se busca (o se crea) el mismo artículo
+        //    con el proveedor del ingreso, y el stock se suma AHÍ (desdoblado por proveedor).
+        let idProductoDestino = productoOriginal.idProducto;
+        if (productoOriginal.tipoProducto === 'DOSIFICADO') {
+          // Los DOSIFICADOS son productos fijos parametrizados: no se desdoblan por proveedor.
+          if (productoOriginal.idProveedor !== null && productoOriginal.idProveedor !== dto.idProveedor) {
+            throw new BadRequestException(
+              `El producto dosificado "${productoOriginal.nombreProducto}" no puede ingresarse con un proveedor distinto al asignado.`
+            );
+          }
+        } else if (productoOriginal.idProveedor !== dto.idProveedor) {
+          const mismoCodigo = await tx.productos.findFirst({
+            where: {
+              codigoBarras: productoOriginal.codigoBarras,
+              idProveedor: { equals: dto.idProveedor },
+            },
+          });
+          if (mismoCodigo) {
+            idProductoDestino = mismoCodigo.idProducto;
+          } else {
+            // No existe: crear el "clon" del artículo con el proveedor del ingreso
+            const creado = await tx.productos.create({
+              data: {
+                idProveedor: dto.idProveedor,
+                codigoBarras: productoOriginal.codigoBarras,
+                nombreProducto: productoOriginal.nombreProducto,
+                tipoProducto: productoOriginal.tipoProducto,
+                unidadCompra: productoOriginal.unidadCompra,
+                unidadConsumo: productoOriginal.unidadConsumo,
+                equivalencia: productoOriginal.equivalencia,
+                costoBase: new Prisma.Decimal(d.costoUnitarioCompra || 0),
+                porcentajeImp: productoOriginal.porcentajeImp,
+                stockActual: d.cantidadRecib,
+                stockMin: 0,
+                stockMax: 0,
+                estado: true,
+              },
+            });
+            idProductoDestino = creado.idProducto;
+          }
+        }
+
         await tx.detalleIngresos.create({
           data: {
             idIngreso: ingreso.idIngreso,
-            idProducto: d.idProducto,
+            idProducto: idProductoDestino,
             cantidadRecib: d.cantidadRecib,
             costoUnitarioCompra: new Prisma.Decimal(d.costoUnitarioCompra),
             fechaVenc: d.fechaVenc ? new Date(d.fechaVenc) : null,
           },
         });
 
-        const producto = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
+        const producto = await tx.productos.findUnique({ where: { idProducto: idProductoDestino } });
         if (!producto) continue;
         const stockAnt = producto.stockActual;
         const costoAnt = Number(producto.costoBase);
@@ -80,7 +128,7 @@ export class InventoryService {
           costoNuevo = d.costoUnitarioCompra;
         }
         await tx.productos.update({
-          where: { idProducto: d.idProducto },
+          where: { idProducto: idProductoDestino },
           data: {
             stockActual: stockNuevo,
             costoBase: new Prisma.Decimal(costoNuevo),

@@ -75,7 +75,11 @@ export class ProductsService {
     }
     if (query.tipo) where.tipoProducto = query.tipo;
     const [data, total] = await Promise.all([
-      this.prisma.productos.findMany({ skip, take, where, orderBy: { fechaCreacion: 'desc' } }),
+      this.prisma.productos.findMany({
+        skip, take, where,
+        include: { proveedor: true },
+        orderBy: { fechaCreacion: 'desc' },
+      }),
       this.prisma.productos.count({ where }),
     ]);
     return { data, total, skip, take };
@@ -113,13 +117,27 @@ export class ProductsService {
     data.stockMin = data.stockMin ?? 0;
     data.stockMax = data.stockMax ?? 0;
     data.stockActual = data.stockActual ?? 0;
-    return this.prisma.productos.create({ data });
+    try {
+      return await this.prisma.productos.create({ data });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new BadRequestException('Ya existe un producto con ese Código de Barras y Proveedor. Si es el mismo artículo de otro proveedor, use el ingreso a bodega con ese proveedor.');
+      }
+      throw e;
+    }
   }
 
   async update(id: number, dto: UpdateProductoDto) {
     await this.findOne(id);
     const data = normalizeProductoInput(dto);
-    return this.prisma.productos.update({ where: { idProducto: id }, data });
+    try {
+      return await this.prisma.productos.update({ where: { idProducto: id }, data });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new BadRequestException('Ya existe un producto con ese Código de Barras y Proveedor.');
+      }
+      throw e;
+    }
   }
 
   async remove(id: number) {

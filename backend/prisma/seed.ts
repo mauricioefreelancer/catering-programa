@@ -210,7 +210,7 @@ async function main() {
   console.log('✅ Proveedor demo creado');
 
   const productoEstandar = await prisma.productos.upsert({
-    where: { codigoBarras: '7701001' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7701001', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -226,7 +226,7 @@ async function main() {
   });
 
   const materiaPrima = await prisma.productos.upsert({
-    where: { codigoBarras: '7702001' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7702001', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -245,7 +245,7 @@ async function main() {
   });
 
   const materiaPrima2Vasos = await prisma.productos.upsert({
-    where: { codigoBarras: '7702002' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7702002', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -264,7 +264,7 @@ async function main() {
   });
 
   const materiaPrima3Leche = await prisma.productos.upsert({
-    where: { codigoBarras: '7702003' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7702003', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -283,7 +283,7 @@ async function main() {
   });
 
   const materiaPrima4Azucar = await prisma.productos.upsert({
-    where: { codigoBarras: '7702004' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7702004', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -302,7 +302,7 @@ async function main() {
   });
 
   const materiaPrima5Chocolate = await prisma.productos.upsert({
-    where: { codigoBarras: '7702005' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7702005', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -321,7 +321,7 @@ async function main() {
   });
 
   const materiaPrima6Cafe500g = await prisma.productos.upsert({
-    where: { codigoBarras: '7702006' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7702006', idProveedor: proveedorDemo.idProveedor } },
     update: {},
     create: {
       idProveedor: proveedorDemo.idProveedor,
@@ -340,7 +340,7 @@ async function main() {
   });
 
   const productoDosificado = await prisma.productos.upsert({
-    where: { codigoBarras: '7703001' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7703001', idProveedor: null } },
     update: {},
     create: {
       codigoBarras: '7703001',
@@ -353,7 +353,7 @@ async function main() {
   });
 
   const productoDosificado2 = await prisma.productos.upsert({
-    where: { codigoBarras: '7703002' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7703002', idProveedor: null } },
     update: {},
     create: {
       codigoBarras: '7703002',
@@ -366,7 +366,7 @@ async function main() {
   });
 
   const productoDosificado3 = await prisma.productos.upsert({
-    where: { codigoBarras: '7703003' },
+    where: { codigoBarras_idProveedor: { codigoBarras: '7703003', idProveedor: null } },
     update: {},
     create: {
       codigoBarras: '7703003',
@@ -646,9 +646,9 @@ async function main() {
   }
   console.log('✅ 6 Máquinas creadas (2 por Operador): 3 CAFE + 3 SNACK/BEBIDA/COMBINADA · Cliente = Empresa Demo');
 
-  const cafeNegro = await prisma.productos.findUnique({ where: { codigoBarras: '7703001' } });
-  const cafeConLeche = await prisma.productos.findUnique({ where: { codigoBarras: '7703002' } });
-  const chocolate = await prisma.productos.findUnique({ where: { codigoBarras: '7703003' } });
+  const cafeNegro = await prisma.productos.findFirst({ where: { codigoBarras: '7703001' } });
+  const cafeConLeche = await prisma.productos.findFirst({ where: { codigoBarras: '7703002' } });
+  const chocolate = await prisma.productos.findFirst({ where: { codigoBarras: '7703003' } });
   const maqsCafe = (await prisma.maquinasYTiendas.findMany({ where: { tipo: 'CAFE' } }));
   for (const mc of maqsCafe) {
     if (cafeNegro) {
