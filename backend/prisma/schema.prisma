@@ -260,6 +260,7 @@ model DetalleIngresos {
 
 model PedidosOperador {
   idPedido          Int                       @id @default(autoincrement()) @map("ID_Pedido")
+  idGrupo           Int?                      @map("ID_Grupo")
   idMaquina         Int                       @map("ID_Maquina")
   idOperador        Int                       @map("ID_Operador")
   idProducto       Int                       @map("ID_Producto")

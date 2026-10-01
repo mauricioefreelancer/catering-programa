@@ -27,7 +27,9 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   MinusCircleOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
+import { Drawer, Descriptions, Divider } from 'antd'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
 import { apiService } from '../../api/services/api'
@@ -54,6 +56,8 @@ const estadoIcon: Record<EstadoPedido, any> = {
 const normalizar = (raw: any) => ({
   key: raw.idPedido ?? raw.id_pedido ?? raw.ID_Pedido ?? raw['ID_Pedido'] ?? Math.random(),
   idPedido: raw.idPedido ?? raw.id_pedido ?? raw.ID_Pedido ?? raw['ID_Pedido'] ?? -1,
+  idGrupo:
+    raw.idGrupo ?? raw.id_grupo ?? raw.ID_Grupo ?? raw['ID_Grupo'] ?? null,
   idMaquina: raw.idMaquina ?? raw.id_maquina ?? raw.ID_Maquina ?? raw['ID_Maquina'] ?? -1,
   idOperador: raw.idOperador ?? raw.id_operador ?? raw.ID_Operador ?? raw['ID_Operador'] ?? -1,
   idProducto: raw.idProducto ?? raw.id_producto ?? raw.ID_Producto ?? raw['ID_Producto'] ?? -1,
@@ -96,6 +100,7 @@ const PedidosOperador = () => {
   const [filtroOperador, setFiltroOperador] = useState<number | undefined>()
   const [filtroMaquina, setFiltroMaquina] = useState<number | undefined>()
   const [filtroFecha, setFiltroFecha] = useState<any>(null)
+  const [detalle, setDetalle] = useState<any[] | null>(null)
 
   const cargar = async (silent = false) => {
     try {
@@ -155,18 +160,80 @@ const PedidosOperador = () => {
     return arr
   }, [data, filtroBuscar, filtroFecha])
 
+  // Agrupar los items en "pedidos" (una visita/digitación del operador = un pedido)
+  const grupos = useMemo(() => {
+    const itemsOrdenados = [...dataFiltrada].sort(
+      (a, b) => new Date(a.fechaHora).getTime() - new Date(b.fechaHora).getTime(),
+    )
+    const mapa = new Map<number, any[]>()
+    const sinClave = new Map<string, any[]>() // para items sin idGrupo: clave operador|maquina|ventana
+    const FALLO_VENTANA = 3000 // ms para considerar misma digitación (fallback)
+
+    for (const item of itemsOrdenados) {
+      const gid = item.idGrupo
+      if (gid != null) {
+        if (!mapa.has(gid)) mapa.set(gid, [])
+        mapa.get(gid)!.push(item)
+        continue
+      }
+      // fallback: agrupar por operador+maquina, abriendo nueva ventana si pasaron > FALLO_VENTANA ms
+      const claveBase = `${item.idOperador}|${item.idMaquina}`
+      let clave = claveBase
+      const ts = new Date(item.fechaHora).getTime()
+      for (const [c, itemsArr] of sinClave) {
+        if (c.startsWith(claveBase + '|')) {
+          const ultima = new Date(itemsArr[itemsArr.length - 1].fechaHora).getTime()
+          if (ts - ultima <= FALLO_VENTANA) { clave = c; break }
+        }
+      }
+      if (!sinClave.has(clave)) {
+        const idx = sinClave.size
+        clave = `${claveBase}|${idx}`
+        sinClave.set(clave, [])
+      }
+      sinClave.get(clave)!.push(item)
+    }
+
+    // Convertir mapas a grupos ordenados descendente por fecha
+    const gruposArr: any[] = []
+    for (const [gid, items] of mapa) {
+      gruposArr.push({ idGrupo: gid, items: items.sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime()) })
+    }
+    for (const [, items] of sinClave) {
+      const first = items[0]
+      const gidFallback = first.idPedido
+      gruposArr.push({ idGrupo: gidFallback, items: items.sort((a, b) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime()), fallback: true })
+    }
+    return gruposArr.sort((a, b) => {
+      const ta = new Date(a.items[0]?.fechaHora).getTime()
+      const tb = new Date(b.items[0]?.fechaHora).getTime()
+      return tb - ta
+    })
+  }, [dataFiltrada])
+
+  const totalDespachadoGrupo = (grupo: any) =>
+    grupo.items.reduce((a: number, it: any) => a + totalDespachado(it), 0)
+
+  const estadoGrupo = (grupo: any): EstadoPedido => {
+    const set = new Set(grupo.items.map((it: any) => it.estado))
+    if (set.size === 1) return grupo.items[0].estado
+    if (set.has('RECHAZADO')) return 'RECHAZADO'
+    if (set.has('PENDIENTE') && set.has('APROBADO')) return 'PARCIAL'
+    return 'PARCIAL'
+  }
+
   const totales = useMemo(() => {
-    return dataFiltrada.reduce(
-      (acc, r) => {
-        acc[r.estado] = (acc[r.estado] ?? 0) + 1
+    return grupos.reduce(
+      (acc, g) => {
+        acc[estadoGrupo(g)] = (acc[estadoGrupo(g)] ?? 0) + 1
         acc.total += 1
-        acc.fisicos += r.fisicoDigitado
-        acc.sugeridas += r.cantSugerida
+        acc.fisicos += g.items.reduce((a: number, it: any) => a + it.fisicoDigitado, 0)
+        acc.sugeridas += g.items.reduce((a: number, it: any) => a + it.cantSugerida, 0)
         return acc
       },
       { total: 0, PENDIENTE: 0, PARCIAL: 0, APROBADO: 0, RECHAZADO: 0, fisicos: 0, sugeridas: 0 } as Record<string, number>,
     )
-  }, [dataFiltrada])
+  }, [grupos])
 
   const operadoresOpts = useMemo(() => {
     const set = new Map<number, string>()
@@ -193,25 +260,32 @@ const PedidosOperador = () => {
   const columns = [
     {
       title: 'Pedido #',
-      dataIndex: 'idPedido',
-      width: 90,
+      dataIndex: 'idGrupo',
+      width: 110,
       fixed: 'left' as const,
-      render: (v: any) => <strong style={{ fontSize: 14 }}>#{v}</strong>,
+      render: (_: any, g: any) => (
+        <strong style={{ fontSize: 14 }}>
+          #{g.fallback ? `${g.idGrupo}-F` : g.idGrupo}
+        </strong>
+      ),
     },
     {
       title: 'Fecha / Hora',
-      dataIndex: 'fechaHora',
+      key: 'fecha',
       width: 180,
-      render: (v: any) => new Date(v).toLocaleString('es-CO'),
-      sorter: (a: any, b: any) => new Date(a.fechaHora).getTime() - new Date(b.fechaHora).getTime(),
+      render: (_: any, g: any) => new Date(g.items[0]?.fechaHora).toLocaleString('es-CO'),
+      sorter: (a: any, b: any) =>
+        new Date(a.items[0]?.fechaHora).getTime() - new Date(b.items[0]?.fechaHora).getTime(),
       defaultSortOrder: 'descend' as const,
     },
     {
       title: 'Máquina',
-      dataIndex: '_maquina',
+      key: 'maquina',
       width: 260,
-      render: (m: any, r: any) =>
-        m ? (
+      render: (_: any, g: any) => {
+        const r = g.items[0]
+        const m = r?._maquina
+        return m ? (
           <Space direction="vertical" size={0}>
             <strong>{m.serial ?? `Máq #${r.idMaquina}`}</strong>
             <span style={{ color: '#888', fontSize: 12 }}>
@@ -225,26 +299,95 @@ const PedidosOperador = () => {
           </Space>
         ) : (
           <Tag color="default">Sin máquina</Tag>
-        ),
+        )
+      },
     },
     {
       title: 'Operador',
-      dataIndex: '_operador',
-      width: 220,
-      render: (o: any, r: any) =>
-        o ? (
+      key: 'operador',
+      width: 240,
+      render: (_: any, g: any) => {
+        const r = g.items[0]
+        const o = r?._operador
+        return o ? (
           <Space direction="vertical" size={0}>
             <strong>{o.nombreCompleto ?? `Operador ${r.idOperador}`}</strong>
             {o.zonaAsignada && <Tag color="geekblue">{o.zonaAsignada}</Tag>}
           </Space>
         ) : (
-          <Tag>Operador #${r.idOperador}</Tag>
-        ),
+          <Tag>Operador #{r?.idOperador}</Tag>
+        )
+      },
     },
+    {
+      title: 'Productos',
+      key: 'nproductos',
+      width: 120,
+      align: 'center' as const,
+      render: (_: any, g: any) => {
+        const totalUnidades = g.items.reduce((a: number, it: any) => a + (it.cantSugerida || 0), 0)
+        return (
+          <Tooltip title="Haz clic en Ver más para el desglose producto por producto">
+            <Space direction="vertical" size={0} align="center">
+              <Tag color="default"> {g.items.length} productos</Tag>
+              <span style={{ color: '#888', fontSize: 12 }}>{totalUnidades} u. sugeridas</span>
+            </Space>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      title: 'Ya Despachado',
+      key: 'despachado',
+      width: 150,
+      align: 'center' as const,
+      render: (_: any, g: any) => {
+        const v = totalDespachadoGrupo(g)
+        return (
+          <Tag color={v > 0 ? 'geekblue' : 'default'}>
+            {v > 0 ? <CheckCircleOutlined /> : '—'} {v} u
+          </Tag>
+        )
+      },
+    },
+    {
+      title: 'Estado',
+      key: 'estado',
+      width: 130,
+      align: 'center' as const,
+      filters: (['PENDIENTE', 'PARCIAL', 'APROBADO', 'RECHAZADO'] as EstadoPedido[]).map((e) => ({
+        text: e,
+        value: e,
+      })),
+      onFilter: (val: any, g: any) => estadoGrupo(g) === val,
+      render: (_: any, g: any) => {
+        const e = estadoGrupo(g)
+        const Icon = estadoIcon[e]
+        return (
+          <Tag color={estadoColor[e]} icon={<Icon />} style={{ fontSize: 13, padding: '2px 10px' }}>
+            {e}
+          </Tag>
+        )
+      },
+    },
+    {
+      title: '',
+      key: 'acciones',
+      width: 120,
+      fixed: 'right' as const,
+      render: (_: any, g: any) => (
+        <Button type="primary" ghost icon={<EyeOutlined />} onClick={() => setDetalle(g.items)}>
+          Ver más
+        </Button>
+      ),
+    },
+  ]
+
+  const detalleColumns = [
     {
       title: 'Producto',
       dataIndex: '_producto',
-      width: 260,
+      key: 'producto',
       render: (p: any, r: any) =>
         p ? (
           <Space direction="vertical" size={0}>
@@ -265,7 +408,8 @@ const PedidosOperador = () => {
     {
       title: 'Espiral',
       dataIndex: '_mapaMp',
-      width: 130,
+      key: 'mapaMp',
+      width: 120,
       align: 'center' as const,
       render: (m: any) =>
         m ? (
@@ -281,20 +425,23 @@ const PedidosOperador = () => {
     {
       title: 'Físico Digitado',
       dataIndex: 'fisicoDigitado',
-      width: 120,
+      key: 'fisicoDigitado',
+      width: 130,
       align: 'center' as const,
       render: (v: number) => <Tag color="purple">{v}</Tag>,
     },
     {
       title: 'Cant. Sugerida',
       dataIndex: 'cantSugerida',
-      width: 120,
+      key: 'cantSugerida',
+      width: 130,
       align: 'center' as const,
       render: (v: number) => <Tag color="blue">{v}</Tag>,
     },
     {
       title: 'Ya Despachado',
-      width: 130,
+      key: 'despachado',
+      width: 140,
       align: 'center' as const,
       render: (_: any, r: any) => {
         const v = totalDespachado(r)
@@ -308,17 +455,13 @@ const PedidosOperador = () => {
     {
       title: 'Estado',
       dataIndex: 'estado',
-      width: 130,
+      key: 'estado',
+      width: 120,
       align: 'center' as const,
-      filters: (['PENDIENTE', 'PARCIAL', 'APROBADO', 'RECHAZADO'] as EstadoPedido[]).map((e) => ({
-        text: e,
-        value: e,
-      })),
-      onFilter: (val: any, rec: any) => rec.estado === val,
       render: (e: EstadoPedido) => {
         const Icon = estadoIcon[e]
         return (
-          <Tag color={estadoColor[e]} icon={<Icon />} style={{ fontSize: 13, padding: '2px 10px' }}>
+          <Tag color={estadoColor[e]} icon={<Icon />} style={{ padding: '2px 10px' }}>
             {e}
           </Tag>
         )
@@ -327,6 +470,7 @@ const PedidosOperador = () => {
     {
       title: 'Observaciones',
       dataIndex: 'observaciones',
+      key: 'observaciones',
       width: 200,
       ellipsis: true,
       render: (v: any) => (v ? <span style={{ color: '#555' }}>{v}</span> : <Tag color="default">Sin obs.</Tag>),
@@ -454,7 +598,7 @@ const PedidosOperador = () => {
         <Card style={{ textAlign: 'center', padding: 40 }}>
           <Spin size="large" tip="Cargando pedidos desde PostgreSQL..." />
         </Card>
-      ) : dataFiltrada.length === 0 ? (
+      ) : grupos.length === 0 ? (
         <Card style={{ textAlign: 'center', padding: 40 }}>
           <Badge
             status="info"
@@ -482,26 +626,70 @@ const PedidosOperador = () => {
         </Card>
       ) : (
         <Table
+          rowKey={(_: any, idx?: number) => `g_${idx}`}
           columns={columns as any}
-          dataSource={dataFiltrada}
+          dataSource={grupos}
           size="middle"
           pagination={{
             current: 1,
             pageSize: 20,
             showSizeChanger: true,
             pageSizeOptions: [10, 20, 50, 100, 500],
-            showTotal: (t) => `${t} pedidos encontrados`,
+            showTotal: (t) => `${t} pedido(s) encontrado(s)`,
           }}
-          scroll={{ x: 1600 }}
-          rowClassName={(r) =>
-            r.estado === 'APROBADO'
+          scroll={{ x: 1300 }}
+          rowClassName={(g) =>
+            estadoGrupo(g) === 'APROBADO'
               ? 'ant-table-row-ok'
-              : r.estado === 'RECHAZADO'
+              : estadoGrupo(g) === 'RECHAZADO'
                 ? 'ant-table-row-danger'
                 : ''
           }
         />
       )}
+
+      <Drawer
+        title={
+          detalle ? (
+            <Space direction="vertical" size={0}>
+              <strong>Desglose del pedido #{detalle[0]?.idGrupo}</strong>
+              <span style={{ color: '#888', fontSize: 12 }}>
+                {detalle[0]?._operador?.nombreCompleto ?? `Operador #${detalle[0]?.idOperador}`} ·{' '}
+                {new Date(detalle[0]?.fechaHora).toLocaleString('es-CO')} ·{' '}
+                {detalle.length} producto(s)
+              </span>
+            </Space>
+          ) : (
+            'Detalle del pedido'
+          )
+        }
+        width={860}
+        open={!!detalle}
+        onClose={() => setDetalle(null)}
+      >
+        <Descriptions
+          size="small"
+          column={2}
+          bordered
+          style={{ marginBottom: 16 }}
+        >
+          <Descriptions.Item label="Total despachado">
+            {detalle ? totalDespachadoGrupo({ items: detalle }) : 0} u
+          </Descriptions.Item>
+          <Descriptions.Item label="Total sugerido">
+            {detalle ? detalle.reduce((a, it) => a + (it.cantSugerida || 0), 0) : 0} u
+          </Descriptions.Item>
+        </Descriptions>
+        <Divider style={{ margin: '8px 0 16px' }}>Productos del pedido</Divider>
+        <Table
+          columns={detalleColumns as any}
+          dataSource={detalle ?? []}
+          rowKey={(r: any) => r.idPedido}
+          size="middle"
+          pagination={false}
+          scroll={{ x: 900 }}
+        />
+      </Drawer>
     </div>
   )
 }

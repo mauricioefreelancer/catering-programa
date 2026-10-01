@@ -47,6 +47,10 @@ export class OperadorPedidoService {
     const mapaNrqById = new Map(maquina.mapaCafeNrq.map((m) => [m.idMapaNrq, m]));
     const pedidosCreados: any[] = [];
 
+    // id de grupo (cabecera del pedido): agrupa todas las filas del mismo acto de digitación del operador
+    const maxPedido = await this.prisma.pedidosOperador.aggregate({ _max: { idPedido: true } });
+    const idGrupo = (maxPedido._max.idPedido ?? 0) + 1;
+
     for (const item of dto.items) {
       let capacidad = 0;
       let idMapaMpFinal: number | null = item.idMapaMP ?? null;
@@ -75,6 +79,7 @@ export class OperadorPedidoService {
       const cantSugerida = Math.max(0, capacidad - item.fisicoDigitado);
       const pedido = await this.prisma.pedidosOperador.create({
         data: {
+          idGrupo,
           idMaquina: dto.idMaquina,
           idOperador: dto.idOperador,
           idProducto: item.idProducto,
@@ -141,6 +146,7 @@ export class OperadorPedidoService {
 
       const pedido = await this.prisma.pedidosOperador.create({
         data: {
+          idGrupo,
           idMaquina: dto.idMaquina,
           idOperador: dto.idOperador,
           idProducto: mp.idProducto,
