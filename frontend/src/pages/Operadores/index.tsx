@@ -119,7 +119,10 @@ const Operadores = () => {
           zonaAsignada: values.zona,
           estado: values.estado || editing.estado || 'ACTIVO',
         }
-        if (values.password) payloadOperador.password = values.password
+        // Si se escribió una nueva clave al editar, se la pasa al backend para re-hashearla
+        if (values.password && values.password.trim() !== '') {
+          payloadOperador.password = values.password
+        }
         try {
           await patch(`/operadores/${idOperador}`, payloadOperador)
         } catch (e: any) {
@@ -282,11 +285,10 @@ const Operadores = () => {
           <Form.Item name="usuario_login" label="Usuario Login" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item
             name="password"
-            label={editing ? 'Nueva Contraseña (opcional)' : 'Contraseña'}
-            rules={editing ? [{ min: 6, message: 'Mínimo 6 caracteres' }] : [{ required: true, min: 6 }]}
-            extra={editing ? 'Déjala en blanco para mantener la actual' : undefined}
+            label={editing ? 'Nueva Contraseña' : 'Contraseña'}
+            rules={editing ? [{ min: 6, message: 'Mínimo 6 caracteres' }] : [{ required: true, min: 6, message: 'Mínimo 6 caracteres' }]}
           >
-            <Input.Password placeholder={editing ? 'Dejar en blanco = no cambiar' : 'Ingrese la contraseña'} />
+            <Input.Password placeholder={editing ? 'Déjalo vacío para no cambiar' : 'Ingrese la contraseña'} autoComplete="new-password" />
           </Form.Item>
         </div>
       </ModalDrawer>
