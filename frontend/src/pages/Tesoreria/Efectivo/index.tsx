@@ -198,10 +198,9 @@ const Efectivo = () => {
   }
 
   const diffColor = (v: number) => (v > 0 ? '#52c41a' : v < 0 ? '#ff4d4f' : '#666')
+  // El NR es un contador acumulativo de valor en $: la diferencia ya es la venta en dinero del periodo.
   const diferenciaActual = selected && nrActual !== null ? nrActual - (selected.nrAnterior || 0) : 0
-  // Tarifa unitaria estimada: totalVendido (del listado) entre su diferencia NR base.
-  const tarifaEstimada = selected && selected.diferenciaNR > 0 ? selected.totalVendido / selected.diferenciaNR : 0
-  const totalVendidoActual = diferenciaActual * tarifaEstimada
+  const totalVendidoActual = Math.max(0, diferenciaActual)
   const mediosActivosSel = selected ? mediosActivos(selected.maquina) : []
   const sumaDigitales = mediosActivosSel.reduce((acc, k) => acc + (digitales[k] ?? 0), 0)
   const efectivoEsperado = Math.max(0, totalVendidoActual - sumaDigitales)
@@ -252,21 +251,21 @@ const Efectivo = () => {
         ),
     },
     {
-      title: 'NR Anterior',
+      title: 'NR Anterior ($)',
       dataIndex: 'nrAnterior',
-      width: 120,
+      width: 130,
       align: 'center' as const,
       render: (v: number) => <Tag color="default">{v.toLocaleString('es-CO')}</Tag>,
     },
     {
-      title: 'NR Digitado',
+      title: 'NR Actual ($)',
       dataIndex: 'nrActual',
-      width: 120,
+      width: 130,
       align: 'center' as const,
       render: (v: number) => <Tag color="blue" style={{ fontWeight: 600 }}>{v.toLocaleString('es-CO')}</Tag>,
     },
     {
-      title: 'Total Vendido',
+      title: 'Total Vendido ($)',
       dataIndex: 'totalVendido',
       width: 150,
       align: 'center' as const,
@@ -464,10 +463,7 @@ const Efectivo = () => {
           <Descriptions.Item label="NR Actual (a cerrar)">
             {nrActual?.toLocaleString('es-CO') ?? '—'}
           </Descriptions.Item>
-          <Descriptions.Item label="Diferencia NR">
-            {diferenciaActual.toLocaleString('es-CO')} unidades
-          </Descriptions.Item>
-          <Descriptions.Item label="Total Vendido (dinero)">
+          <Descriptions.Item label="Diferencia NR — Total Vendido ($)">
             {fmt(totalVendidoActual)}
           </Descriptions.Item>
           {mediosActivosSel.map((k) => (

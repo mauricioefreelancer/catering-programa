@@ -36,7 +36,14 @@ export class TreasuryService {
     const tarifa = maq.tarifaPromedioOverride !== null && maq.tarifaPromedioOverride !== undefined
       ? Number(maq.tarifaPromedioOverride)
       : tarifaDefault;
-    const totalVendido = diferenciaNr * tarifa; // NR = ventas totales de la máquina (efectivo + tarjetas)
+    // El NR es un contador ACUMULATIVO de valor en pesos (todo lo vendido por la máquina
+    // desde que se configuró). Por lo tanto la diferencia NR ya ES la venta del periodo
+    // en dinero (efectivo + tarjetas + veos + datafono + cupos), SIN multiplicar por tarifa.
+    // El nr actual siempre debe ser >= nr anterior (no tiene lógica vender en negativo).
+    if (dto.nrActual !== undefined && dto.nrActual !== null && Number(dto.nrActual) < nrAnterior) {
+      throw new BadRequestException(`El NR actual (${nrActual}) no puede ser menor al NR anterior acumulado (${nrAnterior})`);
+    }
+    const totalVendido = diferenciaNr; // valor en pesos vendidos en el periodo
     const veos = Math.max(0, Number(dto.veosRecog ?? 0));
     const datafono = Math.max(0, Number(dto.datafonoRecog ?? 0));
     const cupos = Math.max(0, Number(dto.cuposRecog ?? 0));
@@ -137,14 +144,13 @@ export class TreasuryService {
     const maqMap = new Map(maqs.map((m) => [m.idMaquina, m]));
     const opMap = new Map(ops.map((o) => [o.idOperador, o]));
 
-    // La tarifa con la que se estima el efectivo esperado por visita (NR = ventas totales)
-    const tarifaDefault = Number(process.env.TARIFA_PROMEDIO_DEFAULT || 3500);
+    // La tarifa queda obsoleta: el NR ya es venta en dinero acumulada.
+    // (Se mantiene la consulta de máquinas sin tarifa para no romper la respuesta.)
 
     const lista = visitas
       .map((v) => {
         const recaudo = recAudados.get(v.idGrupo);
         const diferenciaNR = Math.max(0, v.nrActual - v.nrAnterior);
-        const tarifa = Number(maqMap.get(v.idMaquina)?.tarifaPromedioOverride ?? tarifaDefault);
         const est = { ...recaudo, mediosPago: maqMap.get(v.idMaquina)?.mediosPago ?? null };
         return {
           idGrupo: v.idGrupo,
@@ -154,7 +160,7 @@ export class TreasuryService {
           nrAnterior: v.nrAnterior,
           nrActual: v.nrActual,
           diferenciaNR,
-          totalVendido: diferenciaNR * tarifa,
+          totalVendido: diferenciaNR, // NR acumulado de valor en $: la diferencia ya es venta en dinero
           maquina: maqMap.get(v.idMaquina) ?? null,
           operador: opMap.get(v.idOperador) ?? null,
           estado: est?.estado ?? 'PENDIENTE',
