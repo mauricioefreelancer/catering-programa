@@ -299,6 +299,7 @@ model DespachosBodega {
 
 model TesoreriaEfectivoNr {
   idRecaudo       Int                       @id @default(autoincrement()) @map("ID_Recaudo")
+  idGrupo         Int?                      @map("ID_Grupo")
   idMaquina      Int                       @map("ID_Maquina")
   idOperador     Int                       @map("ID_Operador")
   idUsuario      Int                       @map("ID_Usuario")

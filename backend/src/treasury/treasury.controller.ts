@@ -13,6 +13,10 @@ export class TreasuryController {
   @Permissions('tesoreria', 'crear')
   createEfectivoNr(@Body() dto: CreateEfectivoNrDto) { return this.srv.createEfectivoNr(dto); }
 
+  @Get('efectivo-nr/visitas')
+  @Permissions('tesoreria', 'ver')
+  listarVisitasRecaudo(@Query() q: any) { return this.srv.listarVisitasRecaudo(q); }
+
   @Patch('efectivo-nr/:id')
   @Permissions('tesoreria', 'editar')
   updateEfectivoNr(@Param('id') id: string) { return this.srv.updateEfectivoNr(+id, {}); }

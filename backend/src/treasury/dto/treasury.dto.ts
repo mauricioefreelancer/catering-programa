@@ -1,10 +1,12 @@
 import { IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateEfectivoNrDto {
+  @IsOptional() @IsInt() idGrupo?: number;
   @IsInt() @IsNotEmpty() idMaquina: number;
   @IsInt() @IsNotEmpty() idOperador: number;
   @IsInt() @IsNotEmpty() idUsuario: number;
   @IsNumber() @IsNotEmpty() nrActual: number;
+  @IsOptional() @IsNumber() nrAnterior?: number;
   @IsNumber() @IsNotEmpty() efectivoRecog: number;
   @IsOptional() @IsDateString() fechaHora?: string;
 }
