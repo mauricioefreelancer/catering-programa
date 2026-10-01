@@ -14,7 +14,6 @@ import Ingresos from '../pages/Ingresos'
 import Despachos from '../pages/Despachos'
 import PedidosOperador from '../pages/Pedidos'
 import Efectivo from '../pages/Tesoreria/Efectivo'
-import Saldos from '../pages/Tesoreria/Saldos'
 import FacturacionNRQ from '../pages/Tesoreria/FacturacionNRQ'
 import Roles from '../pages/Admin/Roles'
 import Usuarios from '../pages/Admin/Usuarios'
@@ -170,14 +169,6 @@ export const routes = createBrowserRouter([
       {
         path: 'tesoreria/efectivo',
         element: <Navigate to="/tesoreria/recaudos" replace />,
-      },
-      {
-        path: 'tesoreria/saldos',
-        element: (
-          <PermissionRoute modulo="tesoreria" accion="ver">
-            <Saldos />
-          </PermissionRoute>
-        ),
       },
       {
         path: 'tesoreria/facturacion-nrq',

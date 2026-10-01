@@ -7,8 +7,16 @@ export class CreateEfectivoNrDto {
   @IsInt() @IsNotEmpty() idUsuario: number;
   @IsNumber() @IsNotEmpty() nrActual: number;
   @IsOptional() @IsNumber() nrAnterior?: number;
-  @IsNumber() @IsNotEmpty() efectivoRecog: number;
+  @IsOptional() @IsNumber() efectivoRecog?: number;
+  @IsOptional() @IsNumber() veosRecog?: number;
+  @IsOptional() @IsNumber() datafonoRecog?: number;
+  @IsOptional() @IsNumber() cuposRecog?: number;
   @IsOptional() @IsDateString() fechaHora?: string;
+}
+
+// DTO para completar (guardar parcial -> cerrar) un recaudo PENDIENTE con el efectivo.
+export class CompletarEfectivoNrDto {
+  @IsOptional() @IsNumber() efectivoRecog?: number;
 }
 
 export class CreateSaldoDigitalDto {

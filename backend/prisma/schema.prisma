@@ -311,6 +311,12 @@ model TesoreriaEfectivoNr {
   efectivoTeorico Decimal                   @default(0) @map("Efectivo_Teorico") @db.Decimal(18, 2)
   efectivoRecog Decimal                   @default(0) @map("Efectivo_Recog") @db.Decimal(18, 2)
   diferenciaRec Decimal                   @default(0) @map("Diferencia_Rec") @db.Decimal(18, 2)
+  veosRecog     Decimal                   @default(0) @map("Veos_Recog") @db.Decimal(18, 2)
+  datafonoRecog Decimal                   @default(0) @map("Datafono_Recog") @db.Decimal(18, 2)
+  cuposRecog    Decimal                   @default(0) @map("Cupos_Recog") @db.Decimal(18, 2)
+  mediosNoEfectivo Decimal               @default(0) @map("Medios_No_Efectivo") @db.Decimal(18, 2)
+  efectivoEsperado Decimal               @default(0) @map("Efectivo_Esperado") @db.Decimal(18, 2)
+  totalVendido  Decimal                   @default(0) @map("Total_Vendido") @db.Decimal(18, 2)
   estado         String                    @default("CERRADO") @map("Estado") @db.VarChar(20)
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)

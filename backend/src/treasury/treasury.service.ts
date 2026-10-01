@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, MethodNotAllowedException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
+import { CreateEfectivoNrDto, CompletarEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -16,7 +16,7 @@ export class TreasuryService {
     // Evitar recaudo duplicado para la misma visita (idGrupo)
     if (dto.idGrupo != null) {
       const ya = await this.prisma.tesoreriaEfectivoNr.findFirst({ where: { idGrupo: dto.idGrupo } });
-      if (ya) throw new BadRequestException(`La visita ${dto.idGrupo} ya tiene un recaudo cerrado (#${ya.idRecaudo})`);
+      if (ya) throw new BadRequestException(`La visita ${dto.idGrupo} ya tiene un recaudo (#${ya.idRecaudo})`);
     }
 
     // NR anterior: se toma el enviado por el frontend (último NR digitado por el operador
@@ -36,10 +36,20 @@ export class TreasuryService {
     const tarifa = maq.tarifaPromedioOverride !== null && maq.tarifaPromedioOverride !== undefined
       ? Number(maq.tarifaPromedioOverride)
       : tarifaDefault;
-    const efectivoTeorico = diferenciaNr * tarifa;
-    const diferenciaRec = dto.efectivoRecog - efectivoTeorico;
+    const totalVendido = diferenciaNr * tarifa; // NR = ventas totales de la máquina (efectivo + tarjetas)
+    const veos = Math.max(0, Number(dto.veosRecog ?? 0));
+    const datafono = Math.max(0, Number(dto.datafonoRecog ?? 0));
+    const cupos = Math.max(0, Number(dto.cuposRecog ?? 0));
+    const mediosNoEfectivo = veos + datafono + cupos;
+    const efectivoEsperado = Math.max(0, totalVendido - mediosNoEfectivo);
+    // Si se digitó el efectivo que trae el operador, el recaudo queda cerrado;
+    // de lo contrario queda PENDIENTE hasta completarse.
+    const tieneEfectivo = dto.efectivoRecog !== undefined && dto.efectivoRecog !== null;
+    const efectivoRecog = tieneEfectivo ? Math.max(0, Number(dto.efectivoRecog)) : 0;
+    const estado = tieneEfectivo ? 'CERRADO' : 'PENDIENTE';
+    const diferenciaRec = efectivoRecog - efectivoEsperado;
 
-    // Actualizar el último contador NR de la máquina con el nrActual cerrado
+    // Actualizar el último contador NR de la máquina con el nrActual
     await this.prisma.maquinasYTiendas.update({
       where: { idMaquina: dto.idMaquina },
       data: { ultimoContadorNR: BigInt(nrActual) },
@@ -56,10 +66,16 @@ export class TreasuryService {
         nrActual: BigInt(nrActual),
         diferenciaNr: BigInt(diferenciaNr),
         tarifaAplicada: new Prisma.Decimal(tarifa),
-        efectivoTeorico: new Prisma.Decimal(efectivoTeorico),
-        efectivoRecog: new Prisma.Decimal(dto.efectivoRecog),
+        efectivoTeorico: new Prisma.Decimal(totalVendido),
+        totalVendido: new Prisma.Decimal(totalVendido),
+        veosRecog: new Prisma.Decimal(veos),
+        datafonoRecog: new Prisma.Decimal(datafono),
+        cuposRecog: new Prisma.Decimal(cupos),
+        mediosNoEfectivo: new Prisma.Decimal(mediosNoEfectivo),
+        efectivoEsperado: new Prisma.Decimal(efectivoEsperado),
+        efectivoRecog: new Prisma.Decimal(efectivoRecog),
         diferenciaRec: new Prisma.Decimal(diferenciaRec),
-        estado: 'CERRADO',
+        estado,
       },
     });
   }
@@ -104,26 +120,32 @@ export class TreasuryService {
       nrAnteriorPorMaquina.set(v.idMaquina, v.nrActual);
     }
 
-    // 4) Recaudos ya cerrados por visita
+    // 4) Recaudos ya existentes por visita (CERRADO o PENDIENTE)
     const gruposRecaudados = await this.prisma.tesoreriaEfectivoNr.findMany({
       where: { idGrupo: { in: visitas.map((v) => v.idGrupo) } },
-      select: { idGrupo: true, idRecaudo: true },
+      select: { idGrupo: true, idRecaudo: true, estado: true, efectivoEsperado: true, veosRecog: true, datafonoRecog: true, cuposRecog: true },
     });
-    const recAudados = new Map(gruposRecaudados.map((r) => [r.idGrupo, r.idRecaudo]));
+    const recAudados = new Map(gruposRecaudados.map((r) => [r.idGrupo, r]));
 
     // 5) Adjuntar máquina y operador
     const idsMaq = [...new Set(visitas.map((v) => v.idMaquina))];
     const idsOp = [...new Set(visitas.map((v) => v.idOperador))];
     const [maqs, ops] = await Promise.all([
-      this.prisma.maquinasYTiendas.findMany({ where: { idMaquina: { in: idsMaq } }, select: { idMaquina: true, serial: true, ubicacionEsp: true } }),
+      this.prisma.maquinasYTiendas.findMany({ where: { idMaquina: { in: idsMaq } }, select: { idMaquina: true, serial: true, ubicacionEsp: true, mediosPago: true, tarifaPromedioOverride: true } }),
       this.prisma.operadores.findMany({ where: { idOperador: { in: idsOp } }, select: { idOperador: true, nombreCompleto: true, zonaAsignada: true } }),
     ]);
     const maqMap = new Map(maqs.map((m) => [m.idMaquina, m]));
     const opMap = new Map(ops.map((o) => [o.idOperador, o]));
 
+    // La tarifa con la que se estima el efectivo esperado por visita (NR = ventas totales)
+    const tarifaDefault = Number(process.env.TARIFA_PROMEDIO_DEFAULT || 3500);
+
     const lista = visitas
       .map((v) => {
         const recaudo = recAudados.get(v.idGrupo);
+        const diferenciaNR = Math.max(0, v.nrActual - v.nrAnterior);
+        const tarifa = Number(maqMap.get(v.idMaquina)?.tarifaPromedioOverride ?? tarifaDefault);
+        const est = { ...recaudo, mediosPago: maqMap.get(v.idMaquina)?.mediosPago ?? null };
         return {
           idGrupo: v.idGrupo,
           idMaquina: v.idMaquina,
@@ -131,11 +153,22 @@ export class TreasuryService {
           fechaVisita: v.fechaVisita,
           nrAnterior: v.nrAnterior,
           nrActual: v.nrActual,
-          diferenciaNR: Math.max(0, v.nrActual - v.nrAnterior),
+          diferenciaNR,
+          totalVendido: diferenciaNR * tarifa,
           maquina: maqMap.get(v.idMaquina) ?? null,
           operador: opMap.get(v.idOperador) ?? null,
-          estado: recaudo ? 'CERRADO' : 'PENDIENTE',
-          idRecaudo: recaudo ?? null,
+          estado: est?.estado ?? 'PENDIENTE',
+          idRecaudo: est?.idRecaudo ?? null,
+          recaudoGuardado: est?.idRecaudo
+            ? {
+                idRecaudo: est.idRecaudo,
+                estado: est.estado,
+                efectivoEsperado: Number(est.efectivoEsperado || 0),
+                veosRecog: Number(est.veosRecog || 0),
+                datafonoRecog: Number(est.datafonoRecog || 0),
+                cuposRecog: Number(est.cuposRecog || 0),
+              }
+            : null,
         };
       })
       .filter((v) => !soloPendientes || v.estado === 'PENDIENTE')
@@ -152,8 +185,27 @@ export class TreasuryService {
     }
   }
 
-  async updateEfectivoNr(_id: number, _dto: any) {
-    throw new MethodNotAllowedException('PATCH no permitido para registros de tesorería cerrados');
+  async updateEfectivoNr(id: number, dto: CompletarEfectivoNrDto) {
+    const r = await this.prisma.tesoreriaEfectivoNr.findUnique({ where: { idRecaudo: id } });
+    if (!r) throw new NotFoundException('Registro no encontrado');
+    if (r.estado === 'CERRADO') {
+      throw new MethodNotAllowedException('No se permite modificar registros CERRADOS');
+    }
+    // Solo se permite completar (cerrar) un recaudo pendiente digitando el efectivo.
+    if (dto.efectivoRecog === undefined || dto.efectivoRecog === null) {
+      throw new BadRequestException('Debe digitar el efectivo recogido para cerrar el recaudo');
+    }
+    const efectivoRecog = Math.max(0, Number(dto.efectivoRecog));
+    const efectivoEsperado = Number(r.efectivoEsperado || 0);
+    const diferenciaRec = efectivoRecog - efectivoEsperado;
+    return this.prisma.tesoreriaEfectivoNr.update({
+      where: { idRecaudo: id },
+      data: {
+        efectivoRecog: new Prisma.Decimal(efectivoRecog),
+        diferenciaRec: new Prisma.Decimal(diferenciaRec),
+        estado: 'CERRADO',
+      },
+    });
   }
 
   async removeEfectivoNr(_id: number) {

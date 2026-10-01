@@ -15,12 +15,37 @@ import {
   Drawer,
   Descriptions,
 } from 'antd'
-import { WalletOutlined, CheckCircleOutlined, ReloadOutlined, EyeOutlined, WarningOutlined } from '@ant-design/icons'
+import { WalletOutlined, CheckCircleOutlined, ReloadOutlined, EyeOutlined, WarningOutlined, SaveOutlined } from '@ant-design/icons'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { useAuth } from '../../../hooks/useAuth'
 import { apiService } from '../../../api/services/api'
 
 const { Title } = Typography
+
+// Medios de pago que maneja una máquina (Efectivo siempre está presente).
+const MEDIOS_DIGITALES = ['veos', 'datafono', 'cupos'] as const
+type MedioDigital = typeof MEDIOS_DIGITALES[number]
+const MEDIO_LABEL: Record<string, string> = {
+  veos: 'Veos',
+  datafono: 'Datafono',
+  cupos: 'Cupos',
+}
+
+interface MediosPago {
+  efectivo?: boolean
+  veos?: boolean
+  datafono?: boolean
+  cupos?: boolean
+}
+
+interface RecaudoGuardado {
+  idRecaudo: number
+  estado: string
+  efectivoEsperado: number
+  veosRecog: number
+  datafonoRecog: number
+  cuposRecog: number
+}
 
 interface VisitaRecaudo {
   idGrupo: number
@@ -30,11 +55,21 @@ interface VisitaRecaudo {
   nrAnterior: number
   nrActual: number
   diferenciaNR: number
+  totalVendido: number
   estado: 'PENDIENTE' | 'CERRADO'
   idRecaudo: number | null
-  maquina?: { serial?: string; ubicacionEsp?: string } | null
+  maquina?: { serial?: string; ubicacionEsp?: string; mediosPago?: MediosPago | null } | null
   operador?: { nombreCompleto?: string; zonaAsignada?: string } | null
+  recaudoGuardado?: RecaudoGuardado | null
 }
+
+// Devuelve qué medios digitales acepta la máquina (leyendo el JSON mediosPago).
+const mediosActivos = (m: VisitaRecaudo['maquina']): MedioDigital[] => {
+  const mp = m?.mediosPago ?? {}
+  return MEDIOS_DIGITALES.filter((k) => !!mp[k])
+}
+
+const fmt = (n: number | null | undefined) => (n == null ? '—' : `$ ${Number(n).toLocaleString('es-CO')}`)
 
 const Efectivo = () => {
   const [visitas, setVisitas] = useState<VisitaRecaudo[]>([])
@@ -47,8 +82,10 @@ const Efectivo = () => {
   // Drawer / cierre de recaudo
   const [selected, setSelected] = useState<VisitaRecaudo | null>(null)
   const [nrActual, setNrActual] = useState<number | null>(null)
+  const [digitales, setDigitales] = useState<Record<string, number | null>>({})
   const [efectivoRecog, setEfectivoRecog] = useState<number | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [guardandoParcial, setGuardandoParcial] = useState(false)
 
   const loadData = useCallback(async (soloPend?: boolean) => {
     setLoading(true)
@@ -76,7 +113,54 @@ const Efectivo = () => {
   const abrirVisita = (v: VisitaRecaudo) => {
     setSelected(v)
     setNrActual(v.nrActual)
-    setEfectivoRecog(null)
+    const activos = mediosActivos(v.maquina)
+    const precarga: Record<string, number | null> = {}
+    for (const k of MEDIOS_DIGITALES) {
+      if (activos.includes(k)) {
+        precarga[k] = v.recaudoGuardado ? v.recaudoGuardado[`${k}Recog`] ?? null : null
+      }
+    }
+    setDigitales(precarga)
+    setEfectivoRecog(v.recaudoGuardado?.efectivoEsperado !== undefined && v.recaudoGuardado?.estado === 'PENDIENTE'
+      ? v.recaudoGuardado.efectivoEsperado
+      : null)
+  }
+
+  const buildBody = (efectivo: number | null) => {
+    const medios = mediosActivos(selected?.maquina)
+    const body: any = {
+      idGrupo: selected?.idGrupo,
+      idMaquina: selected?.idMaquina,
+      idOperador: selected?.idOperador,
+      idUsuario: usuario?.idUsuario,
+      nrAnterior: selected?.nrAnterior,
+      nrActual: nrActual ?? selected?.nrActual,
+    }
+    for (const k of MEDIOS_DIGITALES) {
+      if (medios.includes(k)) body[`${k}Recog`] = digitales[k] ?? 0
+    }
+    if (efectivo !== null) body.efectivoRecog = efectivo
+    return body
+  }
+
+  // Guardado parcial: se digita lo no-efectivo y queda PENDIENTE (falta el efectivo).
+  const guardarParcial = async () => {
+    if (!selected) return
+    if (nrActual === null || nrActual < selected.nrAnterior) {
+      message.error(`NR debe ser >= NR Anterior (${selected.nrAnterior})`)
+      return
+    }
+    setGuardandoParcial(true)
+    try {
+      await apiService.post('/tesoreria/efectivo-nr', buildBody(null))
+      message.success(`✅ Medios digitales guardados para la visita ${selected.idGrupo}. Recaudo PENDIENTE hasta digitar el efectivo.`)
+      setSelected(null)
+      loadData(true)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message || 'Error al guardar los medios de pago')
+    } finally {
+      setGuardandoParcial(false)
+    }
   }
 
   const cerrarRecaudo = async () => {
@@ -90,19 +174,20 @@ const Efectivo = () => {
       return
     }
     setGuardando(true)
+    const existePendiente = selected.idRecaudo != null && selected.estado === 'PENDIENTE' && selected.recaudoGuardado?.estado === 'PENDIENTE'
     try {
-      const body = {
-        idGrupo: selected.idGrupo,
-        idMaquina: selected.idMaquina,
-        idOperador: selected.idOperador,
-        idUsuario: usuario?.idUsuario,
-        nrAnterior: selected.nrAnterior,
-        nrActual,
-        efectivoRecog,
+      let res: any
+      let accion: string
+      if (existePendiente) {
+        // Ya se guardaron los medios digitales; solo completamos el efectivo (PATCH).
+        res = await apiService.patch(`/tesoreria/efectivo-nr/${selected.idRecaudo}`, { efectivoRecog })
+        accion = 'cerrado'
+      } else {
+        res = await apiService.post('/tesoreria/efectivo-nr', buildBody(efectivoRecog))
+        accion = 'cerrado'
       }
-      const res: any = await apiService.post('/tesoreria/efectivo-nr', body)
       const idRecaudo = res?.id ?? res?.idRecaudo ?? res?.data?.idRecaudo ?? Math.floor(Math.random() * 10000)
-      message.success(`✅ Recaudo #${idRecaudo} cerrado para la visita ${selected.idGrupo}`)
+      message.success(`✅ Recaudo #${idRecaudo} ${accion} para la visita ${selected.idGrupo}`)
       setSelected(null)
       loadData(true)
     } catch (err: any) {
@@ -114,6 +199,13 @@ const Efectivo = () => {
 
   const diffColor = (v: number) => (v > 0 ? '#52c41a' : v < 0 ? '#ff4d4f' : '#666')
   const diferenciaActual = selected && nrActual !== null ? nrActual - (selected.nrAnterior || 0) : 0
+  // Tarifa unitaria estimada: totalVendido (del listado) entre su diferencia NR base.
+  const tarifaEstimada = selected && selected.diferenciaNR > 0 ? selected.totalVendido / selected.diferenciaNR : 0
+  const totalVendidoActual = diferenciaActual * tarifaEstimada
+  const mediosActivosSel = selected ? mediosActivos(selected.maquina) : []
+  const sumaDigitales = mediosActivosSel.reduce((acc, k) => acc + (digitales[k] ?? 0), 0)
+  const efectivoEsperado = Math.max(0, totalVendidoActual - sumaDigitales)
+  const esPendienteCerrable = !!selected && selected.idRecaudo != null && selected.estado === 'PENDIENTE' && selected.recaudoGuardado?.estado === 'PENDIENTE'
 
   const columns = [
     {
@@ -309,8 +401,44 @@ const Efectivo = () => {
           </div>
         </Card>
 
-        <Card size="small" style={{ marginTop: 16 }} type="inner" title="💰 Efectivo que trajo el operador (recogido)">
-          <label style={{ fontWeight: 600 }}>Efectivo Recogido ($): *</label>
+        <Card size="small" style={{ marginTop: 16 }} type="inner" title="💳 Medios de pago de la máquina (no efectivo)">
+          {mediosActivosSel.length === 0 ? (
+            <Tag color="default">Esta máquina solo acepta efectivo</Tag>
+          ) : (
+            <>
+              <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>
+                Digite lo recaudado por cada medio digital asignado. El NR es el total vendido de la máquina (efectivo + digitales).
+              </div>
+              {mediosActivosSel.map((k) => (
+                <div key={k} style={{ marginBottom: 12 }}>
+                  <label style={{ fontWeight: 600 }}>{MEDIO_LABEL[k]} ($):</label>
+                  <InputNumber
+                    size="large"
+                    style={{ width: '100%', marginTop: 4 }}
+                    min={0}
+                    prefix="$"
+                    value={digitales[k]}
+                    onChange={(v: any) => setDigitales((d) => ({ ...d, [k]: v == null ? null : Number(v) }))}
+                    placeholder={`Digite el valor de ${MEDIO_LABEL[k]}`}
+                    formatter={(val: any) => `$ ${val}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                    parser={(val: any) => Number(String(val).replace(/[\$\s,]/g, ''))}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+        </Card>
+
+        <Card size="small" style={{ marginTop: 16 }} type="inner" title="💰 Efectivo que trae el operador">
+          <Statistic
+            title="Efectivo ESPERADO (total vendido − medios digitales)"
+            value={efectivoEsperado}
+            precision={0}
+            prefix="$"
+            valueStyle={{ color: '#cf1322' }}
+          />
+          <div style={{ height: 12 }} />
+          <label style={{ fontWeight: 600 }}>Efectivo Recogido ($): {mediosActivosSel.length > 0 ? '* (obligatorio para cerrar)' : ''}</label>
           <InputNumber
             size="large"
             style={{ width: '100%', marginTop: 8 }}
@@ -339,14 +467,36 @@ const Efectivo = () => {
           <Descriptions.Item label="Diferencia NR">
             {diferenciaActual.toLocaleString('es-CO')} unidades
           </Descriptions.Item>
+          <Descriptions.Item label="Total Vendido (NR × tarifa)">
+            {fmt(totalVendidoActual)}
+          </Descriptions.Item>
+          {mediosActivosSel.map((k) => (
+            <Descriptions.Item key={k} label={MEDIO_LABEL[k]}>
+              {fmt(digitales[k])}
+            </Descriptions.Item>
+          ))}
+          <Descriptions.Item label="Efectivo Esperado">
+            {fmt(efectivoEsperado)}
+          </Descriptions.Item>
           <Descriptions.Item label="Efectivo Recogido">
-            {efectivoRecog != null ? `$ ${efectivoRecog.toLocaleString('es-CO')}` : '—'}
+            {fmt(efectivoRecog)}
           </Descriptions.Item>
         </Descriptions>
 
         <div style={{ marginTop: 24, textAlign: 'right' }}>
           <Space>
             <Button onClick={() => setSelected(null)}>Cancelar</Button>
+            {!esPendienteCerrable && mediosActivosSel.length > 0 && (
+              <Button
+                size="large"
+                icon={<SaveOutlined />}
+                loading={guardandoParcial}
+                disabled={!perm.crear}
+                onClick={guardarParcial}
+              >
+                Guardar Parcial (queda pendiente)
+              </Button>
+            )}
             <Button
               type="primary"
               size="large"
@@ -355,7 +505,7 @@ const Efectivo = () => {
               disabled={!perm.crear}
               onClick={cerrarRecaudo}
             >
-              🔒 Cerrar Recaudo
+              {esPendienteCerrable ? '🔒 Cerrar Recaudo (efectivo)' : '🔒 Cerrar Recaudo'}
             </Button>
           </Space>
         </div>

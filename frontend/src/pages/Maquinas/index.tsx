@@ -16,6 +16,7 @@ import {
   Badge,
   Drawer,
   Spin,
+  Checkbox,
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
@@ -42,6 +43,13 @@ interface BotonNRQ {
   precio_venta_cliente?: number
 }
 
+interface MediosPago {
+  efectivo: boolean
+  veos: boolean
+  datafono: boolean
+  cupos: boolean
+}
+
 interface Maquina {
   id: number
   serial: string
@@ -54,6 +62,7 @@ interface Maquina {
   zona: string
   base: number
   estado: 'OPERANDO' | 'FUERA_SERVICIO' | 'MANTENIMIENTO'
+  mediosPago?: MediosPago
   espirales?: Espiral[]
   botonesNRQ?: BotonNRQ[]
 }
@@ -77,6 +86,18 @@ const normalizarEstado = (e: any): 'OPERANDO' | 'FUERA_SERVICIO' | 'MANTENIMIENT
     return s as any
   }
   return 'OPERANDO'
+}
+
+// Todas las máquinas reciben efectivo (fijo). Los medios digitales (veos/datafono/cupos)
+// se leen del JSON si ya están configurados; si no, quedan desactivados.
+const normalizarMedios = (mp: any): MediosPago => {
+  const m = mp ?? {}
+  return {
+    efectivo: true,
+    veos: !!m.veos || !!m.nequi || !!m.daviplata,
+    datafono: !!m.datafono || !!m.tarjeta,
+    cupos: !!m.cupos,
+  }
 }
 
 const Maquinas = () => {
@@ -131,6 +152,7 @@ const Maquinas = () => {
         zona: m.ubicacionEsp ?? m.zona ?? '',
         base: Number(m.base ?? 0),
         estado: normalizarEstado(m.estado ?? m.estado_operacion),
+        mediosPago: normalizarMedios(m.mediosPago ?? m.Medios_Pago),
         espirales: Array.isArray(m.mapaMateriaPrima)
           ? m.mapaMateriaPrima.map((e: any) => ({
               id: e.idMapaMp ?? Math.random(),
@@ -252,6 +274,7 @@ const Maquinas = () => {
         idOperador: values.operadorId ?? null,
         ubicacionEsp: values.zona,
         base: values.base ?? 0,
+        mediosPago: values.mediosPago ? { ...values.mediosPago, efectivo: true } : undefined,
         estado: values.estado ? values.estado !== 'FUERA_SERVICIO' && values.estado !== 'FUERA SERVICIO' : true,
       }
 
@@ -603,6 +626,29 @@ const Maquinas = () => {
                       </Select>
                     </Form.Item>
                   </div>
+                </>
+              ),
+            },
+            {
+              key: 'MEDIOS',
+              label: '💳 Medios de Pago',
+              children: (
+                <>
+                  <div style={{ color: '#666', fontSize: 12, marginBottom: 12 }}>
+                    Seleccione los medios de pago que maneja esta máquina. Todas las máquinas reciben <strong>efectivo</strong>.
+                  </div>
+                  <Form.Item name={['mediosPago', 'veos']} valuePropName="checked" style={{ marginBottom: 8 }}>
+                    <Checkbox>Veos</Checkbox>
+                  </Form.Item>
+                  <Form.Item name={['mediosPago', 'datafono']} valuePropName="checked" style={{ marginBottom: 8 }}>
+                    <Checkbox>Datafono</Checkbox>
+                  </Form.Item>
+                  <Form.Item name={['mediosPago', 'cupos']} valuePropName="checked" style={{ marginBottom: 8 }}>
+                    <Checkbox>Cupos</Checkbox>
+                  </Form.Item>
+                  <Form.Item name={['mediosPago', 'efectivo']} valuePropName="checked" initialValue={true}>
+                    <Checkbox disabled checked>Efectivo (siempre activo)</Checkbox>
+                  </Form.Item>
                 </>
               ),
             },

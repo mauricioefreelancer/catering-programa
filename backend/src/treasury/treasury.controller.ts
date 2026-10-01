@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { TreasuryService } from './treasury.service';
-import { CreateEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
+import { CreateEfectivoNrDto, CompletarEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Permissions } from '../auth/permissions.guard';
 
@@ -19,7 +19,7 @@ export class TreasuryController {
 
   @Patch('efectivo-nr/:id')
   @Permissions('tesoreria', 'editar')
-  updateEfectivoNr(@Param('id') id: string) { return this.srv.updateEfectivoNr(+id, {}); }
+  updateEfectivoNr(@Param('id') id: string, @Body() dto: CompletarEfectivoNrDto) { return this.srv.updateEfectivoNr(+id, dto); }
 
   @Delete('efectivo-nr/:id')
   @Permissions('tesoreria', 'eliminar')

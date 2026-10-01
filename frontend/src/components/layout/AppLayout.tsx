@@ -132,7 +132,6 @@ const AppLayout = () => {
     const tesoreriaChildren: MenuItem[] = []
     if (hasPermission('tesoreria')) {
       tesoreriaChildren.push({ key: '/tesoreria/efectivo', icon: <WalletOutlined />, label: <Link to="/tesoreria/efectivo">Efectivo / Recaudo</Link> })
-      tesoreriaChildren.push({ key: '/tesoreria/saldos', icon: <DollarOutlined />, label: <Link to="/tesoreria/saldos">Saldos Plataformas</Link> })
       tesoreriaChildren.push({ key: '/tesoreria/facturacion-nrq', icon: <FileTextOutlined />, label: <Link to="/tesoreria/facturacion-nrq">Facturación NRQ</Link> })
     }
     if (tesoreriaChildren.length > 0) {
