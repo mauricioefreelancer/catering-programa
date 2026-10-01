@@ -37,6 +37,12 @@ export class OperadorPedidoService {
     const operador = await this.prisma.operadores.findUnique({ where: { idOperador: dto.idOperador } });
     if (!operador) throw new NotFoundException('Operador no encontrado');
 
+    // Marcar la máquina con la última fecha de visita al registrar el inventario/pedido del operador
+    await this.prisma.maquinasYTiendas.update({
+      where: { idMaquina: dto.idMaquina },
+      data: { fechaUltimaVisita: new Date() },
+    });
+
     const mapaMpById = new Map(maquina.mapaMateriaPrima.map((m) => [m.idMapaMp, m]));
     const mapaNrqById = new Map(maquina.mapaCafeNrq.map((m) => [m.idMapaNrq, m]));
     const pedidosCreados: any[] = [];

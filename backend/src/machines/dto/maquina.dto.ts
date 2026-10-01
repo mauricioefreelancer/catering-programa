@@ -11,6 +11,7 @@ export class CreateMaquinaDto {
   @IsOptional() @IsNumber() tarifaPromedioOverride?: number;
   @IsOptional() @IsDateString() fechaInstalacion?: string;
   @IsOptional() @IsBoolean() estado?: boolean;
+  @IsOptional() @IsNumber() base?: number;
 }
 
 export class UpdateMaquinaDto {
@@ -24,6 +25,7 @@ export class UpdateMaquinaDto {
   @IsOptional() @IsNumber() tarifaPromedioOverride?: number;
   @IsOptional() @IsDateString() fechaInstalacion?: string;
   @IsOptional() @IsBoolean() estado?: boolean;
+  @IsOptional() @IsNumber() base?: number;
 }
 
 export class AsignarMaquinaDto {

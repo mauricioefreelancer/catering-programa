@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { List, Avatar, Badge, Typography, Tag, Input, Space, Card, Spin } from 'antd'
-import { SearchOutlined, DesktopOutlined, EnvironmentOutlined, CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
+import { List, Avatar, Typography, Tag, Input, Space, Card, Spin } from 'antd'
+import { SearchOutlined, DesktopOutlined, EnvironmentOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiService } from '../../../api/services/api'
@@ -13,15 +13,17 @@ interface MaquinaRow {
   serial: string
   zona: string
   clienteNombre: string
-  estado_visita: 'PENDIENTE' | 'VISITADA' | 'URGENTE'
   tipo: 'SNACK' | 'BEBIDA' | 'CAFE' | 'COMBINADA'
+  base: number
+  fechaUltimaVisita: string | null
   idOperador?: number
 }
 
-const estadoBadge = (e: string) => {
-  if (e === 'VISITADA') return <Badge status="success" text={<Tag color="green" icon={<CheckCircleOutlined />}>Visitada</Tag>} />
-  if (e === 'URGENTE') return <Badge status="error" text={<Tag color="red" icon={<ExclamationCircleOutlined />}>Urgente Stock</Tag>} />
-  return <Badge status="processing" text={<Tag color="orange" icon={<ClockCircleOutlined />}>Pendiente</Tag>} />
+const formatearFecha = (f: string | null | undefined): string => {
+  if (!f) return 'Nunca visitada'
+  const d = new Date(f)
+  if (isNaN(d.getTime())) return 'Nunca visitada'
+  return d.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
 }
 
 const ListaMaquinas = () => {
@@ -68,8 +70,9 @@ const ListaMaquinas = () => {
             serial: m.serial || `MÁQ-${m.idMaquina || m.id}`,
             zona: m.ubicacionEsp || m.ubicacion_fisica || m.zona || 'Sin ubicación',
             clienteNombre: m.cliente?.razonSocial || m.clienteNombre || m.cliente?.nombre || 'Sin cliente',
-            estado_visita: (['URGENTE','VISITADA','PENDIENTE'].includes(String(m.estadoVisita || m.estado_visita || '').toUpperCase()) ? ((m.estadoVisita || m.estado_visita) as any) : 'PENDIENTE'),
             tipo: (['SNACK','BEBIDA','CAFE','COMBINADA'].includes(String(m.tipo || '').toUpperCase()) ? (m.tipo as any) : 'COMBINADA'),
+            base: Number(m.base ?? 0),
+            fechaUltimaVisita: m.fechaUltimaVisita || m.fecha_ultima_visita || null,
             idOperador: m.idOperador ? Number(m.idOperador) : undefined,
           }))
         if (active) setMaquinas(rows)
@@ -95,9 +98,7 @@ const ListaMaquinas = () => {
 
   const stats = useMemo(() => ({
     total: maquinas.length,
-    pendientes: maquinas.filter((m) => m.estado_visita === 'PENDIENTE').length,
-    visitadas: maquinas.filter((m) => m.estado_visita === 'VISITADA').length,
-    urgentes: maquinas.filter((m) => m.estado_visita === 'URGENTE').length,
+    baseTotal: maquinas.reduce((acc, m) => acc + (m.base || 0), 0),
   }), [maquinas])
 
   return (
@@ -109,9 +110,9 @@ const ListaMaquinas = () => {
       <Card size="small" style={{ marginBottom: 12 }}>
         <Space size="middle" wrap>
           <Tag color="blue" style={{ fontSize: 14, padding: '4px 10px' }}>📋 Total: {stats.total}</Tag>
-          <Tag color="orange" style={{ fontSize: 14, padding: '4px 10px' }}>⏳ Pendientes: {stats.pendientes}</Tag>
-          <Tag color="green" style={{ fontSize: 14, padding: '4px 10px' }}>✅ Visitadas: {stats.visitadas}</Tag>
-          <Tag color="red" style={{ fontSize: 14, padding: '4px 10px' }}>⚠ Urgentes: {stats.urgentes}</Tag>
+          <Tag color="volcano" style={{ fontSize: 14, padding: '4px 10px' }}>
+            💰 Base Total: ${stats.baseTotal.toLocaleString('es-CO', { maximumFractionDigits: 2 })}
+          </Tag>
         </Space>
       </Card>
 
@@ -142,10 +143,7 @@ const ListaMaquinas = () => {
                 onClick={() => navigate(`/mobile/inventario/${item.id}`)}
                 hoverable
                 size="small"
-                style={{
-                  width: '100%',
-                  borderLeft: `6px solid ${item.estado_visita === 'URGENTE' ? '#ff4d4f' : item.estado_visita === 'VISITADA' ? '#52c41a' : '#faad14'}`,
-                }}
+                style={{ width: '100%' }}
                 title={
                   <Space wrap>
                     <Avatar icon={<DesktopOutlined />} style={{ backgroundColor: '#1677ff' }} />
@@ -155,13 +153,18 @@ const ListaMaquinas = () => {
                         <EnvironmentOutlined /> {item.zona}
                       </Text>
                     </Space>
-                    <div style={{ marginLeft: 'auto' }}>{estadoBadge(item.estado_visita)}</div>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <Tag color={item.fechaUltimaVisita ? 'green' : 'default'} icon={<ClockCircleOutlined />}>
+                        Última visita: {formatearFecha(item.fechaUltimaVisita)}
+                      </Tag>
+                    </div>
                   </Space>
                 }
               >
                 <Space wrap>
                   <Tag color="geekblue">{item.tipo}</Tag>
                   <Tag>🏢 {item.clienteNombre}</Tag>
+                  <Tag color="volcano">💰 Base: ${(item.base || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 })}</Tag>
                 </Space>
               </Card>
             </List.Item>

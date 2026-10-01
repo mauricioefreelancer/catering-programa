@@ -32,6 +32,8 @@ interface Operador {
   estado: 'ACTIVO' | 'INACTIVO'
   idUsuario?: number | string
   usuario?: any
+  baseTotal?: number
+  maquinas?: any[]
 }
 
 const msgError = (e: any): string => {
@@ -67,6 +69,8 @@ const Operadores = () => {
         estado: (o.estado === false || o.usuario?.estado === false ? 'INACTIVO' : 'ACTIVO') as 'ACTIVO' | 'INACTIVO',
         idUsuario: o.usuario?.idUsuario || o.idUsuario,
         usuario: o.usuario,
+        baseTotal: Number(o.baseTotal || 0),
+        maquinas: o.maquinas || [],
       }))
       setData(mapped)
     } catch (e: any) {
@@ -221,6 +225,20 @@ const Operadores = () => {
     { title: 'Teléfono', dataIndex: 'telefono', key: 'telefono' },
     { title: 'Email', dataIndex: 'email', key: 'email' },
     { title: 'Zona', dataIndex: 'zona', key: 'zona', render: (v: string) => <Tag color="blue">{v}</Tag> },
+    {
+      title: 'Base Total ($)',
+      key: 'baseTotal',
+      render: (_: any, r: Operador) => {
+        const total = r.baseTotal || 0
+        const nMaq = (r.maquinas || []).length
+        return (
+          <Space direction="vertical" size={0}>
+            <strong style={{ color: '#cf1322' }}>${total.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</strong>
+            <span style={{ fontSize: 12, color: '#999' }}>{nMaq} máquina{nMaq === 1 ? '' : 's'} asignada{nMaq === 1 ? '' : 's'}</span>
+          </Space>
+        )
+      },
+    },
     { title: 'Estado', dataIndex: 'estado', key: 'estado', render: (v: string) => <Tag color={v === 'ACTIVO' ? 'green' : 'red'}>{v}</Tag> },
     {
       title: 'Acciones',
@@ -257,7 +275,7 @@ const Operadores = () => {
         </Space>
       </div>
       <Spin spinning={loadingTable}>
-        <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} operadores` }} scroll={{ x: 1000 }} />
+        <Table rowKey="id" dataSource={filtered} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} operadores` }} scroll={{ x: 1200 }} />
       </Spin>
       <ModalDrawer
         title={editing ? 'Editar Operador' : 'Nuevo Operador (crea usuario)'} open={open} onClose={() => { setOpen(false); setEditing(null) }}

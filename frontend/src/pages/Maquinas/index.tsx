@@ -52,6 +52,7 @@ interface Maquina {
   operadorId: number
   operadorNombre: string
   zona: string
+  base: number
   estado: 'OPERANDO' | 'FUERA_SERVICIO' | 'MANTENIMIENTO'
   espirales?: Espiral[]
   botonesNRQ?: BotonNRQ[]
@@ -128,6 +129,7 @@ const Maquinas = () => {
         operadorId: m.idOperador ?? m.operadorId,
         operadorNombre: m.operador?.nombreCompleto ?? m.operador?.usuario?.nombre ?? m.operadorNombre ?? '',
         zona: m.ubicacionEsp ?? m.zona ?? '',
+        base: Number(m.base ?? 0),
         estado: normalizarEstado(m.estado ?? m.estado_operacion),
         espirales: Array.isArray(m.mapaMateriaPrima)
           ? m.mapaMateriaPrima.map((e: any) => ({
@@ -249,6 +251,7 @@ const Maquinas = () => {
         idCliente: values.clienteId,
         idOperador: values.operadorId,
         ubicacionEsp: values.zona,
+        base: values.base ?? 0,
         estado: values.estado ? values.estado !== 'FUERA_SERVICIO' && values.estado !== 'FUERA SERVICIO' : true,
       }
 
@@ -493,6 +496,12 @@ const Maquinas = () => {
     { title: 'Operador', dataIndex: 'operadorNombre', key: 'o' },
     { title: 'Zona', dataIndex: 'zona', key: 'z' },
     {
+      title: 'Base ($)',
+      key: 'base',
+      dataIndex: 'base',
+      render: (v: number) => <strong style={{ color: '#cf1322' }}>${(v || 0).toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</strong>,
+    },
+    {
       title: 'Estado',
       key: 'e',
       dataIndex: 'estado',
@@ -571,6 +580,9 @@ const Maquinas = () => {
                     <Form.Item name="marca" label="Marca" rules={[{ required: true }]}><Input /></Form.Item>
                   </div>
                   <Form.Item name="zona" label="Ubicación / Zona" rules={[{ required: true }]}><Input placeholder="Ej: Piso 3 - Cafetería" /></Form.Item>
+                  <Form.Item name="base" label="Base en Dinero ($)" extra="Monto base que maneja esta máquina">
+                    <InputNumber prefix="$" min={0} precision={2} style={{ width: '100%' }} placeholder="0" />
+                  </Form.Item>
                 </>
               ),
             },

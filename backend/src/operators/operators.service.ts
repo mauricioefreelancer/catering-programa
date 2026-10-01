@@ -56,20 +56,36 @@ export class OperatorsService {
     const [data, total] = await Promise.all([
       this.prisma.operadores.findMany({
         skip, take, where, orderBy: { fechaIngreso: 'desc' },
-        include: { usuario: true },
+        include: {
+          usuario: true,
+          maquinasYTiendas: { select: { idMaquina: true, serial: true, tipo: true, base: true, fechaUltimaVisita: true } },
+        },
       }),
       this.prisma.operadores.count({ where }),
     ]);
-    return { data, total, skip, take };
+    const rows = data.map((op) => this.conBaseTotal(op));
+    return { data: rows, total, skip, take };
   }
 
   async findOne(id: number) {
     const o = await this.prisma.operadores.findUnique({
       where: { idOperador: id },
-      include: { usuario: true },
+      include: {
+        usuario: true,
+        maquinasYTiendas: { select: { idMaquina: true, serial: true, tipo: true, base: true, fechaUltimaVisita: true } },
+      },
     });
     if (!o) throw new NotFoundException('Operador no encontrado');
-    return o;
+    return this.conBaseTotal(o);
+  }
+
+  private conBaseTotal(op: any) {
+    const maquinas = op.maquinasYTiendas ?? [];
+    let baseTotal = 0;
+    for (const m of maquinas) {
+      if (m.base !== null && m.base !== undefined) baseTotal += Number(m.base);
+    }
+    return { ...op, baseTotal, maquinas };
   }
 
   async create(dto: CreateOperadorDto) {

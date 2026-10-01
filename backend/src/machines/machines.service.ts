@@ -85,6 +85,7 @@ export class MachinesService {
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
+    if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
     return this.prisma.maquinasYTiendas.create({ data });
   }
 
@@ -94,6 +95,7 @@ export class MachinesService {
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
+    if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
     return this.prisma.maquinasYTiendas.update({ where: { idMaquina: id }, data });
   }
 
