@@ -22,6 +22,7 @@ import {
   ControlOutlined,
   OrderedListOutlined,
   CloseOutlined,
+  MobileOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
@@ -84,6 +85,19 @@ const AppLayout = () => {
   if (isOperador) {
     items.push({ key: '/mobile/home', icon: <DesktopOutlined />, label: <Link to="/mobile/home">📱 Panel Operador</Link> })
   } else {
+    // Acceso del admin/desarrollador al portal del operador (en pestaña nueva para poder compartir el enlace)
+    items.push({
+      key: '/operador',
+      icon: <MobileOutlined />,
+      label: (
+        <a href="/operador" target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+          <Space style={{ display: 'flex', width: '100%' }}>
+            <span>Portal Operador</span>
+            <Tag color="cyan" style={{ marginLeft: 'auto' }}>enlace para operadores</Tag>
+          </Space>
+        </a>
+      ),
+    })
     if (hasPermission('dashboard')) {
       items.push({ key: '/dashboard', icon: <DashboardOutlined />, label: <Link to="/dashboard">Dashboard</Link> })
     }

@@ -1,5 +1,5 @@
 import { Form, Input, Button, Card, Typography, message, Alert } from 'antd'
-import { UserOutlined, LockOutlined, LoginOutlined, MobileOutlined } from '@ant-design/icons'
+import { UserOutlined, LockOutlined, LoginOutlined, MobileOutlined, LogoutOutlined } from '@ant-design/icons'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -18,14 +18,6 @@ const esOperador = (u?: any): boolean => {
   )
 }
 
-const getAdminHome = (u?: any): string => {
-  const rol = String(u?.rolNombre || u?.rol || '').toLowerCase()
-  const perfil = String(u?.perfil || '').toLowerCase()
-  if (rol.includes('bodega') || perfil === 'bodega') return '/despachos'
-  if (rol.includes('tesorer') || perfil === 'tesoreria' || perfil === 'tesorero') return '/tesoreria/efectivo'
-  return '/dashboard'
-}
-
 const OperadorLogin = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -33,16 +25,19 @@ const OperadorLogin = () => {
   const navigate = useNavigate()
   const [form] = Form.useForm()
 
-  // Si ya hay sesión activa de operador, enviarlo directo a su panel.
-  // Si la sesión activa es de un usuario NO operador, devolverlo a su panel administrativo.
+  // Sesión activa de un operador → ir directo a su panel.
+  // Si la sesión activa es de un usuario NO operador (admin/desarrollador), NO redirigir:
+  // se muestra el cartel con el enlace compartible del portal para los operadores.
   useEffect(() => {
     if (!isAuth || !usuario) return
     if (esOperador(usuario)) {
       navigate('/mobile/home', { replace: true })
-    } else {
-      navigate(getAdminHome(usuario), { replace: true })
     }
   }, [isAuth, usuario, navigate])
+
+  // Sesión activa de un NO operador (admin/desarrollador abriendo el portal para verlo/compartirlo)
+  const sesionAdminAbierta = isAuth && usuario && !esOperador(usuario)
+  const portalUrl = `${window.location.origin}/operador`
 
   const onFinish = async (values: { email: string; password: string }) => {
     setLoading(true)
@@ -66,6 +61,12 @@ const OperadorLogin = () => {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSalirAdmin = () => {
+    // Cierra la sesión administrativa y recarga para que el admin pueda probar el acceso como operador
+    logout()
+    window.location.reload()
   }
 
   return (
@@ -100,19 +101,44 @@ const OperadorLogin = () => {
 
         {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
 
-        <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}>
-          <Form.Item label="Usuario / Email" name="email" rules={[{ required: true, message: 'Ingresa tu usuario o email' }]}>
-            <Input size="large" prefix={<UserOutlined />} placeholder="usuario o correo" autoComplete="username" />
-          </Form.Item>
-          <Form.Item label="Contraseña" name="password" rules={[{ required: true, message: 'Ingresa tu contraseña' }]}>
-            <Input.Password size="large" prefix={<LockOutlined />} placeholder="••••••••" autoComplete="current-password" />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 8 }}>
-            <Button type="primary" htmlType="submit" size="large" loading={loading} block icon={<LoginOutlined />}>
-              Ingresar a mi panel
+        {sesionAdminAbierta ? (
+          <div>
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Vista para compartir con operadores"
+              description="Ya tienes una sesión administrativa activa. Este portal es EXCLUSIVO para operadores y no rompe tu sesión. Comparte el siguiente enlace con tus operadores:"
+            />
+            <Card size="small" style={{ marginBottom: 16, background: '#f0fffb', borderColor: '#87e8de' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Typography.Text code copyable style={{ flex: 1 }}>
+                  {portalUrl}
+                </Typography.Text>
+              </div>
+              <Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+                Los operadores abrirán este enlace, ingresarán con su usuario y contraseña, y solo verán su panel de máquinas y pedidos.
+              </Paragraph>
+            </Card>
+            <Button block icon={<LogoutOutlined />} onClick={handleSalirAdmin}>
+              Probar como operador (cerrar sesión admin)
             </Button>
-          </Form.Item>
-        </Form>
+          </div>
+        ) : (
+          <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}>
+            <Form.Item label="Usuario / Email" name="email" rules={[{ required: true, message: 'Ingresa tu usuario o email' }]}>
+              <Input size="large" prefix={<UserOutlined />} placeholder="usuario o correo" autoComplete="username" />
+            </Form.Item>
+            <Form.Item label="Contraseña" name="password" rules={[{ required: true, message: 'Ingresa tu contraseña' }]}>
+              <Input.Password size="large" prefix={<LockOutlined />} placeholder="••••••••" autoComplete="current-password" />
+            </Form.Item>
+            <Form.Item style={{ marginBottom: 8 }}>
+              <Button type="primary" htmlType="submit" size="large" loading={loading} block icon={<LoginOutlined />}>
+                Ingresar a mi panel
+              </Button>
+            </Form.Item>
+          </Form>
+        )}
       </Card>
     </div>
   )

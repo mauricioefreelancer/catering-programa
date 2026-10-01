@@ -1,5 +1,5 @@
 import { Form, Input, Button, Card, Typography, message, Alert } from 'antd'
-import { UserOutlined, LockOutlined, LoginOutlined } from '@ant-design/icons'
+import { UserOutlined, LockOutlined, LoginOutlined, MobileOutlined } from '@ant-design/icons'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
@@ -118,6 +118,9 @@ const Login = () => {
               Iniciar Sesión
             </Button>
           </Form.Item>
+          <Button size="large" block icon={<MobileOutlined />} onClick={() => window.open('/operador', '_blank')} style={{ marginBottom: 8 }}>
+            Ingresar como Operador
+          </Button>
           <Button size="small" type="link" onClick={fillDemo} block>
             (Demo) Llenar credenciales de prueba
           </Button>
