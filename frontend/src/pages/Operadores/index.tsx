@@ -110,7 +110,7 @@ const Operadores = () => {
     try {
       if (editing) {
         const idOperador = editing.idOperador || editing.id
-        const payloadOperador = {
+        const payloadOperador: any = {
           numeroDocumento: values.documento,
           nombreCompleto: values.nombre,
           telefono: values.telefono,
@@ -119,6 +119,7 @@ const Operadores = () => {
           zonaAsignada: values.zona,
           estado: values.estado || editing.estado || 'ACTIVO',
         }
+        if (values.password) payloadOperador.password = values.password
         try {
           await patch(`/operadores/${idOperador}`, payloadOperador)
         } catch (e: any) {
@@ -279,9 +280,14 @@ const Operadores = () => {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Form.Item name="usuario_login" label="Usuario Login" rules={[{ required: true }]}><Input /></Form.Item>
-          {!editing && (
-            <Form.Item name="password" label="Contraseña" rules={[{ required: true, min: 6 }]}><Input.Password /></Form.Item>
-          )}
+          <Form.Item
+            name="password"
+            label={editing ? 'Nueva Contraseña (opcional)' : 'Contraseña'}
+            rules={editing ? [{ min: 6, message: 'Mínimo 6 caracteres' }] : [{ required: true, min: 6 }]}
+            extra={editing ? 'Déjala en blanco para mantener la actual' : undefined}
+          >
+            <Input.Password placeholder={editing ? 'Dejar en blanco = no cambiar' : 'Ingrese la contraseña'} />
+          </Form.Item>
         </div>
       </ModalDrawer>
     </div>

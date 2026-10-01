@@ -1,7 +1,8 @@
-import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import AppLayout from '../components/layout/AppLayout'
 import Login from '../pages/Login'
+import OperadorLogin from '../pages/OperadorLogin'
 import Dashboard from '../pages/Dashboard'
 import Clientes from '../pages/Clientes'
 import Proveedores from '../pages/Proveedores'
@@ -28,7 +29,33 @@ import PermissionRoute from '../components/PermissionRoute'
 
 const ProtectedRoute = ({ children }: { children?: any }) => {
   const { isAuth } = useAuth()
-  if (!isAuth) return <Navigate to="/login" replace />
+  const location = useLocation()
+  if (!isAuth) {
+    // Si el usuario intenta acceder a una ruta móvil/operador sin sesión, dirigirlo al portal del operador
+    if (String(location.pathname).startsWith('/mobile')) return <Navigate to="/operador" replace />
+    return <Navigate to="/login" replace />
+  }
+  return children || <Outlet />
+}
+
+const esOperador = (u?: any): boolean => {
+  const rol = String(u?.rolNombre || u?.rol || '').toLowerCase()
+  const perfil = String(u?.perfil || '').toLowerCase()
+  return (
+    rol.includes('operador') ||
+    perfil === 'operador' ||
+    perfil === 'operario' ||
+    Number(u?.idRol) === 4
+  )
+}
+
+// Impide que un OPERADOR acceda al panel administrativo (AppLayout).
+// El operador solo debe vivir dentro de /mobile/*.
+const OperadorGuard = ({ children }: { children?: any }) => {
+  const { isAuth, usuario } = useAuth()
+  if (isAuth && esOperador(usuario)) {
+    return <Navigate to="/mobile/home" replace />
+  }
   return children || <Outlet />
 }
 
@@ -38,10 +65,16 @@ export const routes = createBrowserRouter([
     element: <Login />,
   },
   {
+    path: '/operador',
+    element: <OperadorLogin />,
+  },
+  {
     path: '/',
     element: (
       <ProtectedRoute>
-        <AppLayout />
+        <OperadorGuard>
+          <AppLayout />
+        </OperadorGuard>
       </ProtectedRoute>
     ),
     children: [

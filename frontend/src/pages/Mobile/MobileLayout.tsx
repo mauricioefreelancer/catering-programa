@@ -15,6 +15,12 @@ const MobileLayout = () => {
   const [syncing, setSyncing] = useState(false)
   const navigate = useNavigate()
 
+  const esOperador = (() => {
+    const rol = String(usuario?.rolNombre || usuario?.rol || '').toLowerCase()
+    const perfil = String(usuario?.perfil || '').toLowerCase()
+    return rol.includes('operador') || perfil === 'operador' || perfil === 'operario' || Number(usuario?.idRol) === 4
+  })()
+
   const syncAll = async () => {
     if (items.length === 0) {
       message.info('No hay inventarios pendientes por sincronizar')
@@ -54,17 +60,19 @@ const MobileLayout = () => {
     }
   }
 
-  const userMenu = [
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Cerrar Sesión',
-      onClick: () => {
-        logout()
-        navigate('/login', { replace: true })
-      },
-    },
-  ]
+  const userMenu = esOperador
+    ? []
+    : [
+        {
+          key: 'logout',
+          icon: <LogoutOutlined />,
+          label: 'Cerrar Sesión',
+          onClick: () => {
+            logout()
+            navigate('/login', { replace: true })
+          },
+        },
+      ]
 
   return (
     <Layout style={{ minHeight: '100vh', background: '#f5f7fa' }}>
@@ -107,13 +115,19 @@ const MobileLayout = () => {
               {count > 0 ? `Sync ${count}` : 'Sync'}
             </Button>
           </Badge>
-          <Dropdown menu={{ items: userMenu }} placement="bottomRight">
-            <div style={{ cursor: 'pointer' }}>
-              <Avatar style={{ backgroundColor: 'white', color: '#1677ff' }} icon={<UserOutlined />}>
-                {usuario?.nombre?.charAt(0)}
-              </Avatar>
-            </div>
-          </Dropdown>
+          {userMenu.length > 0 ? (
+            <Dropdown menu={{ items: userMenu }} placement="bottomRight">
+              <div style={{ cursor: 'pointer' }}>
+                <Avatar style={{ backgroundColor: 'white', color: '#1677ff' }} icon={<UserOutlined />}>
+                  {usuario?.nombre?.charAt(0)}
+                </Avatar>
+              </div>
+            </Dropdown>
+          ) : (
+            <Avatar style={{ backgroundColor: 'white', color: '#1677ff', cursor: 'default' }} icon={<UserOutlined />}>
+              {usuario?.nombre?.charAt(0)}
+            </Avatar>
+          )}
         </Space>
       </Header>
       <Content style={{ padding: 12, paddingBottom: 24 }}>
