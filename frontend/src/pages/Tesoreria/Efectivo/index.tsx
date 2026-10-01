@@ -272,7 +272,7 @@ const Efectivo = () => {
       align: 'center' as const,
       render: (v: number) => (
         <Tag color={v > 0 ? 'green' : 'default'} style={{ fontWeight: 600 }}>
-          {v.toLocaleString('es-CO')}
+          {Number(v || 0).toLocaleString('es-CO')} <span style={{ fontSize: 11, opacity: 0.7 }}>unid.</span>
         </Tag>
       ),
     },
@@ -374,7 +374,7 @@ const Efectivo = () => {
           <Col span={12}>
             <Card size="small" type="inner">
               <Statistic
-                title="Diferencia NR (ventas de la visita)"
+                title="Diferencia NR (ventas de la visita en unidades)"
                 value={diferenciaActual}
                 suffix="unid."
                 valueStyle={{ color: diffColor(diferenciaActual), fontSize: 26 }}
