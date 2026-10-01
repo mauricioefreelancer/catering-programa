@@ -274,10 +274,8 @@ const InventarioMobile = () => {
   ]
 
   const canAdvanceStep1 = () => {
-    if (maq.tipo === 'CAFE') return true
-    if (totalDigitado === 0 && espirales.length > 0) {
-      return false
-    }
+    // Se permite avanzar aunque el físico digitado sea 0 (el operador puede llegar
+    // y encontrar la máquina sin stock de algún producto)
     return true
   }
 

@@ -181,6 +181,7 @@ model MaquinasYTiendas {
   mediosPago           Json?                     @map("Medios_Pago") @db.JsonB
   tarifaPromedioOverride Decimal?                @map("Tarifa_Promedio_Override") @db.Decimal(18, 2)
   base                  Decimal?                 @default(0) @map("Base") @db.Decimal(18, 2)
+  ultimoContadorNR      BigInt?                   @map("Ultimo_Contador_NR")
   fechaUltimaVisita     DateTime?                 @map("Fecha_Ultima_Visita")
   fechaInstalacion      DateTime?                 @map("Fecha_Instalacion") @db.Date
   estado                Boolean                   @default(true) @map("Estado")
