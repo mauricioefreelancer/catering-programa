@@ -248,8 +248,8 @@ const Maquinas = () => {
         serial: values.serial,
         marca: values.marca,
         tipo: values.tipo,
-        idCliente: values.clienteId,
-        idOperador: values.operadorId,
+        idCliente: values.clienteId ?? null,
+        idOperador: values.operadorId ?? null,
         ubicacionEsp: values.zona,
         base: values.base ?? 0,
         estado: values.estado ? values.estado !== 'FUERA_SERVICIO' && values.estado !== 'FUERA SERVICIO' : true,
@@ -592,13 +592,13 @@ const Maquinas = () => {
               children: (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="clienteId" label="Cliente" rules={[{ required: true }]}>
-                      <Select placeholder="Seleccione cliente">
+                    <Form.Item name="clienteId" label="Cliente" extra={editing ? 'Puede dejarse vacío para desasignar la máquina (no operando).' : 'Opcional al crear.'}>
+                      <Select placeholder="Seleccione cliente" allowClear>
                         {clientes.map((c) => <Option key={c.idCliente ?? c.id} value={c.idCliente ?? c.id}>{c.razonSocial ?? c.nombre}</Option>)}
                       </Select>
                     </Form.Item>
-                    <Form.Item name="operadorId" label="Operador a Cargo" rules={[{ required: true }]}>
-                      <Select placeholder="Seleccione operador">
+                    <Form.Item name="operadorId" label="Operador a Cargo" extra={editing ? 'Puede dejarse vacío para desasignar la máquina.' : 'Opcional al crear.'}>
+                      <Select placeholder="Seleccione operador" allowClear>
                         {operadores.map((o) => <Option key={o.idOperador ?? o.id} value={o.idOperador ?? o.id}>{o.nombreCompleto ?? o.usuario?.nombre ?? o.nombre}</Option>)}
                       </Select>
                     </Form.Item>
