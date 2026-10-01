@@ -266,13 +266,13 @@ const Efectivo = () => {
       render: (v: number) => <Tag color="blue" style={{ fontWeight: 600 }}>{v.toLocaleString('es-CO')}</Tag>,
     },
     {
-      title: 'Diferencia NR',
-      dataIndex: 'diferenciaNR',
-      width: 130,
+      title: 'Total Vendido',
+      dataIndex: 'totalVendido',
+      width: 150,
       align: 'center' as const,
       render: (v: number) => (
         <Tag color={v > 0 ? 'green' : 'default'} style={{ fontWeight: 600 }}>
-          {Number(v || 0).toLocaleString('es-CO')} <span style={{ fontSize: 11, opacity: 0.7 }}>unid.</span>
+          {fmt(v)}
         </Tag>
       ),
     },
@@ -374,7 +374,7 @@ const Efectivo = () => {
           <Col span={12}>
             <Card size="small" type="inner">
               <Statistic
-                title="Diferencia NR (ventas de la visita en unidades)"
+                title="Diferencia NR (ventas de la visita)"
                 value={diferenciaActual}
                 suffix="unid."
                 valueStyle={{ color: diffColor(diferenciaActual), fontSize: 26 }}
@@ -464,10 +464,10 @@ const Efectivo = () => {
           <Descriptions.Item label="NR Actual (a cerrar)">
             {nrActual?.toLocaleString('es-CO') ?? '—'}
           </Descriptions.Item>
-          <Descriptions.Item label="Diferencia NR">
-            {diferenciaActual.toLocaleString('es-CO')} unidades
+          <Descriptions.Item label="Diferencia NR (unidades)">
+            {diferenciaActual.toLocaleString('es-CO')}
           </Descriptions.Item>
-          <Descriptions.Item label="Total Vendido (NR × tarifa)">
+          <Descriptions.Item label="Total Vendido (dinero)">
             {fmt(totalVendidoActual)}
           </Descriptions.Item>
           {mediosActivosSel.map((k) => (
