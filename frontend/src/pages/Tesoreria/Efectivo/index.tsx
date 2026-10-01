@@ -464,8 +464,8 @@ const Efectivo = () => {
           <Descriptions.Item label="NR Actual (a cerrar)">
             {nrActual?.toLocaleString('es-CO') ?? '—'}
           </Descriptions.Item>
-          <Descriptions.Item label="Diferencia NR (unidades)">
-            {diferenciaActual.toLocaleString('es-CO')}
+          <Descriptions.Item label="Diferencia NR">
+            {diferenciaActual.toLocaleString('es-CO')} unidades
           </Descriptions.Item>
           <Descriptions.Item label="Total Vendido (dinero)">
             {fmt(totalVendidoActual)}
