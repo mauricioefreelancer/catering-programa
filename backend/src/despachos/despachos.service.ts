@@ -1,7 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDespachoDto } from './dto/despacho.dto';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class DespachosService {
@@ -49,72 +48,19 @@ export class DespachosService {
           throw new BadRequestException(`Pedido ${item.idPedido} ya está ${pedido.estado}`);
         }
 
-        // Proveedor efectivo: el elegido en el despacho, o el definido en el pedido
-        // (que a su vez proviene del mapa de la máquina).
-        const idProvEfectivo = item.idProveedor ?? (pedido as any).idProveedor ?? null;
-        let stockDisponible = (pedido.producto as any).stockActual ?? 0;
-        if (idProvEfectivo) {
-          const sp = await tx.stockProveedor.findUnique({
-            where: {
-              idProducto_idProveedor: {
-                idProducto: pedido.idProducto,
-                idProveedor: idProvEfectivo,
-              },
-            },
-          });
-          stockDisponible = sp?.stockActual ?? 0;
-        }
+        const stockActual = (pedido.producto as any).stockActual ?? 0;
         const cantSugerida = pedido.cantSugerida;
         const cantSolicitada = item.cantDespachada ?? cantSugerida;
-        const cantDespachada = Math.min(cantSolicitada, stockDisponible);
+        const cantDespachada = Math.min(cantSolicitada, stockActual);
         if (cantDespachada < 0) throw new BadRequestException(`Cantidad negativa en pedido ${item.idPedido}`);
 
-        const pendienteDesp = Math.max(0, cantSugerida - cantDespachada);
+        const pendienteDesp = cantSugerida - cantDespachada;
 
         if (cantDespachada > 0) {
-          if (idProvEfectivo) {
-            // Descontar del stock del proveedor efectivo
-            const sp = await tx.stockProveedor.findUnique({
-              where: {
-                idProducto_idProveedor: {
-                  idProducto: pedido.idProducto,
-                  idProveedor: idProvEfectivo,
-                },
-              },
-            });
-            if (sp) {
-              await tx.stockProveedor.update({
-                where: { idStockProveedor: sp.idStockProveedor },
-                data: {
-                  stockActual: { decrement: cantDespachada },
-                  fechaActualizacion: new Date(),
-                },
-              });
-            }
-            // Recalcular el total global del producto (suma de todos sus proveedores)
-            const provs = await tx.stockProveedor.findMany({
-              where: { idProducto: pedido.idProducto },
-              select: { stockActual: true, costoCompra: true },
-            });
-            const stockGlobal = provs.reduce((a, p) => a + p.stockActual, 0);
-            const costoGlobal =
-              stockGlobal > 0
-                ? provs.reduce((a, p) => a + Number(p.costoCompra) * p.stockActual, 0) / stockGlobal
-                : 0;
-            await tx.productos.update({
-              where: { idProducto: pedido.idProducto },
-              data: {
-                stockActual: stockGlobal,
-                costoBase: new Prisma.Decimal(costoGlobal),
-              },
-            });
-          } else {
-            // Sin proveedor: descuento global (histórico)
-            await tx.productos.update({
-              where: { idProducto: pedido.idProducto },
-              data: { stockActual: { decrement: cantDespachada } },
-            });
-          }
+          await tx.productos.update({
+            where: { idProducto: pedido.idProducto },
+            data: { stockActual: { decrement: cantDespachada } },
+          });
         }
 
         const nuevoEstado = pendienteDesp <= 0 ? 'APROBADO' : 'PARCIAL';

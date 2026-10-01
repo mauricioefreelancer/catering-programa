@@ -82,10 +82,6 @@ model Proveedores {
 
   productos          Productos[]
   ingresosBodega IngresosBodega[]
-  stockProveedor  StockProveedor[]
-  mapaMateriaPrima MapaMateriaPrima[]
-  mapaCafeNrq     MapaCafeNrq[]
-  pedidosOperador PedidosOperador[]
 
   @@map("PROVEEDORES")
 }
@@ -111,7 +107,7 @@ model Operadores {
 model Productos {
   idProducto          Int                       @id @default(autoincrement()) @map("ID_Producto")
   idProveedor        Int?                      @map("ID_Proveedor")
-  codigoBarras       String                    @unique @map("Codigo_Barras") @db.VarChar(100)
+  codigoBarras       String                    @map("Codigo_Barras") @db.VarChar(100)
   nombreProducto     String                    @map("Nombre_Producto") @db.VarChar(250)
   tipoProducto      String                    @default("ESTANDAR") @map("Tipo_Producto") @db.VarChar(30)
   unidadCompra      String                    @default("Unidad") @map("Unidad_Compra") @db.VarChar(50)
@@ -128,7 +124,6 @@ model Productos {
   estado            Boolean                   @default(true) @map("Estado")
 
   proveedor       Proveedores?            @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
-  stockProveedor  StockProveedor[]
   recetasProdTerm RecetasDosificados[] @relation("ProductoTerminado")
   recetasMatPrima RecetasDosificados[] @relation("MateriaPrima")
   preciosCliente  PreciosCliente[]
@@ -139,25 +134,6 @@ model Productos {
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
 
   @@map("PRODUCTOS")
-}
-
-// Inventario por proveedor: el mismo producto (mismo código de barras) puede
-// venir de varios proveedores con costo y stock propios. Permite elegir de qué
-// proveedor se despacha a una máquina sin mezclar precios de compra.
-model StockProveedor {
-  idStockProveedor Int       @id @default(autoincrement()) @map("ID_Stock_Proveedor")
-  idProducto      Int       @map("ID_Producto")
-  idProveedor     Int       @map("ID_Proveedor")
-  stockActual     Int       @default(0) @map("Stock_Actual")
-  costoCompra      Decimal   @default(0) @map("Costo_Compra") @db.Decimal(18, 2)
-  fechaCreacion   DateTime  @default(now()) @map("Fecha_Creacion")
-  fechaActualizacion DateTime @default(now()) @map("Fecha_Actualizacion")
-
-  producto Productos    @relation(fields: [idProducto], references: [idProducto], onDelete: Cascade, onUpdate: Cascade)
-  proveedor Proveedores @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
-
-  @@unique([idProducto, idProveedor], map: "uq_stock_producto_proveedor")
-  @@map("STOCK_PROVEEDOR")
 }
 
 model RecetasDosificados {
@@ -224,7 +200,6 @@ model MapaMateriaPrima {
   idMapaMp        Int                       @id @default(autoincrement()) @map("ID_Mapa_MP")
   idMaquina       Int                       @map("ID_Maquina")
   idProducto      Int                       @map("ID_Producto")
-  idProveedor    Int?                      @map("ID_Proveedor")
   espiralCodigo   String                    @map("Espiral_Codigo") @db.VarChar(20)
   capacidadMax    Int                       @default(0) @map("Capacidad_Max")
   capacidadActual Int                       @default(0) @map("Capacidad_Actual")
@@ -232,7 +207,6 @@ model MapaMateriaPrima {
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
   producto Productos        @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
-  proveedor Proveedores?    @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   pedidosOperador PedidosOperador[]
 
   @@unique([idMaquina, espiralCodigo], map: "uq_espiral_maquina")
@@ -243,13 +217,11 @@ model MapaCafeNrq {
   idMapaNrq       Int                       @id @default(autoincrement()) @map("ID_Mapa_NRQ")
   idMaquina      Int                       @map("ID_Maquina")
   idProdTerm     Int                       @map("ID_Prod_Term")
-  idProveedor    Int?                      @map("ID_Proveedor")
   opcionBoton    String                    @map("Opcion_Boton") @db.VarChar(50)
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
-  proveedor Proveedores?    @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
 
   @@unique([idMaquina, opcionBoton], map: "uq_nrq_boton_maquina")
   @@map("MAPA_CAFE_NRQ")
@@ -290,7 +262,6 @@ model PedidosOperador {
   idOperador        Int                       @map("ID_Operador")
   idProducto       Int                       @map("ID_Producto")
   idMapaMp         Int?                      @map("ID_Mapa_MP")
-  idProveedor     Int?                      @map("ID_Proveedor")
   fechaHora        DateTime                  @default(now()) @map("Fecha_Hora")
   fisicoDigitado   Int                       @default(0) @map("Fisico_Digitado")
   cantSugerida    Int                       @default(0) @map("Cant_Sugerida")
@@ -302,7 +273,6 @@ model PedidosOperador {
   operador     Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
   producto     Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
   mapaMp       MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull, onUpdate: Cascade)
-  proveedor    Proveedores? @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   despachosBodega DespachosBodega[]
 
   @@map("PEDIDOS_OPERADOR")

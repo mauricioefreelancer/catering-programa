@@ -33,7 +33,6 @@ interface Espiral {
   productoId?: number
   productoNombre?: string
   precio_venta_cliente?: number
-  proveedorId?: number | null
 }
 interface BotonNRQ {
   id: number
@@ -41,7 +40,6 @@ interface BotonNRQ {
   productoId?: number
   productoNombre?: string
   precio_venta_cliente?: number
-  proveedorId?: number | null
 }
 
 interface Maquina {
@@ -93,34 +91,27 @@ const Maquinas = () => {
   const [loading, setLoading] = useState(false)
   const [espirales, setEspirales] = useState<Espiral[]>([])
   const [botones, setBotones] = useState<BotonNRQ[]>([])
-  const [proveedoresGlobal, setProveedoresGlobal] = useState<any[]>([])
-  const [stockProvMap, setStockProvMap] = useState<Record<number, any[]>>({})
   const perm = usePermissions('maquinas')
 
   const [openEspModal, setOpenEspModal] = useState(false)
   const [editEspIdx, setEditEspIdx] = useState<number | null>(null)
   const [formEsp] = Form.useForm()
-  const watchEspProducto = Form.useWatch('productoId', formEsp)
 
   const [openBtnModal, setOpenBtnModal] = useState(false)
   const [editBtnIdx, setEditBtnIdx] = useState<number | null>(null)
   const [formBtn] = Form.useForm()
-  const watchBtnProducto = Form.useWatch('productoId', formBtn)
 
   const [rend, setRend] = useState<{ materiasPrimas: any[]; dosificados: any[]; maquina?: any } | null>(null)
 
   const loadData = useCallback(async () => {
     setFetching(true)
     try {
-      const [maquinasRes, clientesRes, operadoresRes, productosRes, proveedoresRes] = await Promise.all([
+      const [maquinasRes, clientesRes, operadoresRes, productosRes] = await Promise.all([
         apiService.get('/maquinas?include=cliente,operador'),
         apiService.get('/clientes'),
         apiService.get('/operadores'),
         apiService.get('/productos?limit=2000&take=2000'),
-        apiService.get('/proveedores').catch(() => [] as any[]),
       ])
-      const proveedoresList = Array.isArray(proveedoresRes) ? proveedoresRes : (proveedoresRes?.data || [])
-      setProveedoresGlobal(proveedoresList)
 
       const maquinasList = Array.isArray(maquinasRes) ? maquinasRes : (maquinasRes?.data || [])
       const clientesList = Array.isArray(clientesRes) ? clientesRes : (clientesRes?.data || [])
@@ -147,7 +138,6 @@ const Maquinas = () => {
               productoId: e.idProducto,
               productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
               precio_venta_cliente: e.precioVentaCliente,
-              proveedorId: e.idProveedor ?? null,
             }))
           : (m.espirales ?? genEspiralesVacio()),
         botonesNRQ: Array.isArray(m.mapaCafeNrq)
@@ -157,7 +147,6 @@ const Maquinas = () => {
               productoId: b.idProdTerm,
               productoNombre: b.productoTerminado?.nombreProducto ?? b.productoTerminado?.nombre ?? '',
               precio_venta_cliente: b.precioVentaCliente,
-              proveedorId: b.idProveedor ?? null,
             }))
           : (m.botonesNRQ ?? genBotonesVacio()),
       }))
@@ -177,16 +166,6 @@ const Maquinas = () => {
   useEffect(() => {
     loadData()
   }, [loadData])
-
-  useEffect(() => {
-    if (watchEspProducto) cargarStockProv(watchEspProducto)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchEspProducto])
-
-  useEffect(() => {
-    if (watchBtnProducto) cargarStockProv(watchBtnProducto)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchBtnProducto])
 
   const filtered = useMemo(() => {
     if (!search) return data
@@ -327,28 +306,12 @@ const Maquinas = () => {
   const estadoColor = (e: string) => (e === 'OPERANDO' ? 'green' : e === 'MANTENIMIENTO' ? 'gold' : 'red')
   const tipoColor = (t: string) => (t === 'SNACK' ? 'orange' : t === 'BEBIDA' ? 'blue' : t === 'CAFE' ? 'purple' : 'cyan')
 
-  const cargarStockProv = async (productoId?: number) => {
-    if (!productoId) return
-    try {
-      const res = await apiService.get<any>(`/productos/${productoId}/stock-proveedores`)
-      const arr = Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []
-      setStockProvMap((m) => ({ ...m, [productoId]: arr }))
-    } catch {
-      setStockProvMap((m) => ({ ...m, [productoId]: [] }))
-    }
-  }
-
-  const proveedoresDeProducto = (productoId?: number): any[] => {
-    return productoId ? (stockProvMap[productoId] ?? []) : []
-  }
-
   const openAddEspiral = () => {
     setEditEspIdx(null)
     formEsp.resetFields()
     formEsp.setFieldsValue({
       espiral: '',
       productoId: undefined,
-      proveedorId: undefined,
       capacidad_max: 15,
       cantidad_actual: 0,
     })
@@ -361,11 +324,9 @@ const Maquinas = () => {
     formEsp.setFieldsValue({
       espiral: esp.espiral,
       productoId: esp.productoId,
-      proveedorId: esp.proveedorId ?? undefined,
       cantidad_actual: esp.cantidad_actual ?? 0,
       capacidad_max: esp.capacidad_max,
     })
-    if (esp.productoId) cargarStockProv(esp.productoId)
     setOpenEspModal(true)
   }
 
@@ -404,7 +365,6 @@ const Maquinas = () => {
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
-          proveedorId: values.proveedorId ?? null,
         }
         ns = [...espirales, nuevo]
         message.success(esCafe ? 'Insumo agregado' : `Espiral ${nuevo.espiral} agregada`)
@@ -419,7 +379,6 @@ const Maquinas = () => {
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: original?.precio_venta_cliente,
-          proveedorId: values.proveedorId ?? null,
         }
         message.success(esCafe ? 'Insumo actualizado' : `Espiral ${ns[editEspIdx].espiral} actualizada`)
       }
@@ -454,7 +413,6 @@ const Maquinas = () => {
     formBtn.setFieldsValue({
       boton: '',
       productoId: undefined,
-      proveedorId: undefined,
     })
     setOpenBtnModal(true)
   }
@@ -465,9 +423,7 @@ const Maquinas = () => {
     formBtn.setFieldsValue({
       boton: b.boton,
       productoId: b.productoId,
-      proveedorId: b.proveedorId ?? undefined,
     })
-    if (b.productoId) cargarStockProv(b.productoId)
     setOpenBtnModal(true)
   }
 
@@ -491,7 +447,6 @@ const Maquinas = () => {
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
-          proveedorId: values.proveedorId ?? null,
         }
         ns = [...botones, nuevo]
         message.success(`Botón ${nuevo.boton} agregado`)
@@ -503,7 +458,6 @@ const Maquinas = () => {
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: ns[editBtnIdx]?.precio_venta_cliente,
-          proveedorId: values.proveedorId ?? null,
         }
         message.success(`Botón ${ns[editBtnIdx].boton} actualizado`)
       }
@@ -573,6 +527,12 @@ const Maquinas = () => {
     }),
     [productos],
   )
+
+  const nombreProveedorProducto = (p: any) => {
+    if (!p) return ''
+    const prov = p.proveedor ?? p.Proveedor ?? null
+    return (prov?.razonSocial ?? prov?.razon_social ?? prov?.nombre ?? '')
+  }
 
   return (
     <div>
@@ -1001,28 +961,18 @@ const Maquinas = () => {
                 allowClear
                 showSearch
                 placeholder={editing?.tipo === 'CAFE' ? 'Seleccione el insumo para esta máquina' : 'Seleccione el producto para esta espiral'}
+                optionFilterProp="label"
               >
-                {productos.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
-              </Select>
-            </Form.Item>
-            <Form.Item label="Proveedor (para el despacho)" name="proveedorId" extra="Seleccione de qué proveedor se despachará este insumo a la máquina.">
-              <Select
-                allowClear
-                showSearch
-                placeholder="Global (sin proveedor definido)"
-                filterOption={(input, option: any) => String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
-              >
-                {proveedoresDeProducto(watchEspProducto).length === 0 &&
-                  proveedoresGlobal
-                    .filter((p: any) => !p || p.estado === undefined || p.estado === true)
-                    .map((p: any) => (
-                      <Option key={p.idProveedor ?? p.id} value={p.idProveedor ?? p.id}>{p.razonSocial ?? p.nombre}</Option>
-                    ))}
-                {proveedoresDeProducto(watchEspProducto).map((ps: any) => (
-                  <Option key={ps.idProveedor} value={ps.idProveedor}>
-                    {ps.proveedor?.razonSocial ?? `Proveedor ${ps.idProveedor}`} · {ps.stockActual} u
-                  </Option>
-                ))}
+                {productos.map((p: any) => {
+                  const prov = nombreProveedorProducto(p)
+                  const nm = p.nombreProducto ?? p.nombre ?? ''
+                  return (
+                    <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id} label={`${nm}${prov ? ` · ${prov}` : ''}`}>
+                      <span>{nm}</span>
+                      {prov ? <Tag color="cyan" style={{ marginLeft: 8 }}>{prov}</Tag> : null}
+                    </Option>
+                  )
+                })}
               </Select>
             </Form.Item>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -1093,27 +1043,16 @@ const Maquinas = () => {
                 placeholder="Seleccione el producto DOSIFICADO para este botón"
                 filterOption={(input, option: any) => String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
               >
-                {productosDosificados.map((p) => <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id}>{p.nombreProducto ?? p.nombre}</Option>)}
-              </Select>
-            </Form.Item>
-            <Form.Item label="Proveedor (para el despacho)" name="proveedorId" extra="Seleccione de qué proveedor se despacharán los insumos de este botón.">
-              <Select
-                allowClear
-                showSearch
-                placeholder="Global (sin proveedor definido)"
-                filterOption={(input, option: any) => String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
-              >
-                {proveedoresDeProducto(watchBtnProducto).length === 0 &&
-                  proveedoresGlobal
-                    .filter((p: any) => !p || p.estado === undefined || p.estado === true)
-                    .map((p: any) => (
-                      <Option key={p.idProveedor ?? p.id} value={p.idProveedor ?? p.id}>{p.razonSocial ?? p.nombre}</Option>
-                    ))}
-                {proveedoresDeProducto(watchBtnProducto).map((ps: any) => (
-                  <Option key={ps.idProveedor} value={ps.idProveedor}>
-                    {ps.proveedor?.razonSocial ?? `Proveedor ${ps.idProveedor}`} · {ps.stockActual} u
+                {productosDosificados.map((p: any) => {
+                const prov = nombreProveedorProducto(p)
+                const nm = p.nombreProducto ?? p.nombre ?? ''
+                return (
+                  <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id} label={`${nm}${prov ? ` · ${prov}` : ''}`}>
+                    <span>{nm}</span>
+                    {prov ? <Tag color="cyan" style={{ marginLeft: 8 }}>{prov}</Tag> : null}
                   </Option>
-                ))}
+                )
+              })}
               </Select>
             </Form.Item>
           </Form>

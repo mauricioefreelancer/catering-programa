@@ -64,6 +64,7 @@ const Productos = () => {
   const [tipoSel, setTipoSel] = useState<'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'>(editing?.tipo || 'ESTANDAR')
   const [tabKey, setTabKey] = useState<'GENERAL' | 'RECETA'>('GENERAL')
   const [receta, setReceta] = useState<Ingrediente[]>([])
+  const [variantesCodigo, setVariantesCodigo] = useState<Producto[]>([])
   const perm = usePermissions('productos')
 
   const normalizeTipo = (t: any): 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO' => {
@@ -129,6 +130,7 @@ const Productos = () => {
     setTipoSel('ESTANDAR')
     setTabKey('GENERAL')
     setReceta([])
+    setVariantesCodigo([])
     setEditing(null)
     setOpen(false)
   }
@@ -222,6 +224,7 @@ const Productos = () => {
     setEditing(p)
     setTipoSel(p.tipo)
     setOpen(true)
+    detectarVariantes(p.codigo_barras, p.id)
     if (p.tipo === 'DOSIFICADO') {
       setTabKey('RECETA')
       try {
@@ -248,6 +251,7 @@ const Productos = () => {
     setTipoSel('ESTANDAR')
     setTabKey('GENERAL')
     setReceta([])
+    setVariantesCodigo([])
     setOpen(true)
   }
 
@@ -265,6 +269,16 @@ const Productos = () => {
     if (!idP) return ''
     const pr = proveedoresList.find((x: any) => Number(x.idProveedor || x.id) === Number(idP))
     return pr ? (pr.razonSocial || pr.razon_social || '') : ''
+  }
+
+  const detectarVariantes = (codigo: string, idActual?: number) => {
+    const cod = (codigo || '').trim()
+    if (!cod) {
+      setVariantesCodigo([])
+      return
+    }
+    const variantes = data.filter((c) => c.codigo_barras === cod && c.id !== idActual)
+    setVariantesCodigo(variantes)
   }
 
   const addIngrediente = () => {
@@ -417,8 +431,30 @@ const Productos = () => {
                         ))}
                       </Select>
                     </Form.Item>
-                    <Form.Item name="codigo_barras" label="Código Barras" rules={[{ required: true }]}><Input /></Form.Item>
+                    <Form.Item name="codigo_barras" label="Código Barras" rules={[{ required: true }]}>
+                      <Input onChange={(e) => detectarVariantes(e.target.value, editing?.id)} />
+                    </Form.Item>
                   </div>
+                  {variantesCodigo.length > 0 && (
+                    <div style={{ marginBottom: 12, padding: 10, border: '1px solid #faad14', background: '#fffbe6', borderRadius: 6 }}>
+                      <Tag color="warning">⚠️ Este código ya existe en {variantesCodigo.length} producto(s) de otro(s) proveedor(es):</Tag>
+                      <div style={{ marginTop: 6 }}>
+                        {variantesCodigo.map((v) => {
+                          const prov = proveedorNombrePorId(v.idProveedor)
+                          return (
+                            <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                              <span>{v.nombre}</span>
+                              {prov ? <Tag color="cyan">{prov}</Tag> : <Tag>Sin proveedor</Tag>}
+                              <Tag color={v.tipo === 'MATERIA_PRIMA' ? 'purple' : 'blue'}>{v.tipo}</Tag>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div style={{ marginTop: 6, color: '#8c6d00', fontSize: 12 }}>
+                        Puede guardar este producto con el mismo código: se tratará como un ítem independiente para ese proveedor. Elija el proveedor correcto arriba.
+                      </div>
+                    </div>
+                  )}
                   <Form.Item name="nombre" label="Nombre" rules={[{ required: true }]}><Input /></Form.Item>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>

@@ -75,7 +75,13 @@ export class ProductsService {
     }
     if (query.tipo) where.tipoProducto = query.tipo;
     const [data, total] = await Promise.all([
-      this.prisma.productos.findMany({ skip, take, where, orderBy: { fechaCreacion: 'desc' } }),
+      this.prisma.productos.findMany({
+        skip,
+        take,
+        where,
+        orderBy: { fechaCreacion: 'desc' },
+        include: { proveedor: { select: { idProveedor: true, razonSocial: true } } },
+      }),
       this.prisma.productos.count({ where }),
     ]);
     return { data, total, skip, take };
@@ -97,17 +103,6 @@ export class ProductsService {
         stockActual: { lte: this.prisma.productos.fields.stockMin as any },
       },
       orderBy: { stockActual: 'asc' },
-    });
-  }
-
-  // Inventario desglosado por proveedor de un producto (para elegir de qué
-  // proveedor despachar a las máquinas sin mezclar costos).
-  async stockProveedoresPorProducto(idProducto: number) {
-    await this.findOne(idProducto);
-    return this.prisma.stockProveedor.findMany({
-      where: { idProducto },
-      include: { proveedor: true },
-      orderBy: { idStockProveedor: 'asc' },
     });
   }
 

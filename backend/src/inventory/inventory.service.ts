@@ -70,63 +70,20 @@ export class InventoryService {
 
         const producto = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
         if (!producto) continue;
-
-        // 1) Inventario por proveedor: STOCK_PROVEEDOR
-        // Si el (producto, proveedor) ya existe -> suma stock (mismo proveedor).
-        // Si no existe -> crea un nuevo registro (producto de otro proveedor).
-        const provActual = await tx.stockProveedor.findUnique({
-          where: {
-            idProducto_idProveedor: {
-              idProducto: d.idProducto,
-              idProveedor: dto.idProveedor,
-            },
-          },
-        });
-        const costoCompra = new Prisma.Decimal(d.costoUnitarioCompra);
-        if (provActual) {
-          const stockProvAnt = provActual.stockActual;
-          const costProvAnt = Number(provActual.costoCompra);
-          const stockProvNuevo = stockProvAnt + d.cantidadRecib;
-          let costProvNuevo = costProvAnt;
-          // Costo promedio ponderado dentro del mismo proveedor
-          if (stockProvNuevo > 0) {
-            costProvNuevo = (stockProvAnt * costProvAnt + d.cantidadRecib * d.costoUnitarioCompra) / stockProvNuevo;
-          }
-          await tx.stockProveedor.update({
-            where: { idStockProveedor: provActual.idStockProveedor },
-            data: {
-              stockActual: stockProvNuevo,
-              costoCompra: new Prisma.Decimal(costProvNuevo),
-              fechaActualizacion: new Date(),
-            },
-          });
-        } else {
-          await tx.stockProveedor.create({
-            data: {
-              idProducto: d.idProducto,
-              idProveedor: dto.idProveedor,
-              stockActual: d.cantidadRecib,
-              costoCompra,
-            },
-          });
+        const stockAnt = producto.stockActual;
+        const costoAnt = Number(producto.costoBase);
+        const stockNuevo = stockAnt + d.cantidadRecib;
+        let costoNuevo = costoAnt;
+        if (producto.tipoProducto === 'MATERIA_PRIMA' && stockNuevo > 0) {
+          costoNuevo = (stockAnt * costoAnt + d.cantidadRecib * d.costoUnitarioCompra) / stockNuevo;
+        } else if (d.costoUnitarioCompra > 0 && costoAnt === 0) {
+          costoNuevo = d.costoUnitarioCompra;
         }
-
-        // 2) Recalcular el total global del producto (suma de todos sus proveedores)
-        //    y su costo promedio ponderado global (Σ(costo×stock)/Σstock).
-        const provs = await tx.stockProveedor.findMany({
-          where: { idProducto: d.idProducto },
-          select: { stockActual: true, costoCompra: true },
-        });
-        const stockGlobal = provs.reduce((a, p) => a + p.stockActual, 0);
-        const costoGlobal =
-          stockGlobal > 0
-            ? provs.reduce((a, p) => a + Number(p.costoCompra) * p.stockActual, 0) / stockGlobal
-            : 0;
         await tx.productos.update({
           where: { idProducto: d.idProducto },
           data: {
-            stockActual: stockGlobal,
-            costoBase: new Prisma.Decimal(costoGlobal),
+            stockActual: stockNuevo,
+            costoBase: new Prisma.Decimal(costoNuevo),
           },
         });
       }
