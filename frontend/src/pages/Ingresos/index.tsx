@@ -19,6 +19,7 @@ import {
   Modal,
   Radio,
   Tag,
+  AutoComplete,
 } from 'antd'
 import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined, FileAddOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -30,6 +31,12 @@ import CampoCodigoBarras from '../../components/CampoCodigoBarras'
 const { Title, Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
+
+// Categorías de insumo disponibles (qué es el producto físicamente)
+const CATEGORIAS_INSUMO = [
+  'CAFE', 'VASO', 'MEZCLADOR', 'AZUCAR', 'GRANO', 'LACTEO',
+  'CHOCOLATE', 'AROMATICA', 'SNACK', 'BEBIDA', 'EMPAQUE',
+].map((v) => ({ value: v }))
 
 interface ItemIngreso {
   id: number
@@ -141,6 +148,7 @@ const Ingresos = () => {
         idProveedor: values.idProveedor ? Number(values.idProveedor) : null,
         codigoBarras: values.codigo_barras,
         nombre: values.nombre,
+        categoriaInsumo: values.categoria_insumo || null,
         Tipo_Producto: tipoNuevo,
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
@@ -416,6 +424,20 @@ const Ingresos = () => {
           </div>
           <Form.Item name="nombre" label="Nombre" rules={[{ required: true, message: 'Nombre requerido' }]}>
             <Input />
+          </Form.Item>
+          <Form.Item
+            name="categoria_insumo"
+            label="Categoría de Insumo"
+            extra="Qué es físicamente el producto (café, vaso, mezclador...). Elija de la lista o escriba otra."
+          >
+            <AutoComplete
+              options={CATEGORIAS_INSUMO}
+              placeholder="Ej: MEZCLADOR / Otro..."
+              style={{ width: '100%' }}
+              filterOption={(inputValue, option: any) =>
+                option!.value.toUpperCase().includes(inputValue.toUpperCase())
+              }
+            />
           </Form.Item>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true, message: 'Requerido' }]}>

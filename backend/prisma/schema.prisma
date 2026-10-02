@@ -110,6 +110,7 @@ model Productos {
   codigoBarras       String                    @map("Codigo_Barras") @db.VarChar(100)
   nombreProducto     String                    @map("Nombre_Producto") @db.VarChar(250)
   tipoProducto      String                    @default("ESTANDAR") @map("Tipo_Producto") @db.VarChar(30)
+  categoriaInsumo  String?                   @map("Categoria_Insumo") @db.VarChar(80)
   unidadCompra      String                    @default("Unidad") @map("Unidad_Compra") @db.VarChar(50)
   unidadConsumo     String                    @default("Unidad") @map("Unidad_Consumo") @db.VarChar(50)
   tipoCafe          String?                   @map("Tipo_Cafe") @db.VarChar(20)

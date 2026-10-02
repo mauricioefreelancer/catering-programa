@@ -50,6 +50,8 @@ export class CreateProductoDto {
   @IsOptional() @IsNumber() costo_total?: number;
   @IsOptional() @IsNumber() precio_publico?: number;
   @IsOptional() @IsString() categoria?: string;
+  @IsOptional() @IsString() categoriaInsumo?: string;
+  @IsOptional() @IsString() categoria_insumo?: string;
   @IsOptional() @IsString() unidad_medida?: string;
   @IsOptional() @IsInt() @Min(0) stock_minimo?: number;
   @IsOptional() @IsInt() @Min(0) stock_maximo?: number;
@@ -93,6 +95,8 @@ export class UpdateProductoDto {
   @IsOptional() @IsNumber() costo_total?: number;
   @IsOptional() @IsNumber() precio_publico?: number;
   @IsOptional() @IsString() categoria?: string;
+  @IsOptional() @IsString() categoriaInsumo?: string;
+  @IsOptional() @IsString() categoria_insumo?: string;
   @IsOptional() @IsString() unidad_medida?: string;
   @IsOptional() @IsInt() @Min(0) stock_minimo?: number;
   @IsOptional() @IsInt() @Min(0) stock_maximo?: number;

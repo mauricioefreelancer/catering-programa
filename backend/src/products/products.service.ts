@@ -28,6 +28,11 @@ function normalizeProductoInput(dto: CreateProductoDto | UpdateProductoDto) {
   if (nombre !== undefined) result.nombreProducto = String(nombre).slice(0, 250);
   if (codigoBarras !== undefined) result.codigoBarras = String(codigoBarras).slice(0, 100);
   if (tipoProducto !== undefined) result.tipoProducto = tipoProducto;
+  // Categoría de insumo (café, vaso, mezclador...): campo independiente del tipo técnico
+  const categoriaInsumo = firstNonEmpty(dto.categoriaInsumo, dto.categoria_insumo);
+  if (categoriaInsumo !== undefined && categoriaInsumo !== null) {
+    result.categoriaInsumo = String(categoriaInsumo).slice(0, 80) || null;
+  }
   const uc = firstNonEmpty(dto.unidadCompra, dto.unidad_compra, dto.unidad_medida);
   if (uc !== undefined) result.unidadCompra = String(uc).slice(0, 50);
   const ucons = firstNonEmpty(dto.unidadConsumo, dto.unidad_consumo, dto.unidad_medida);

@@ -13,6 +13,7 @@ import {
   InputNumber,
   Tabs,
   Select,
+  AutoComplete,
   Card,
   Switch,
   Spin,
@@ -38,6 +39,7 @@ interface Producto {
   codigo_barras: string
   nombre: string
   tipo: 'ESTANDAR' | 'MATERIA_PRIMA' | 'DOSIFICADO'
+  categoria_insumo?: string | null
   tipo_cafe?: 'SOLUBLE' | 'GRANO' | null
   unidad_compra: string
   unidad_consumo: string
@@ -52,6 +54,33 @@ interface Producto {
 }
 
 const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const
+
+// Categorías de insumo disponibles (qué es el producto físicamente: café, vaso, mezclador...)
+const CATEGORIAS_INSUMO: { value: string; color: string; label: string }[] = [
+  { value: 'CAFE', color: 'brown', label: '☕ Café' },
+  { value: 'VASO', color: 'cyan', label: '🥤 Vaso' },
+  { value: 'MEZCLADOR', color: 'geekblue', label: '🥄 Mezclador' },
+  { value: 'AZUCAR', color: 'gold', label: '🍬 Azúcar' },
+  { value: 'GRANO', color: 'orange', label: '🌾 Grano' },
+  { value: 'LACTEO', color: 'blue', label: '🥛 Lácteo' },
+  { value: 'CHOCOLATE', color: 'purple', label: '🍫 Chocolate' },
+  { value: 'AROMATICA', color: 'green', label: '🌿 Aromática' },
+  { value: 'SNACK', color: 'volcano', label: '🍿 Snack/Comestible' },
+  { value: 'BEBIDA', color: 'magenta', label: '🥤 Bebida' },
+  { value: 'EMPAQUE', color: 'lime', label: '📦 Empaque' },
+  { value: 'OTRO', color: 'default', label: '⭐ Otro' },
+]
+const catColor = (c?: string | null): string => {
+  const cUp = (c || '').trim().toUpperCase()
+  const match = CATEGORIAS_INSUMO.find((o) => o.value === cUp)
+  return match ? match.color : 'default'
+}
+const catLabel = (c?: string | null): string => {
+  if (!c) return ''
+  const cUp = c.trim().toUpperCase()
+  const match = CATEGORIAS_INSUMO.find((o) => o.value === cUp)
+  return match ? match.label.replace(/^[^\s]+\s/, '') : c
+}
 
 const Productos = () => {
   const [data, setData] = useState<Producto[]>([])
@@ -91,6 +120,7 @@ const Productos = () => {
         codigo_barras: p.codigoBarras || p.codigo_barras || '',
         nombre: p.nombreProducto || p.nombre_producto || p.nombre || '',
         tipo: normalizeTipo(p.tipoProducto ?? p.Tipo_Producto ?? p.tipo),
+        categoria_insumo: (p.categoriaInsumo ?? p.categoria_insumo ?? null) || null,
         tipo_cafe: (p.tipoCafe ?? p.tipo_cafe ?? null) || null,
         unidad_compra: p.unidadCompra || p.unidad_compra || 'UND',
         unidad_consumo: p.unidadConsumo || p.unidad_consumo || 'UND',
@@ -146,6 +176,7 @@ const Productos = () => {
         nombre: values.nombre,
         // los DOSIFICADOS se editan como está, sin re-guardar type de forma destructiva
         ...(editing?.tipo !== 'DOSIFICADO' ? { Tipo_Producto: values.tipo || 'ESTANDAR' } : {}),
+        categoriaInsumo: values.categoria_insumo || null,
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
         ...(values.tipo_cafe ? { tipoCafe: values.tipo_cafe } : {}),
@@ -304,7 +335,15 @@ const Productos = () => {
         return n ? <Tag color="cyan">{n}</Tag> : <span style={{ color: '#999' }}>Sin asignar</span>
       },
     },
-    { title: 'Tipo', dataIndex: 'tipo', key: 'tipo', render: (v: string) => <Tag color={tipoColor(v)}>{tipoLabel(v)}</Tag>, width: 280 },
+    { title: 'Tipo', dataIndex: 'tipo', key: 'tipo', render: (v: string) => <Tag color={tipoColor(v)}>{tipoLabel(v)}</Tag>, width: 170 },
+    {
+      title: 'Categoría Insumo',
+      dataIndex: 'categoria_insumo',
+      key: 'categoria_insumo',
+      width: 160,
+      render: (v: string | null) =>
+        v ? <Tag color={catColor(v)}>{catLabel(v)}</Tag> : <span style={{ color: '#bbb' }}>—</span>,
+    },
     {
       title: 'Tipo Café',
       dataIndex: 'tipo_cafe',
@@ -456,6 +495,20 @@ const Productos = () => {
                     </div>
                   )}
                   <Form.Item name="nombre" label="Nombre" rules={[{ required: true }]}><Input /></Form.Item>
+                  <Form.Item
+                    name="categoria_insumo"
+                    label="Categoría de Insumo"
+                    extra="Indica qué es físicamente el producto (café, vaso, mezclador...). Puedes elegir de la lista o escribir una categoría propia."
+                  >
+                    <AutoComplete
+                      options={CATEGORIAS_INSUMO.map((o) => ({ value: o.value, label: o.label }))}
+                      placeholder="Ej: MEZCLADOR / Otro..."
+                      style={{ width: '100%' }}
+                      filterOption={(inputValue, option: any) =>
+                        option!.value.toUpperCase().includes(inputValue.toUpperCase())
+                      }
+                    />
+                  </Form.Item>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true }]}><Input placeholder="Ej: UND / Gramo / ml" /></Form.Item>
