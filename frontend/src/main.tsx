@@ -9,6 +9,36 @@ import App from './App'
 
 dayjs.locale('es')
 
+// Auto-recarga: detecta un nuevo despliegue (Netlify) comparando version.json y
+// recarga la página sola, evitando dar F5 manual tras cada cambio.
+;(() => {
+  let versionActual: string | null = null
+  let recargando = false
+  const chequeo = async () => {
+    try {
+      const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' })
+      if (!res.ok) return
+      const data = await res.json()
+      const v = String(data?.version || '')
+      if (!v) return
+      if (versionActual === null) {
+        versionActual = v // primera carga: guardar versión
+        return
+      }
+      if (versionActual !== v && !recargando) {
+        recargando = true
+        window.location.reload()
+      }
+    } catch {
+      // si falla la red, no interrumpir
+    }
+  }
+  window.addEventListener('load', () => {
+    chequeo()
+    setInterval(chequeo, 20000)
+  })
+})()
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

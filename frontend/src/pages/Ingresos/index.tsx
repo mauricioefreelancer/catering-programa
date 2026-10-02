@@ -25,6 +25,7 @@ import dayjs from 'dayjs'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
 import { apiService } from '../../api/services/api'
+import CampoCodigoBarras from '../../components/CampoCodigoBarras'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -410,7 +411,7 @@ const Ingresos = () => {
               </Select>
             </Form.Item>
             <Form.Item name="codigo_barras" label="Código Barras" rules={[{ required: true, message: 'Código requerido' }]}>
-              <Input />
+              <CampoCodigoBarras />
             </Form.Item>
           </div>
           <Form.Item name="nombre" label="Nombre" rules={[{ required: true, message: 'Nombre requerido' }]}>

@@ -1,9 +1,29 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { writeFileSync, mkdirSync } from 'fs'
+
+// Genera dist/version.json con un hash único por build para que el frontend
+// detecte el despliegue de una nueva versión y recargue la página sin F5.
+const generarVersionJson = () => ({
+  name: 'generar-version-json',
+  apply: 'build' as const,
+  closeBundle() {
+    const hash = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    const content = JSON.stringify({ version: hash, atualizado: new Date().toISOString() })
+    const outDir = this.dir ?? 'dist'
+    try {
+      mkdirSync(outDir, { recursive: true })
+      writeFileSync(`${outDir}/version.json`, content, 'utf8')
+    } catch {
+      // no romper el build si falla
+    }
+  },
+})
 
 export default defineConfig({
   plugins: [
+    generarVersionJson(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
