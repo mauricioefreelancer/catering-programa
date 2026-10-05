@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, type ReactNode } from 'react'
 import {
   Table,
   Button,
@@ -17,6 +17,7 @@ import {
   Drawer,
   Spin,
   Checkbox,
+  Modal,
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
@@ -48,6 +49,12 @@ interface MediosPago {
   veos: boolean
   datafono: boolean
   cupos: boolean
+  // Seriales alfanuméricos por medio de pago
+  serialVeos?: string
+  serialDatafono?: string
+  serialCupos?: string
+  serialEfectivoMonedero?: string
+  serialEfectivoBilletero?: string
 }
 
 interface Maquina {
@@ -90,6 +97,7 @@ const normalizarEstado = (e: any): 'OPERANDO' | 'FUERA_SERVICIO' | 'MANTENIMIENT
 
 // Todas las máquinas reciben efectivo (fijo). Los medios digitales (veos/datafono/cupos)
 // se leen del JSON si ya están configurados; si no, quedan desactivados.
+// Adicionalmente se leen los seriales alfanuméricos de cada dispositivo de cobro.
 const normalizarMedios = (mp: any): MediosPago => {
   const m = mp ?? {}
   return {
@@ -97,7 +105,68 @@ const normalizarMedios = (mp: any): MediosPago => {
     veos: !!m.veos || !!m.nequi || !!m.daviplata,
     datafono: !!m.datafono || !!m.tarjeta,
     cupos: !!m.cupos,
+    serialVeos: m.serialVeos ?? undefined,
+    serialDatafono: m.serialDatafono ?? undefined,
+    serialCupos: m.serialCupos ?? undefined,
+    serialEfectivoMonedero: m.serialEfectivoMonedero ?? undefined,
+    serialEfectivoBilletero: m.serialEfectivoBilletero ?? undefined,
   }
+}
+
+// Componente de serial de un dispositivo de cobro.
+// Se muestra SOLO cuando el medio de pago está activo (ya sea por `activo`
+// directo, o bien observando el checkbox `dependeDe`).
+// El serial es OPCIONAL por ahora (migración de máquinas existentes sin serial),
+// pero se persiste en la BD para no perderlo.
+const SerialMedioPago = ({ name, label, placeholder, activo, dependeDe }: { name: string; label: string; placeholder: string; activo?: boolean; dependeDe?: string }) => {
+  const form = Form.useFormInstance()
+  const watchValor = Form.useWatch(['mediosPago', dependeDe ?? ''], form)
+  const verificar = dependeDe ? (watchValor || false) : (activo ?? false)
+  if (!verificar) return null
+  return (
+    <Form.Item
+      name={['mediosPago', name]}
+      label={label}
+      style={{ marginBottom: 8 }}
+      extra="Opcional. Si se desactiva este medio se eliminará este serial."
+    >
+      <Input placeholder={placeholder} maxLength={60} style={{ textTransform: 'uppercase' }} />
+    </Form.Item>
+  )
+}
+
+// Escuchador reactivo del checkbox de un medio digital: si se intenta desactivar
+// un medio que YA tiene serial cargado, muestra un modal de advertencia de pérdida.
+const CheckboxMedio = ({ campo, serialCampo, children }: { campo: string; serialCampo: string; children: ReactNode }) => {
+  const form = Form.useFormInstance()
+  const activo = Form.useWatch(['mediosPago', campo], form) || false
+
+  const confirmarDesactivar = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nuevo = e.target.checked
+    const serialActual = form.getFieldValue(['mediosPago', serialCampo])
+    if (!nuevo && serialActual && String(serialActual).trim() !== '') {
+      Modal.confirm({
+        title: 'Desactivar medio de pago',
+        content: `Este medio tiene el serial "${String(serialActual).toUpperCase()}" asignado. Al desactivarlo se eliminará ese serial de la máquina. ¿Desea continuar?`,
+        okText: 'Sí, desactivar',
+        okType: 'danger',
+        cancelText: 'Cancelar',
+        onOk: () => {
+          form.setFieldValue(['mediosPago', campo], false)
+          form.setFieldValue(['mediosPago', serialCampo], undefined)
+        },
+      })
+    } else {
+      // Sin serial o activándolo: aplicar el cambio normal
+      form.setFieldValue(['mediosPago', campo], nuevo)
+    }
+  }
+
+  return (
+    <Form.Item name={['mediosPago', campo]} valuePropName="checked" style={{ marginBottom: 8 }}>
+      <Checkbox checked={activo} onChange={confirmarDesactivar}>{children}</Checkbox>
+    </Form.Item>
+  )
 }
 
 const Maquinas = () => {
@@ -636,19 +705,33 @@ const Maquinas = () => {
                 <>
                   <div style={{ color: '#666', fontSize: 12, marginBottom: 12 }}>
                     Seleccione los medios de pago que maneja esta máquina. Todas las máquinas reciben <strong>efectivo</strong>.
+                    <br />
+                    Al activar un medio puede registrar el <em>serial</em> del dispositivo de cobro. El serial es opcional por ahora y se conserva en la base de datos.
                   </div>
-                  <Form.Item name={['mediosPago', 'veos']} valuePropName="checked" style={{ marginBottom: 8 }}>
-                    <Checkbox>Veos</Checkbox>
-                  </Form.Item>
-                  <Form.Item name={['mediosPago', 'datafono']} valuePropName="checked" style={{ marginBottom: 8 }}>
-                    <Checkbox>Datafono</Checkbox>
-                  </Form.Item>
-                  <Form.Item name={['mediosPago', 'cupos']} valuePropName="checked" style={{ marginBottom: 8 }}>
-                    <Checkbox>Cupos</Checkbox>
-                  </Form.Item>
+
+                  <CheckboxMedio campo="veos" serialCampo="serialVeos">
+                    <b>Veos</b>
+                  </CheckboxMedio>
+                  <SerialMedioPago name="serialVeos" label="Serial del dispositivo Veos" placeholder="Ej: VEO-000-123" dependeDe="veos" />
+
+                  <CheckboxMedio campo="datafono" serialCampo="serialDatafono">
+                    <b>Datafono</b>
+                  </CheckboxMedio>
+                  <SerialMedioPago name="serialDatafono" label="Serial del Datafono" placeholder="Ej: DAT-000-123" dependeDe="datafono" />
+
+                  <CheckboxMedio campo="cupos" serialCampo="serialCupos">
+                    <b>Cupos</b>
+                  </CheckboxMedio>
+                  <SerialMedioPago name="serialCupos" label="Serial del dispositivo de Cupos" placeholder="Ej: CUP-000-123" dependeDe="cupos" />
+
                   <Form.Item name={['mediosPago', 'efectivo']} valuePropName="checked" initialValue={true}>
                     <Checkbox disabled checked>Efectivo (siempre activo)</Checkbox>
                   </Form.Item>
+                  <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>
+                    El efectivo siempre está activo. Registre los seriales de sus dispositivos de cobro en efectivo.
+                  </div>
+                  <SerialMedioPago name="serialEfectivoMonedero" label="Serial del Monedero (efectivo)" placeholder="Ej: MON-000-123" activo={true} />
+                  <SerialMedioPago name="serialEfectivoBilletero" label="Serial del Billetero (efectivo)" placeholder="Ej: BIL-000-123" activo={true} />
                 </>
               ),
             },

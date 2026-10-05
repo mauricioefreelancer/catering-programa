@@ -107,7 +107,7 @@ model Operadores {
 model Productos {
   idProducto          Int                       @id @default(autoincrement()) @map("ID_Producto")
   idProveedor        Int?                      @map("ID_Proveedor")
-  codigoBarras       String                    @map("Codigo_Barras") @db.VarChar(100)
+  codigoBarras       String                    @unique @map("Codigo_Barras") @db.VarChar(100)
   nombreProducto     String                    @map("Nombre_Producto") @db.VarChar(250)
   tipoProducto      String                    @default("ESTANDAR") @map("Tipo_Producto") @db.VarChar(30)
   categoriaInsumo  String?                   @map("Categoria_Insumo") @db.VarChar(80)
