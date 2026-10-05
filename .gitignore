@@ -8,6 +8,8 @@
 *.sql
 *.sql.gz
 *.bak
+# Excepción: las migraciones de Prisma SÍ se suben (Render ejecuta "prisma migrate deploy")
+!backend/prisma/migrations/**/migration.sql
 # IDE / Editor
 .vscode/
 .idea/
