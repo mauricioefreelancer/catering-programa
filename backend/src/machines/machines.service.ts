@@ -80,13 +80,16 @@ export class MachinesService {
     return m;
   }
 
-  async create(dto: CreateMaquinaDto, userId?: number | null) {
+  async create(dto: CreateMaquinaDto, userId?: number | null, clientIp?: string | null) {
     const data: any = { ...dto };
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
     if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
-    const creada = await this.prisma.maquinasYTiendas.create({ data });
+    const creada = await this.prisma.$transaction(async (tx) => {
+      await this.setContextoAuditoria(tx, userId, clientIp);
+      return tx.maquinasYTiendas.create({ data });
+    });
     // Registrar medios de pago iniciales en el historial (trazabilidad por fecha)
     if (dto.mediosPago && typeof dto.mediosPago === 'object') {
       await this.registrarHistorialMediosPago(creada.idMaquina, creada.serial, null, dto.mediosPago, userId, 'CREAR');
@@ -94,7 +97,7 @@ export class MachinesService {
     return creada;
   }
 
-  async update(id: number, dto: UpdateMaquinaDto, userId?: number | null) {
+  async update(id: number, dto: UpdateMaquinaDto, userId?: number | null, clientIp?: string | null) {
     const previa = await this.findOne(id);
     // El valor anterior de medios de pago ANTES de aplicar el cambio
     const antesMP = previa.mediosPago ?? null;
@@ -103,7 +106,10 @@ export class MachinesService {
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
     if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
-    const actualizada = await this.prisma.maquinasYTiendas.update({ where: { idMaquina: id }, data });
+    const actualizada = await this.prisma.$transaction(async (tx) => {
+      await this.setContextoAuditoria(tx, userId, clientIp);
+      return tx.maquinasYTiendas.update({ where: { idMaquina: id }, data });
+    });
     // Registrar los cambios de medios de pago cuando el frontend los envía
     if (dto.mediosPago && typeof dto.mediosPago === 'object') {
       await this.registrarHistorialMediosPago(id, actualizada.serial, antesMP, dto.mediosPago, userId, 'CAMBIAR');
@@ -483,6 +489,18 @@ export class MachinesService {
   private norm(v: any): string {
     if (v === undefined || v === null) return '';
     return String(v).trim();
+  }
+
+  // Setea el contexto de auditoría en la MISMA conexión de la transacción para
+  // que el trigger fn_audit_trigger_generico registre el ID_Usuario e IP reales.
+  // NOTA: con pool de conexiones de Prisma, set_config(TRUE) debe ejecutarse en
+  // la misma transacción que la mutación; de lo contrario el trigger ve null.
+  private async setContextoAuditoria(tx: Prisma.TransactionClient, userId?: number | null, clientIp?: string | null) {
+    const uid = userId ? String(userId) : '';
+    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', '${uid}', TRUE)`);
+    if (clientIp) {
+      await tx.$executeRawUnsafe(`SELECT set_config('app.client_ip', '${clientIp}', TRUE)`);
+    }
   }
 
   private serialesDe(obj: any, keys: string[]): Record<string, string | null> {

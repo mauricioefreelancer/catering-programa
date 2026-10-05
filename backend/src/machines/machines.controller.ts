@@ -15,14 +15,21 @@ export class MachinesController {
 
   @Get() @Permissions('maquinas', 'ver') findAll(@Query() q: QueryMaquinaDto) { return this.srv.findAll(q); }
   @Get(':id') @Permissions('maquinas', 'ver') findOne(@Param('id') id: string) { return this.srv.findOne(+id); }
-  @Post() @Permissions('maquinas', 'crear') create(@Body() dto: CreateMaquinaDto, @Req() req: Request) { return this.srv.create(dto, this.userId(req)); }
-  @Patch(':id') @Permissions('maquinas', 'editar') update(@Param('id') id: string, @Body() dto: UpdateMaquinaDto, @Req() req: Request) { return this.srv.update(+id, dto, this.userId(req)); }
+  @Post() @Permissions('maquinas', 'crear') create(@Body() dto: CreateMaquinaDto, @Req() req: Request) { return this.srv.create(dto, this.userId(req), this.clientIp(req)); }
+  @Patch(':id') @Permissions('maquinas', 'editar') update(@Param('id') id: string, @Body() dto: UpdateMaquinaDto, @Req() req: Request) { return this.srv.update(+id, dto, this.userId(req), this.clientIp(req)); }
   @Delete(':id') @Permissions('maquinas', 'eliminar') remove(@Param('id') id: string) { return this.srv.remove(+id); }
   @Patch(':id/asignar') @Permissions('maquinas', 'editar') asignar(@Param('id') id: string, @Body() dto: AsignarMaquinaDto, @Req() req: Request) { return this.srv.asignar(+id, dto, this.userId(req)); }
 
   private userId(req: Request): number | null {
     const u = (req as any).user as any;
     return u && typeof u.sub === 'number' ? u.sub : null;
+  }
+
+  private clientIp(req: Request): string | null {
+    const u = (req as any).user as any;
+    const xff = req.headers?.['x-forwarded-for'];
+    const ip = (Array.isArray(xff) ? xff[0] : xff) || req.ip || '';
+    return String(ip).split(',')[0].trim() || null;
   }
 
   @Get(':id/mapa-mp') @Permissions('maquinas', 'ver') getMapaMP(@Param('id') id: string) { return this.srv.getMapaMP(+id); }

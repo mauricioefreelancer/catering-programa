@@ -222,4 +222,106 @@ export class DashboardService {
       ],
     };
   }
+
+  // ============================================================
+  // HISTORIAL DE DISPOSITIVOS POR MÁQUINA (línea de tiempo de seriales)
+  // Reconstruye, para cada máquina y medio de pago, los intervalos de tiempo
+  // [desde, hasta] durante los cuales estuvo instalado cada serial (dispositivo).
+  // Es útil para saber por fechas cuándo entró/salió un serial, incluidos los
+  // cambios provisionales (reparación) o definitivos.
+  // Adicionalmente expone el usuario que hizo cada asignación/cambio y el evento
+  // asociado, cruzado con el log de auditoría.
+  // GET /dashboard/dispositivos?fechaDesde=&fechaHasta=&maquinaId=&tipoMedio=
+  // ============================================================
+  async dispositivos(query: { fechaDesde?: string; fechaHasta?: string; maquinaId?: string; tipoMedio?: string }) {
+    const where: any = {};
+    if (query.maquinaId) {
+      const mid = parseInt(query.maquinaId);
+      if (!isNaN(mid)) where.idMaquina = mid;
+    }
+    if (query.tipoMedio) where.tipoMedio = query.tipoMedio.toUpperCase();
+    if (query.fechaDesde) {
+      const d = new Date(query.fechaDesde);
+      if (!isNaN(d.getTime())) where.fechaCambio = { ...(where.fechaCambio ?? {}), gte: d };
+    }
+    if (query.fechaHasta) {
+      const d = new Date(query.fechaHasta);
+      if (!isNaN(d.getTime())) where.fechaCambio = { ...(where.fechaCambio ?? {}), lte: d };
+    }
+
+    const registros = await this.prisma.historialMediosPago.findMany({
+      where,
+      include: { usuario: { select: { idUsuario: true, nombreCompleto: true, usuarioLogin: true } } },
+      orderBy: [{ idMaquina: 'asc' }, { tipoMedio: 'asc' }, { fechaCambio: 'asc' }],
+    });
+
+    // Agrupar cronológicamente por (máquina, medio) para reconstruir la vigencia
+    // de cada serial (dispositivo) a lo largo del tiempo.
+    const grupos = new Map<string, any[]>();
+    for (const r of registros) {
+      const clave = `${r.idMaquina}|${r.tipoMedio}`;
+      if (!grupos.has(clave)) grupos.set(clave, []);
+      grupos.get(clave)!.push(r);
+    }
+
+    const intervalos: any[] = [];
+    const serialesPorMaquina = new Map<number, { serial: string; marca?: string; clienteNombre?: string }>();
+    const maquinaIds = Array.from(new Set(registros.map((r) => r.idMaquina)));
+    if (maquinaIds.length) {
+      const maquinas = await this.prisma.maquinasYTiendas.findMany({
+        where: { idMaquina: { in: maquinaIds } },
+        select: { idMaquina: true, serial: true, marca: true, cliente: { select: { razonSocial: true } } },
+      });
+      for (const m of maquinas) {
+        serialesPorMaquina.set(m.idMaquina, { serial: m.serial, marca: (m as any).marca, clienteNombre: (m as any).cliente?.razonSocial });
+      }
+    }
+
+    for (const [clave, lista] of grupos) {
+      const [idMaquina, tipoMedio] = clave.split('|');
+      const mid = Number(idMaquina);
+      // Sobre cada registro con serial, calcular cuánto tiempo estuvo vigente ese
+      // serial tomando como "hasta" la fecha del siguiente registro que reemplace
+      // el estado del dispositivo (QUITAR_SERIAL/INACTIVAR/CAMBIAR_SERIAL/...).
+      for (let i = 0; i < lista.length; i++) {
+        const r = lista[i];
+        const serial = r.serialDispositivo;
+        if (!serial) continue;
+        // "hasta" = fecha del siguiente evento, si lo hay; si no, sigue vigente (hasta hoy).
+        const siguiente = lista[i + 1];
+        const hasta = siguiente ? siguiente.fechaCambio : null;
+        const infoMaquina = serialesPorMaquina.get(mid);
+        intervalos.push({
+          idMaquina: mid,
+          serialMaquina: infoMaquina?.serial ?? r.serialMaquina ?? null,
+          marca: infoMaquina?.marca ?? null,
+          cliente: infoMaquina?.clienteNombre ?? null,
+          tipoMedio,
+          serialDispositivo: serial,
+          desde: r.fechaCambio,
+          hasta,
+          vigente: !hasta,
+          accion: r.accion,
+          valorAnterior: r.valorAnterior,
+          valorNuevo: r.valorNuevo,
+          idUsuario: r.idUsuario,
+          usuario: r.usuario ? `${r.usuario.nombreCompleto} (${r.usuario.usuarioLogin})` : null,
+        });
+      }
+    }
+
+    // Los eventos que no aportan intervalo (composición inicial) se listan aparte.
+    const sinSerial = registros.filter((r) => !r.serialDispositivo && r.tipoMedio === 'COMPOSICION');
+
+    return {
+      kpis: [
+        { id: 'total_intervalos', nombre: 'Asignaciones Registradas', valor: intervalos.length, unidad: 'registros' },
+        { id: 'dispositivos_reemplazados', nombre: 'Seriales Reemplazados', valor: intervalos.filter((i) => i.accion === 'CAMBIAR_SERIAL' || i.accion === 'QUITAR_SERIAL').length, unidad: 'dispositivos' },
+        { id: 'marcas_activas', nombre: 'Máquinas con Historial', valor: serialesPorMaquina.size, unidad: 'máquinas' },
+        { id: 'cambios_provisionales', nombre: 'Cambios Activo/Inactivo', valor: intervalos.filter((i) => i.accion === 'ACTIVAR' || i.accion === 'INACTIVAR').length, unidad: 'eventos' },
+      ],
+      intervalos,
+      eventosSinSerial: sinSerial,
+    };
+  }
 }

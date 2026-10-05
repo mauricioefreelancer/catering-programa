@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table } from 'antd'
+import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select } from 'antd'
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -320,6 +320,147 @@ const PanelProductosStock = () => {
   )
 }
 
+const PanelDispositivos = () => {
+  const [loading, setLoading] = useState(false)
+  const [datos, setDatos] = useState<any>({ kpis: [], intervalos: [] })
+  const [rangeDisp, setRangeDisp] = useState<[Dayjs | null, Dayjs | null] | null>([dayjs().subtract(3, 'month'), dayjs()])
+  const [maquinaFiltro, setMaquinaFiltro] = useState<string>('')
+  const [tipoFiltro, setTipoFiltro] = useState<string>('')
+  const [maquinas, setMaquinas] = useState<any[]>([])
+
+  const cargarMaquinas = useCallback(async () => {
+    try {
+      const res: any = await apiService.get('/maquinas?take=2000')
+      const lista = Array.isArray(res) ? res : (res?.data || [])
+      setMaquinas(lista.map((m: any) => ({ id: m.idMaquina ?? m.id, serial: m.serial ?? '—' })))
+    } catch {
+      setMaquinas([])
+    }
+  }, [])
+
+  useEffect(() => { cargarMaquinas() }, [cargarMaquinas])
+
+  const cargar = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params: any = {}
+      if (rangeDisp && rangeDisp[0]) params.fechaDesde = rangeDisp[0].toISOString()
+      if (rangeDisp && rangeDisp[1]) params.fechaHasta = rangeDisp[1].toISOString()
+      if (maquinaFiltro) params.maquinaId = maquinaFiltro
+      if (tipoFiltro) params.tipoMedio = tipoFiltro
+      const res: any = await apiService.get('/dashboard/dispositivos', params)
+      setDatos({
+        kpis: Array.isArray(res?.kpis) ? res.kpis : [],
+        intervalos: Array.isArray(res?.intervalos) ? res.intervalos : [],
+      })
+    } catch (e: any) {
+      message.error('Error cargando historial de dispositivos: ' + (e?.message || e))
+    } finally {
+      setLoading(false)
+    }
+  }, [rangeDisp, maquinaFiltro, tipoFiltro])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const colorAccion = (a: string) => {
+    const s = String(a || '').toUpperCase()
+    if (s.includes('ASIGNAR') || s.includes('ACTIVAR')) return 'green'
+    if (s.includes('CAMBIAR')) return 'orange'
+    if (s.includes('QUITAR') || s.includes('INACTIVAR')) return 'red'
+    if (s.includes('CREAR')) return 'blue'
+    return 'default'
+  }
+
+  const columns = [
+    { title: 'Máquina', dataIndex: 'serialMaquina', key: 'serialMaquina', width: 140, render: (v: string, r: any) => (<div><strong>{v || '—'}</strong>{r.marca ? <div style={{ fontSize: 11, color: '#888' }}>{r.marca}</div> : null}<div style={{ fontSize: 11, color: '#888' }}>{r.cliente || ''}</div></div>) },
+    { title: 'Medio', dataIndex: 'tipoMedio', key: 'tipoMedio', width: 110, render: (v: string) => <Tag>{v || '—'}</Tag> },
+    { title: 'Serial Dispositivo', dataIndex: 'serialDispositivo', key: 'serialDispositivo', width: 170, render: (v: string) => <code>{v || '—'}</code> },
+    { title: 'Desde', dataIndex: 'desde', key: 'desde', width: 170, render: (v: string) => (v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '—') },
+    { title: 'Hasta', dataIndex: 'hasta', key: 'hasta', width: 170, render: (v: string) => (v ? dayjs(v).format('DD/MM/YYYY HH:mm') : <Tag color="green">Vigente</Tag>) },
+    { title: 'Acción', dataIndex: 'accion', key: 'accion', width: 150, render: (v: string) => <Tag color={colorAccion(v)}>{v || '—'}</Tag> },
+    { title: 'Usuario', dataIndex: 'usuario', key: 'usuario', width: 200, render: (v: string) => (v || <span style={{ color: '#bbb' }}>—</span>) },
+    { title: 'Anterior → Nuevo', key: 'cambio', render: (_: any, r: any) => {
+        const prev = r?.valorAnterior?.serialVeos ?? Object.values(r?.valorAnterior ?? {})[0]
+        const next = r?.valorNuevo?.serialVeos ?? Object.values(r?.valorNuevo ?? {})[0]
+        return <span style={{ fontSize: 12 }}>{prev ? <span style={{ textDecoration: 'line-through', color: '#999' }}>{prev}</span> : '—'} → <strong>{next || '—'}</strong></span>
+      } },
+  ]
+
+  return (
+    <div>
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} md={7}>
+            <RangePicker
+              value={rangeDisp as any}
+              onChange={(v: any) => setRangeDisp(v as any)}
+              style={{ width: '100%' }}
+            />
+          </Col>
+          <Col xs={24} md={5}>
+            <Select
+              allowClear
+              showSearch
+              value={maquinaFiltro || undefined}
+              placeholder="Filtrar por máquina"
+              onChange={(v: any) => setMaquinaFiltro(v ? String(v) : '')}
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              options={maquinas.map((m) => ({ value: String(m.id), label: `#${m.id} - ${m.serial}` }))}
+            />
+          </Col>
+          <Col xs={24} md={4}>
+            <Select
+              allowClear
+              value={tipoFiltro || undefined}
+              placeholder="Tipo de medio"
+              onChange={(v: any) => setTipoFiltro(v ? String(v) : '')}
+              style={{ width: '100%' }}
+              options={['VEOS', 'DATAFONO', 'CUPOS', 'EFECTIVO'].map((t) => ({ value: t, label: t }))}
+            />
+          </Col>
+          <Col xs={24} md={8} style={{ textAlign: 'right' }}>
+            <Button icon={<ReloadOutlined />} onClick={cargar} loading={loading}>
+              Buscar
+            </Button>
+          </Col>
+        </Row>
+      </Card>
+
+      <Row gutter={[16, 16]}>
+        {(datos.kpis || []).map((k: any, i: number) => (
+          <Col xs={12} lg={6} key={k.id || `dkpi-${i}`}>
+            <Card size="small">
+              <Statistic title={k.nombre} value={Number(k.valor || 0)} valueStyle={{ fontSize: 20 }} suffix={k.unidad ? '' : undefined} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Card size="small" title="Mapeo de dispositivos por máquina y fechas" style={{ marginTop: 16 }}>
+        <Alert
+          type="info"
+          showIcon
+          message="Aquí puedes ver de qué fecha a qué fecha estuvo cada serial (dispositivo) en una máquina, incluidos cambios provisionales o definitivos, y qué usuario lo asignó."
+          style={{ marginBottom: 12 }}
+        />
+        {!loading && !datos.intervalos?.length && (
+          <Empty description="Sin historial de dispositivos para el filtro seleccionado" style={{ padding: 30 }} />
+        )}
+        <Table
+          rowKey={(r: any) => `${r.idMaquina}-${r.tipoMedio}-${r.serialDispositivo}-${r.desde}`}
+          size="small"
+          loading={loading}
+          dataSource={datos.intervalos || []}
+          columns={columns as any}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 1100 }}
+        />
+      </Card>
+    </div>
+  )
+}
+
 const Dashboard = () => {
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([dayjs().startOf('month'), dayjs().endOf('month')])
   const { hasPermission, usuario } = useAuth()
@@ -369,8 +510,8 @@ const Dashboard = () => {
   )
 
   useEffect(() => {
-    // La pestaña 'productos' carga sus propios datos (PanelProductosStock); no consulta KPIs.
-    if (perfilActivo !== 'productos') {
+    // Las pestañas 'productos' y 'dispositivos' cargan sus propios datos; no consultan KPIs.
+    if (perfilActivo !== 'productos' && perfilActivo !== 'dispositivos') {
       cargarDashboard(perfilActivo)
     }
   }, [perfilActivo, cargarDashboard])
@@ -423,6 +564,17 @@ const Dashboard = () => {
       children: (
         <PanelKpisCharts loading={loading && perfilActivo === 'tesoreria'} kpis={perfilActivo === 'tesoreria' ? kpis : []} charts={perfilActivo === 'tesoreria' ? charts : []} perfil="tesoreria" />
       ),
+    })
+  }
+  if (hasPermission('dashboard', 'ver') || usuario?.rol === 'GERENCIA') {
+    tabItems.push({
+      key: 'dispositivos',
+      label: (
+        <span>
+          🖥️ Dispositivos <Tag color={perfilActivo === 'dispositivos' ? 'purple' : 'default'}>Seriales</Tag>
+        </span>
+      ),
+      children: <PanelDispositivos />,
     })
   }
 

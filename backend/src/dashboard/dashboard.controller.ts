@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, UseGuards, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Permissions } from '../auth/permissions.guard';
@@ -19,4 +19,10 @@ export class DashboardController {
   @Get('bodega')
   @Permissions('dashboard', 'ver')
   bodega() { return this.srv.bodega(); }
+
+  @Get('dispositivos')
+  @Permissions('dashboard', 'ver')
+  dispositivos(@Query() q: { fechaDesde?: string; fechaHasta?: string; maquinaId?: string; tipoMedio?: string }) {
+    return this.srv.dispositivos(q);
+  }
 }
