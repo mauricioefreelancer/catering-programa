@@ -135,18 +135,27 @@ const SerialMedioPago = ({ name, label, placeholder, activo, dependeDe }: { name
   )
 }
 
-// Checkbox controlado manualmente para poder interceptar la desactivación:
-// si se intenta desactivar un medio que YA tiene serial cargado, se muestra el
-// modal ANTES de cambiar nada. Solo si el usuario confirma se desactiva y se
-// borra el serial. Si cancela, el checkbox queda intacto.
+// Checkbox de medio de pago: el valor se registra en el form mediante un
+// Form.Item OCULTO (para que useWatch, validateFields y el submit siempre lo
+// tengan en cuenta), y el checkbox visible está controlado manualmente.
+// - Al ACTIVAR un medio: cambia de inmediato.
+// - Al DESACTIVAR un medio que YA tiene serial: se muestra un modal ANTES de
+//   cambiar; solo si el usuario confirma se desactiva y se borra el serial.
+// Si cancela, el checkbox queda intacto.
 const CheckboxMedio = ({ campo, serialCampo, children }: { campo: string; serialCampo: string; children: ReactNode }) => {
   const form = Form.useFormInstance()
   const activo = Form.useWatch(['mediosPago', campo], form) || false
 
-  const confirmarDesactivar = (e: { target: { checked: boolean } }) => {
+  const handleChange = (e: { target: { checked: boolean } }) => {
     const nuevo = e.target.checked
+    // Activación -> aplicar de inmediato
+    if (nuevo) {
+      form.setFieldValue(['mediosPago', campo], true)
+      return
+    }
+    // Se intenta desactivar: si hay serial, pedir confirmación antes
     const serialActual = form.getFieldValue(['mediosPago', serialCampo])
-    if (!nuevo && serialActual && String(serialActual).trim() !== '') {
+    if (serialActual && String(serialActual).trim() !== '') {
       Modal.confirm({
         title: 'Desactivar medio de pago',
         content: `Este medio tiene el serial "${String(serialActual).toUpperCase()}" asignado. Al desactivarlo se eliminará ese serial de la máquina. ¿Desea continuar?`,
@@ -158,18 +167,22 @@ const CheckboxMedio = ({ campo, serialCampo, children }: { campo: string; serial
           form.setFieldValue(['mediosPago', serialCampo], undefined)
         },
         onCancel: () => {
-          // Asegura que el checkbox quede activo (no se desactiva nada)
+          // Se mantiene activo y conserva su serial
           form.setFieldValue(['mediosPago', campo], true)
         },
       })
-    } else {
-      // Sin serial o activándolo: aplicar el cambio normal
-      form.setFieldValue(['mediosPago', campo], nuevo)
+      return
     }
+    // Desactivar sin serial: cambio directo
+    form.setFieldValue(['mediosPago', campo], false)
   }
 
   return (
-    <Checkbox checked={activo} onChange={confirmarDesactivar}>{children}</Checkbox>
+    <>
+      {/* Registra el campo en el form para que useWatch / submit lo conserven */}
+      <Form.Item name={['mediosPago', campo]} valuePropName="checked" hidden initialValue={false} />
+      <Checkbox checked={activo} onChange={handleChange}>{children}</Checkbox>
+    </>
   )
 }
 
