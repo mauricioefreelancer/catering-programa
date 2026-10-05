@@ -40,6 +40,7 @@ model UsuariosSistema {
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
   saldosDigitales SaldosDigitales[]
   auditoriaLog   AuditoriaLog[]
+  historialMediosPago HistorialMediosPago[]
 
   @@map("USUARIOS_SISTEMA")
 }
@@ -82,6 +83,10 @@ model Proveedores {
 
   productos          Productos[]
   ingresosBodega IngresosBodega[]
+  stockProveedor StockProveedor[]
+  mapaMateriaPrima MapaMateriaPrima[]
+  mapaCafeNrq MapaCafeNrq[]
+  pedidosOperador PedidosOperador[]
 
   @@map("PROVEEDORES")
 }
@@ -133,6 +138,7 @@ model Productos {
   detalleIngresos DetalleIngresos[]
   pedidosOperador PedidosOperador[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+  stockProveedor StockProveedor[]
 
   @@map("PRODUCTOS")
 }
@@ -181,7 +187,7 @@ model MaquinasYTiendas {
   ubicacionEsp          String?                   @map("Ubicacion_Esp") @db.VarChar(300)
   mediosPago           Json?                     @map("Medios_Pago") @db.JsonB
   tarifaPromedioOverride Decimal?                @map("Tarifa_Promedio_Override") @db.Decimal(18, 2)
-  base                  Decimal?                 @default(0) @map("Base") @db.Decimal(18, 2)
+  base                  Decimal                   @default(0) @map("Base") @db.Decimal(18, 2)
   ultimoContadorNR      BigInt?                   @map("Ultimo_Contador_NR")
   fechaUltimaVisita     DateTime?                 @map("Fecha_Ultima_Visita")
   fechaInstalacion      DateTime?                 @map("Fecha_Instalacion") @db.Date
@@ -196,6 +202,7 @@ model MaquinasYTiendas {
   tesoreriaEfectivoNr TesoreriaEfectivoNr[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
   saldosDigitales SaldosDigitales[]
+  historialMediosPago HistorialMediosPago[]
 
   @@map("MAQUINAS_Y_TIENDAS")
 }
@@ -204,6 +211,7 @@ model MapaMateriaPrima {
   idMapaMp        Int                       @id @default(autoincrement()) @map("ID_Mapa_MP")
   idMaquina       Int                       @map("ID_Maquina")
   idProducto      Int                       @map("ID_Producto")
+  idProveedor    Int?                      @map("ID_Proveedor")
   espiralCodigo   String                    @map("Espiral_Codigo") @db.VarChar(20)
   capacidadMax    Int                       @default(0) @map("Capacidad_Max")
   capacidadActual Int                       @default(0) @map("Capacidad_Actual")
@@ -211,6 +219,7 @@ model MapaMateriaPrima {
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
   producto Productos        @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  proveedor Proveedores?   @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   pedidosOperador PedidosOperador[]
 
   @@unique([idMaquina, espiralCodigo], map: "uq_espiral_maquina")
@@ -221,11 +230,13 @@ model MapaCafeNrq {
   idMapaNrq       Int                       @id @default(autoincrement()) @map("ID_Mapa_NRQ")
   idMaquina      Int                       @map("ID_Maquina")
   idProdTerm     Int                       @map("ID_Prod_Term")
+  idProveedor    Int?                      @map("ID_Proveedor")
   opcionBoton    String                    @map("Opcion_Boton") @db.VarChar(50)
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  proveedor Proveedores?  @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
 
   @@unique([idMaquina, opcionBoton], map: "uq_nrq_boton_maquina")
   @@map("MAPA_CAFE_NRQ")
@@ -266,6 +277,7 @@ model PedidosOperador {
   idMaquina         Int                       @map("ID_Maquina")
   idOperador        Int                       @map("ID_Operador")
   idProducto       Int                       @map("ID_Producto")
+  idProveedor      Int?                      @map("ID_Proveedor")
   idMapaMp         Int?                      @map("ID_Mapa_MP")
   fechaHora        DateTime                  @default(now()) @map("Fecha_Hora")
   fisicoDigitado   Int                       @default(0) @map("Fisico_Digitado")
@@ -277,6 +289,7 @@ model PedidosOperador {
   maquina      MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   operador     Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
   producto     Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  proveedor    Proveedores? @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   mapaMp       MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull, onUpdate: Cascade)
   despachosBodega DespachosBodega[]
 
@@ -380,4 +393,46 @@ model AuditoriaLog {
   usuario UsuariosSistema? @relation(fields: [idUsuario], references: [idUsuario], onDelete: SetNull, onUpdate: Cascade)
 
   @@map("AUDITORIA_LOG")
+}
+
+// Stock por proveedor (tabla que existe en producción pero faltaba en el schema).
+// Refleja el inventario de un producto por cada proveedor que lo suministra.
+model StockProveedor {
+  idStockProveedor  Int      @id @default(autoincrement()) @map("ID_Stock_Proveedor")
+  idProducto        Int      @map("ID_Producto")
+  idProveedor       Int      @map("ID_Proveedor")
+  stockActual       Int      @default(0) @map("Stock_Actual")
+  costoCompra       Decimal  @default(0) @map("Costo_Compra") @db.Decimal(18, 2)
+  fechaCreacion     DateTime @default(now()) @map("Fecha_Creacion")
+  fechaActualizacion DateTime @default(now()) @map("Fecha_Actualizacion")
+
+  producto       Productos    @relation(fields: [idProducto], references: [idProducto], onDelete: Cascade, onUpdate: Cascade)
+  proveedor      Proveedores  @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([idProducto, idProveedor], map: "uq_stock_producto_proveedor")
+  @@map("STOCK_PROVEEDOR")
+}
+
+// Historial de cambios de medios de pago por máquina.
+// Registra cada vez que se agrega/cambia/elimina un dispositivo de cobro
+// (y su serial alfanumérico) en una máquina, con la fecha exacta del cambio
+// y el usuario que lo realizó. Permite saber POR FECHA cuándo se modificó.
+model HistorialMediosPago {
+  idHistorial        Int       @id @default(autoincrement()) @map("ID_Historial")
+  idMaquina         Int       @map("ID_Maquina")
+  serialMaquina    String    @map("Serial_Maquina") @db.VarChar(100)
+  tipoMedio        String    @map("Tipo_Medio") @db.VarChar(50)
+  serialDispositivo String?   @map("Serial_Dispositivo") @db.VarChar(100)
+  accion           String    @map("Accion") @db.VarChar(20)
+  valorAnterior    Json?    @map("Valor_Anterior") @db.JsonB
+  valorNuevo       Json?    @map("Valor_Nuevo") @db.JsonB
+  idUsuario        Int?      @map("ID_Usuario")
+  fechaCambio      DateTime  @default(now()) @map("Fecha_Cambio")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
+  usuario  UsuariosSistema? @relation(fields: [idUsuario], references: [idUsuario], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([idMaquina, fechaCambio], map: "idx_historial_maquina_fecha")
+  @@index([serialDispositivo, fechaCambio], map: "idx_historial_serial_fecha")
+  @@map("HISTORIAL_MEDIOS_PAGO")
 }

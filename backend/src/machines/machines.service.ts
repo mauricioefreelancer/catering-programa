@@ -80,23 +80,35 @@ export class MachinesService {
     return m;
   }
 
-  async create(dto: CreateMaquinaDto) {
+  async create(dto: CreateMaquinaDto, userId?: number | null) {
     const data: any = { ...dto };
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
     if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
-    return this.prisma.maquinasYTiendas.create({ data });
+    const creada = await this.prisma.maquinasYTiendas.create({ data });
+    // Registrar medios de pago iniciales en el historial (trazabilidad por fecha)
+    if (dto.mediosPago && typeof dto.mediosPago === 'object') {
+      await this.registrarHistorialMediosPago(creada.idMaquina, creada.serial, null, dto.mediosPago, userId, 'CREAR');
+    }
+    return creada;
   }
 
-  async update(id: number, dto: UpdateMaquinaDto) {
-    await this.findOne(id);
+  async update(id: number, dto: UpdateMaquinaDto, userId?: number | null) {
+    const previa = await this.findOne(id);
+    // El valor anterior de medios de pago ANTES de aplicar el cambio
+    const antesMP = previa.mediosPago ?? null;
     const data: any = { ...dto };
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
     if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
-    return this.prisma.maquinasYTiendas.update({ where: { idMaquina: id }, data });
+    const actualizada = await this.prisma.maquinasYTiendas.update({ where: { idMaquina: id }, data });
+    // Registrar los cambios de medios de pago cuando el frontend los envía
+    if (dto.mediosPago && typeof dto.mediosPago === 'object') {
+      await this.registrarHistorialMediosPago(id, actualizada.serial, antesMP, dto.mediosPago, userId, 'CAMBIAR');
+    }
+    return actualizada;
   }
 
   async remove(id: number) {
@@ -104,7 +116,7 @@ export class MachinesService {
     return this.prisma.maquinasYTiendas.delete({ where: { idMaquina: id } });
   }
 
-  async asignar(id: number, dto: AsignarMaquinaDto) {
+  async asignar(id: number, dto: AsignarMaquinaDto, userId?: number | null) {
     await this.findOne(id);
     return this.prisma.maquinasYTiendas.update({ where: { idMaquina: id }, data: dto });
   }
@@ -368,5 +380,148 @@ export class MachinesService {
       where: { idMaquina: id, opcionBoton: { notIn: opciones } },
     });
     return this.getMapaNRQ(id);
+  }
+
+  // ============================================================
+  // HISTORIAL DE MEDIOS DE PAGO
+  // Registra en HISTORIAL_MEDIOS_PAGO cada cambio de activación o de
+  // serial de un dispositivo de cobro de la máquina, con fecha y usuario,
+  // para poder trazar POR FECHA cuándo se agregó/cambió/quitó un dispositivo.
+  // ============================================================
+  private async registrarHistorialMediosPago(
+    idMaquina: number,
+    serialMaquina: string,
+    antes: any,
+    nuevo: any,
+    userId?: number | null,
+    accionBase: 'CREAR' | 'CAMBIAR' = 'CAMBIAR',
+  ) {
+    const a = antes ?? {};
+    const n = nuevo ?? {};
+
+    // Medios observables: [clave estado, {seriales}] -> nombre del medio
+    const medios: Array<{ key: string; serialKeys: string[]; nombre: string }> = [
+      { key: 'veos', serialKeys: ['serialVeos'], nombre: 'VEOS' },
+      { key: 'datafono', serialKeys: ['serialDatafono'], nombre: 'DATAFONO' },
+      { key: 'cupos', serialKeys: ['serialCupos'], nombre: 'CUPOS' },
+      { key: 'efectivo', serialKeys: ['serialEfectivoMonedero', 'serialEfectivoBilletero'], nombre: 'EFECTIVO' },
+    ];
+
+    const registros: any[] = [];
+
+    for (const medio of medios) {
+      const activoAntes = !!a[medio.key];
+      const activoAhora = !!n[medio.key];
+
+      // 1) Cambio de activación (encendido/apagado del dispositivo)
+      if (activoAntes !== activoAhora) {
+        registros.push({
+          idMaquina,
+          serialMaquina,
+          tipoMedio: medio.nombre,
+          serialDispositivo: null,
+          accion: activoAhora ? 'ACTIVAR' : 'INACTIVAR',
+          valorAnterior: { [medio.key]: activoAntes, ...this.serialesDe(a, medio.serialKeys) },
+          valorNuevo: { [medio.key]: activoAhora, ...this.serialesDe(n, medio.serialKeys) },
+        });
+      }
+
+      // 2) Cambios de serial de cada dispositivo de ese medio, cuando el medio
+      //    está activo (o antes lo estaba). Detecta asignar/cambiar/quitar serial.
+      if (activoAntes || activoAhora) {
+        for (const sKey of medio.serialKeys) {
+          const serialAntes = this.norm(a[sKey]);
+          const serialAhora = this.norm(n[sKey]);
+          if (serialAntes === serialAhora) continue;
+          let accion: string;
+          if (!serialAntes && serialAhora) accion = 'ASIGNAR_SERIAL';
+          else if (serialAntes && !serialAhora) accion = 'QUITAR_SERIAL';
+          else accion = 'CAMBIAR_SERIAL';
+          registros.push({
+            idMaquina,
+            serialMaquina,
+            tipoMedio: medio.nombre,
+            serialDispositivo: serialAhora || serialAntes || null,
+            accion,
+            valorAnterior: { [sKey]: serialAntes ?? null },
+            valorNuevo: { [sKey]: serialAhora ?? null },
+          });
+        }
+      }
+    }
+
+    // Cuando es creación inicial y no hubo cambios de activación/serial (veamos
+    // solo composiciones de estados sin seriales), igual se registra la foto inicial
+    if (registros.length === 0 && accionBase === 'CREAR') {
+      registros.push({
+        idMaquina,
+        serialMaquina,
+        tipoMedio: 'COMPOSICION',
+        serialDispositivo: null,
+        accion: 'CREAR',
+        valorAnterior: null,
+        valorNuevo: n,
+      });
+    }
+
+    for (const r of registros) {
+      await this.prisma.historialMediosPago.create({
+        data: {
+          idMaquina: r.idMaquina,
+          serialMaquina: r.serialMaquina,
+          tipoMedio: r.tipoMedio,
+          serialDispositivo: r.serialDispositivo,
+          accion: r.accion,
+          valorAnterior: r.valorAnterior,
+          valorNuevo: r.valorNuevo,
+          idUsuario: userId ?? null,
+        },
+      });
+    }
+  }
+
+  private norm(v: any): string {
+    if (v === undefined || v === null) return '';
+    return String(v).trim();
+  }
+
+  private serialesDe(obj: any, keys: string[]): Record<string, string | null> {
+    const out: Record<string, string | null> = {};
+    for (const k of keys) out[k] = this.norm(obj[k]) || null;
+    return out;
+  }
+
+  // ============================================================
+  // CONSULTA DE HISTORIAL DE MEDIOS DE PAGO
+  // Permite filtrar por máquina, serial de dispositivo y rango de fechas.
+  // GET /maquinas/historial-medios-pago?maquinaId=&serial=&fechaDesde=&fechaHasta=
+  // ============================================================
+  async historialMediosPago(query: { maquinaId?: string; serial?: string; fechaDesde?: string; fechaHasta?: string }) {
+    const where: any = {};
+    if (query.maquinaId) {
+      const mid = parseInt(query.maquinaId);
+      if (isNaN(mid)) throw new BadRequestException('maquinaId inválido');
+      where.idMaquina = mid;
+    }
+    if (query.serial) {
+      where.OR = [
+        { serialDispositivo: { contains: query.serial, mode: 'insensitive' } },
+        { serialMaquina: { contains: query.serial, mode: 'insensitive' } },
+      ];
+    }
+    if (query.fechaDesde) {
+      const d = new Date(query.fechaDesde);
+      if (!isNaN(d.getTime())) where.fechaCambio = { ...(where.fechaCambio ?? {}), gte: d };
+    }
+    if (query.fechaHasta) {
+      const d = new Date(query.fechaHasta);
+      if (!isNaN(d.getTime())) where.fechaCambio = { ...(where.fechaCambio ?? {}), lte: d };
+    }
+    const data = await this.prisma.historialMediosPago.findMany({
+      where,
+      include: { usuario: { select: { idUsuario: true, nombreCompleto: true, usuarioLogin: true } } },
+      orderBy: { fechaCambio: 'desc' },
+    });
+    return data;
   }
 }

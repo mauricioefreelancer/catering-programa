@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { MachinesService } from './machines.service';
 import {
   CreateMaquinaDto, UpdateMaquinaDto, AsignarMaquinaDto,
@@ -14,10 +15,15 @@ export class MachinesController {
 
   @Get() @Permissions('maquinas', 'ver') findAll(@Query() q: QueryMaquinaDto) { return this.srv.findAll(q); }
   @Get(':id') @Permissions('maquinas', 'ver') findOne(@Param('id') id: string) { return this.srv.findOne(+id); }
-  @Post() @Permissions('maquinas', 'crear') create(@Body() dto: CreateMaquinaDto) { return this.srv.create(dto); }
-  @Patch(':id') @Permissions('maquinas', 'editar') update(@Param('id') id: string, @Body() dto: UpdateMaquinaDto) { return this.srv.update(+id, dto); }
+  @Post() @Permissions('maquinas', 'crear') create(@Body() dto: CreateMaquinaDto, @Req() req: Request) { return this.srv.create(dto, this.userId(req)); }
+  @Patch(':id') @Permissions('maquinas', 'editar') update(@Param('id') id: string, @Body() dto: UpdateMaquinaDto, @Req() req: Request) { return this.srv.update(+id, dto, this.userId(req)); }
   @Delete(':id') @Permissions('maquinas', 'eliminar') remove(@Param('id') id: string) { return this.srv.remove(+id); }
-  @Patch(':id/asignar') @Permissions('maquinas', 'editar') asignar(@Param('id') id: string, @Body() dto: AsignarMaquinaDto) { return this.srv.asignar(+id, dto); }
+  @Patch(':id/asignar') @Permissions('maquinas', 'editar') asignar(@Param('id') id: string, @Body() dto: AsignarMaquinaDto, @Req() req: Request) { return this.srv.asignar(+id, dto, this.userId(req)); }
+
+  private userId(req: Request): number | null {
+    const u = (req as any).user as any;
+    return u && typeof u.sub === 'number' ? u.sub : null;
+  }
 
   @Get(':id/mapa-mp') @Permissions('maquinas', 'ver') getMapaMP(@Param('id') id: string) { return this.srv.getMapaMP(+id); }
   @Post(':id/mapa-mp') @Permissions('maquinas', 'crear') addMapaMP(@Param('id') id: string, @Body() dto: CreateMapaMPDto) { return this.srv.addMapaMP(+id, dto); }
@@ -33,4 +39,9 @@ export class MachinesController {
   @Delete(':id/mapa-nrq/:idMapa') @Permissions('maquinas', 'eliminar') removeMapaNRQ(@Param('id') id: string, @Param('idMapa') idMapa: string) { return this.srv.removeMapaNRQ(+id, +idMapa); }
 
   @Get(':id/rendimiento') @Permissions('maquinas', 'ver') rendimiento(@Param('id') id: string) { return this.srv.rendimiento(+id); }
+
+  @Get('historial/medios-pago') @Permissions('maquinas', 'ver')
+  historial(@Query() q: { maquinaId?: string; serial?: string; fechaDesde?: string; fechaHasta?: string }) {
+    return this.srv.historialMediosPago(q);
+  }
 }
