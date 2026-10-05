@@ -13,7 +13,6 @@ import {
   InputNumber,
   Tabs,
   Select,
-  AutoComplete,
   Card,
   Switch,
   Spin,
@@ -55,20 +54,18 @@ interface Producto {
 
 const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const
 
-// Categorías de insumo disponibles (qué es el producto físicamente: café, vaso, mezclador...)
+// Categorías de insumo disponibles (catálogo cerrado). Sólo estas opciones.
+// CAFE_SOLUBLE y CAFE_GRANO reemplazan al campo "Tipo de Café": la dosis se calcula según la categoría.
 const CATEGORIAS_INSUMO: { value: string; color: string; label: string }[] = [
-  { value: 'CAFE', color: 'brown', label: '☕ Café' },
+  { value: 'LECHE_POLVO', color: 'blue', label: '🥛 Leche en polvo' },
+  { value: 'AROMATICA_FRUTOS_ROJOS', color: 'magenta', label: '🌿 Aromática frutos rojos' },
+  { value: 'AROMATICA_HIERBA_BUENA', color: 'green', label: '🌿 Aromática hierba buena' },
+  { value: 'CHOCOLATE', color: 'purple', label: '🍫 Chocolate' },
   { value: 'VASO', color: 'cyan', label: '🥤 Vaso' },
   { value: 'MEZCLADOR', color: 'geekblue', label: '🥄 Mezclador' },
   { value: 'AZUCAR', color: 'gold', label: '🍬 Azúcar' },
-  { value: 'GRANO', color: 'orange', label: '🌾 Grano' },
-  { value: 'LACTEO', color: 'blue', label: '🥛 Lácteo' },
-  { value: 'CHOCOLATE', color: 'purple', label: '🍫 Chocolate' },
-  { value: 'AROMATICA', color: 'green', label: '🌿 Aromática' },
-  { value: 'SNACK', color: 'volcano', label: '🍿 Snack/Comestible' },
-  { value: 'BEBIDA', color: 'magenta', label: '🥤 Bebida' },
-  { value: 'EMPAQUE', color: 'lime', label: '📦 Empaque' },
-  { value: 'OTRO', color: 'default', label: '⭐ Otro' },
+  { value: 'CAFE_SOLUBLE', color: 'brown', label: '☕ Café soluble' },
+  { value: 'CAFE_GRANO', color: 'orange', label: '☕ Café grano' },
 ]
 const catColor = (c?: string | null): string => {
   const cUp = (c || '').trim().toUpperCase()
@@ -79,7 +76,14 @@ const catLabel = (c?: string | null): string => {
   if (!c) return ''
   const cUp = c.trim().toUpperCase()
   const match = CATEGORIAS_INSUMO.find((o) => o.value === cUp)
-  return match ? match.label.replace(/^[^\s]+\s/, '') : c
+  return match ? match.label : c
+}
+// El tipo de café se deriva de la categoría (dosis en máquinas: soluble=2gr, grano=8gr).
+const tipoCafeDeCategoria = (categoria?: string | null): 'SOLUBLE' | 'GRANO' | null => {
+  const cUp = (categoria || '').trim().toUpperCase()
+  if (cUp === 'CAFE_SOLUBLE') return 'SOLUBLE'
+  if (cUp === 'CAFE_GRANO') return 'GRANO'
+  return null
 }
 
 const Productos = () => {
@@ -179,7 +183,15 @@ const Productos = () => {
         categoriaInsumo: values.categoria_insumo || null,
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
-        ...(values.tipo_cafe ? { tipoCafe: values.tipo_cafe } : {}),
+        // El tipo de café se deriva de la categoría elegida (soluble/grano).
+        // Si el producto tiene un tipoCafe previo y no se eligió una categoría de café, se conserva para no perder información.
+        ...(() => {
+          const tc = tipoCafeDeCategoria(values.categoria_insumo)
+          if (tc) return { tipoCafe: tc }
+          const previo = (editing?.tipo_cafe || '').trim().toUpperCase()
+          if (previo === 'SOLUBLE' || previo === 'GRANO') return { tipoCafe: previo }
+          return { tipoCafe: null }
+        })(),
         equivalencia: Number(values.equivalencia || 1),
         costoBase: Number(values.costo_base || 0),
         IVA: Number(values.iva || 0),
@@ -350,8 +362,9 @@ const Productos = () => {
       key: 'tipo_cafe',
       width: 130,
       render: (v: string | null, r: Producto) => {
-        if (r.tipo !== 'MATERIA_PRIMA' || !v) return <span style={{ color: '#bbb' }}>—</span>
-        return v === 'SOLUBLE'
+        const cat = (r.categoria_insumo || '').trim().toUpperCase()
+        if (cat !== 'CAFE_SOLUBLE' && cat !== 'CAFE_GRANO') return <span style={{ color: '#bbb' }}>—</span>
+        return cat === 'CAFE_SOLUBLE'
           ? <Tag color="green">☕ Soluble · 2gr</Tag>
           : <Tag color="geekblue">☕ Grano · 8gr</Tag>
       },
@@ -498,33 +511,25 @@ const Productos = () => {
                   <Form.Item
                     name="categoria_insumo"
                     label="Categoría de Insumo"
-                    extra="Indica qué es físicamente el producto (café, vaso, mezclador...). Puedes elegir de la lista o escribir una categoría propia."
+                    extra="Catálogo cerrado. El tipo de café (soluble/grano) se selecciona aquí, no por separado."
                   >
-                    <AutoComplete
-                      options={CATEGORIAS_INSUMO.map((o) => ({ value: o.value, label: o.label }))}
-                      placeholder="Ej: MEZCLADOR / Otro..."
+                    <Select
+                      allowClear
+                      placeholder="Seleccione la categoría del insumo"
                       style={{ width: '100%' }}
-                      filterOption={(inputValue, option: any) =>
-                        option!.value.toUpperCase().includes(inputValue.toUpperCase())
-                      }
-                    />
+                      optionLabelProp="label"
+                    >
+                      {CATEGORIAS_INSUMO.map((o) => (
+                        <Option key={o.value} value={o.value} label={o.label}>
+                          <Tag color={o.color} style={{ marginRight: 8 }}>{o.label}</Tag>
+                        </Option>
+                      ))}
+                    </Select>
                   </Form.Item>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true }]}><Input placeholder="Ej: UND / Gramo / ml" /></Form.Item>
                   </div>
-                  {tipoSel === 'MATERIA_PRIMA' && (
-                    <Form.Item
-                      name="tipo_cafe"
-                      label="Tipo de Café (solo si este insumo es café)"
-                      extra="Define la dosificación por calibración: Soluble = 2 gr por bebida · Grano (molino) = 8 gr por bebida."
-                    >
-                      <Select allowClear placeholder="No es café / no aplica">
-                        <Option value="SOLUBLE">☕ Café SOLUBLE (2 gr por bebida)</Option>
-                        <Option value="GRANO">☕ Café en GRANO (8 gr por bebida)</Option>
-                      </Select>
-                    </Form.Item>
-                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="equivalencia" label="Equivalencia (und x empaque)" rules={[{ required: true }]}>
                       <InputNumber style={{ width: '100%' }} min={1} />

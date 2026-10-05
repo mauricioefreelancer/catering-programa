@@ -19,7 +19,6 @@ import {
   Modal,
   Radio,
   Tag,
-  AutoComplete,
 } from 'antd'
 import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined, FileAddOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -32,11 +31,26 @@ const { Title, Text } = Typography
 const { Option } = Select
 const { TextArea } = Input
 
-// Categorías de insumo disponibles (qué es el producto físicamente)
+// Categorías de insumo disponibles (catálogo cerrado). Sólo estas opciones.
+// CAFE_SOLUBLE y CAFE_GRANO reemplazan al campo "Tipo de Café".
 const CATEGORIAS_INSUMO = [
-  'CAFE', 'VASO', 'MEZCLADOR', 'AZUCAR', 'GRANO', 'LACTEO',
-  'CHOCOLATE', 'AROMATICA', 'SNACK', 'BEBIDA', 'EMPAQUE',
-].map((v) => ({ value: v }))
+  { value: 'LECHE_POLVO', label: '🥛 Leche en polvo' },
+  { value: 'AROMATICA_FRUTOS_ROJOS', label: '🌿 Aromática frutos rojos' },
+  { value: 'AROMATICA_HIERBA_BUENA', label: '🌿 Aromática hierba buena' },
+  { value: 'CHOCOLATE', label: '🍫 Chocolate' },
+  { value: 'VASO', label: '🥤 Vaso' },
+  { value: 'MEZCLADOR', label: '🥄 Mezclador' },
+  { value: 'AZUCAR', label: '🍬 Azúcar' },
+  { value: 'CAFE_SOLUBLE', label: '☕ Café soluble' },
+  { value: 'CAFE_GRANO', label: '☕ Café grano' },
+]
+// El tipo de café se deriva de la categoría (dosis en máquinas: soluble=2gr, grano=8gr).
+const tipoCafeDeCategoria = (categoria?: string | null): 'SOLUBLE' | 'GRANO' | null => {
+  const cUp = (categoria || '').trim().toUpperCase()
+  if (cUp === 'CAFE_SOLUBLE') return 'SOLUBLE'
+  if (cUp === 'CAFE_GRANO') return 'GRANO'
+  return null
+}
 
 interface ItemIngreso {
   id: number
@@ -149,6 +163,8 @@ const Ingresos = () => {
         codigoBarras: values.codigo_barras,
         nombre: values.nombre,
         categoriaInsumo: values.categoria_insumo || null,
+        // El tipo de café se deriva de la categoría elegida (soluble/grano)
+        tipoCafe: tipoCafeDeCategoria(values.categoria_insumo),
         Tipo_Producto: tipoNuevo,
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
@@ -428,16 +444,18 @@ const Ingresos = () => {
           <Form.Item
             name="categoria_insumo"
             label="Categoría de Insumo"
-            extra="Qué es físicamente el producto (café, vaso, mezclador...). Elija de la lista o escriba otra."
+            extra="Catálogo cerrado. El tipo de café (soluble/grano) se selecciona aquí, no por separado."
           >
-            <AutoComplete
-              options={CATEGORIAS_INSUMO}
-              placeholder="Ej: MEZCLADOR / Otro..."
+            <Select
+              allowClear
+              placeholder="Seleccione la categoría del insumo"
               style={{ width: '100%' }}
-              filterOption={(inputValue, option: any) =>
-                option!.value.toUpperCase().includes(inputValue.toUpperCase())
-              }
-            />
+              optionLabelProp="label"
+            >
+              {CATEGORIAS_INSUMO.map((o) => (
+                <Option key={o.value} value={o.value} label={o.label}>{o.label}</Option>
+              ))}
+            </Select>
           </Form.Item>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true, message: 'Requerido' }]}>
