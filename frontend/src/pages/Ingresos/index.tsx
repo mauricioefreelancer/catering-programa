@@ -20,7 +20,7 @@ import {
   Radio,
   Tag,
 } from 'antd'
-import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined, FileAddOutlined } from '@ant-design/icons'
+import { PlusSquareOutlined, MinusCircleOutlined, SendOutlined, InboxOutlined, DollarOutlined, ReloadOutlined, FileAddOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
@@ -60,6 +60,10 @@ interface ItemIngreso {
   costo: number
   vencimiento: string
   subtotal: number
+  stockActual?: number
+  stockMin?: number
+  stockMax?: number
+  editandoCosto?: boolean
 }
 
 const Ingresos = () => {
@@ -101,6 +105,9 @@ const Ingresos = () => {
         id: p.idProducto ?? p.id,
         nombre: p.nombreProducto ?? p.nombre ?? '',
         costo: p.costoBase ?? p.costo ?? 0,
+        stockActual: Number(p.stockActual ?? p.stock_actual ?? 0),
+        stockMin: Number(p.stockMin ?? p.stock_min ?? 0),
+        stockMax: Number(p.stockMax ?? p.stock_max ?? 0),
         proveedorNombre: (p.proveedor?.razonSocial ?? p.proveedor?.razon_social ?? p.proveedor?.nombre ?? ''),
       }))
 
@@ -120,7 +127,7 @@ const Ingresos = () => {
 
   const addItem = () => {
     const newId = Math.max(0, ...items.map((i) => i.id), 0) + 1
-    const productoDefault = productos.length > 0 ? productos[0] : { id: 0, nombre: '', costo: 0 }
+    const productoDefault = productos.length > 0 ? productos[0] : { id: 0, nombre: '', costo: 0, stockActual: 0, stockMin: 0, stockMax: 0 }
     setItems([
       ...items,
       {
@@ -131,6 +138,10 @@ const Ingresos = () => {
         costo: productoDefault.costo,
         vencimiento: dayjs().add(6, 'month').format('YYYY-MM-DD'),
         subtotal: productoDefault.costo,
+        stockActual: productoDefault.stockActual ?? 0,
+        stockMin: productoDefault.stockMin ?? 0,
+        stockMax: productoDefault.stockMax ?? 0,
+        editandoCosto: false,
       },
     ])
   }
@@ -143,6 +154,14 @@ const Ingresos = () => {
     }
     setItems(next)
   }
+  // Indica si al recibir la cantidad el producto quedará por encima de su stock máximo.
+  const esSobreStock = (i: ItemIngreso): boolean => {
+    const max = Number(i.stockMax ?? 0)
+    const actual = Number(i.stockActual ?? 0)
+    return max > 0 && actual + Number(i.cantidad || 0) > max
+  }
+  // Productos que sobrepasan su stock máximo en el ingreso actual.
+  const sobreStockItems = items.filter(esSobreStock)
 
   const total = items.reduce((s, i) => s + i.subtotal, 0)
 
@@ -203,6 +222,7 @@ const Ingresos = () => {
     }
   }
 
+  const [sobreStockConfirmado, setSobreStockConfirmado] = useState(false)
   const handleConfirm = async () => {
     let values: any
     try {
@@ -216,6 +236,32 @@ const Ingresos = () => {
     }
     if (!(usuario?.idUsuario) && !(usuario?.id)) {
       message.error('No hay sesión de usuario válida (idUsuario) para registrar quién hace el ingreso. Re-inicia sesión.')
+      return
+    }
+    // Si hay productos en sobrestock y el usuario aún no confirma, pedir confirmación.
+    if (sobreStockItems.length > 0 && !sobreStockConfirmado) {
+      Modal.confirm({
+        title: `⚠️ Alerta de SobreStock (${sobreStockItems.length})`,
+        icon: <Tag color="orange">SobreStock</Tag>,
+        content: (
+          <div>
+            <p>Los siguientes productos quedarán por encima de su stock máximo al recibirlos:</p>
+            {sobreStockItems.map((s) => (
+              <div key={s.id} style={{ marginBottom: 8 }}>
+                • <b>{s.productoNombre || `Producto #${s.productoId}`}</b>: tendrá{' '}
+                <Tag color="red">{Number(s.stockActual || 0) + Number(s.cantidad || 0)} uds</Tag> (máx. {s.stockMax}).
+              </div>
+            ))}
+            <p style={{ marginTop: 12, marginBottom: 0 }}>¿Desea recibirlos de todas formas?</p>
+          </div>
+        ),
+        okText: 'Sí, recibir de todas formas',
+        cancelText: 'Cancelar',
+        onOk: () => {
+          setSobreStockConfirmado(true)
+          setTimeout(() => handleConfirm(), 100)
+        },
+      })
       return
     }
     setLoading(true)
@@ -237,6 +283,7 @@ const Ingresos = () => {
       message.success(`Ingreso #${res?.idIngreso ?? res?.id ?? Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
       form.resetFields()
       setItems([])
+      setSobreStockConfirmado(false)
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al guardar ingreso')
     } finally {
@@ -248,29 +295,50 @@ const Ingresos = () => {
     {
       title: 'Producto',
       dataIndex: 'productoId',
-      width: 300,
-      render: (_: any, r: ItemIngreso, i: number) => (
-        <Select
-          showSearch
-          value={r.productoId}
-          style={{ width: '100%' }}
-          optionFilterProp="label"
-          onChange={(v: any) => {
-            const p = productos.find((x) => x.id === v)!
-            updateItem(i, { productoId: v, productoNombre: p?.nombre ?? '', costo: p?.costo ?? 0 })
-          }}
-        >
-          {productos.map((p) => {
-            const lbl = p.proveedorNombre ? `${p.nombre} · ${p.proveedorNombre}` : p.nombre
-            return (
-              <Option key={p.id} value={p.id} label={lbl}>
-                <span>{p.nombre}</span>
-                {p.proveedorNombre ? <Tag color="cyan" style={{ marginLeft: 8 }}>{p.proveedorNombre}</Tag> : null}
-              </Option>
-            )
-          })}
-        </Select>
-      ),
+      width: 320,
+      render: (_: any, r: ItemIngreso, i: number) => {
+        const sobre = esSobreStock(r)
+        return (
+          <div>
+            <Select
+              showSearch
+              value={r.productoId}
+              style={{ width: '100%' }}
+              optionFilterProp="label"
+              onChange={(v: any) => {
+                const p = productos.find((x) => x.id === v)
+                updateItem(i, {
+                  productoId: v,
+                  productoNombre: p?.nombre ?? '',
+                  costo: p?.costo ?? 0,
+                  stockActual: p?.stockActual ?? 0,
+                  stockMin: p?.stockMin ?? 0,
+                  stockMax: p?.stockMax ?? 0,
+                  editandoCosto: false,
+                })
+              }}
+            >
+              {productos.map((p) => {
+                const lbl = p.proveedorNombre ? `${p.nombre} · ${p.proveedorNombre}` : p.nombre
+                return (
+                  <Option key={p.id} value={p.id} label={lbl}>
+                    <span>{p.nombre}</span>
+                    {p.proveedorNombre ? <Tag color="cyan" style={{ marginLeft: 8 }}>{p.proveedorNombre}</Tag> : null}
+                    {Number(p.stockMax) > 0 ? (
+                      <Tag color="geekblue" style={{ marginLeft: 8 }}>Stock: {p.stockActual}/{p.stockMax}</Tag>
+                    ) : null}
+                  </Option>
+                )
+              })}
+            </Select>
+            {sobre && (
+              <Tag color="red" style={{ marginTop: 4 }}>
+                ⚠️ Queda sobre stock: {Number(r.stockActual || 0) + Number(r.cantidad || 0)} / máx {r.stockMax}
+              </Tag>
+            )}
+          </div>
+        )
+      },
     },
     {
       title: 'Cantidad',
@@ -283,10 +351,39 @@ const Ingresos = () => {
     {
       title: 'Costo Und',
       dataIndex: 'costo',
-      width: 140,
-      render: (_: any, r: ItemIngreso, i: number) => (
-        <InputNumber min={0} prefix="$" value={r.costo} style={{ width: '100%' }} onChange={(v: any) => updateItem(i, { costo: Number(v) })} />
-      ),
+      width: 190,
+      render: (_: any, r: ItemIngreso, i: number) => {
+        if (r.editandoCosto) {
+          return (
+            <Space.Compact style={{ width: '100%' }}>
+              <InputNumber
+                min={0}
+                prefix="$"
+                value={r.costo}
+                style={{ width: '100%' }}
+                onChange={(v: any) => updateItem(i, { costo: Number(v) })}
+              />
+              <Button
+                type="primary"
+                onClick={() => updateItem(i, { editandoCosto: false })}
+                title="Confirmar costo"
+              >
+                ✓
+              </Button>
+            </Space.Compact>
+          )
+        }
+        return (
+          <Space.Compact style={{ width: '100%' }}>
+            <Input value={`$ ${Number(r.costo || 0).toLocaleString('es-CO')}`} readOnly style={{ background: '#f5f5f5' }} />
+            <Button
+              icon={<EditOutlined />}
+              onClick={() => updateItem(i, { editandoCosto: true })}
+              title="Editar costo"
+            />
+          </Space.Compact>
+        )
+      },
     },
     {
       title: 'Vencimiento',

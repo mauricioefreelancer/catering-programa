@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag } from 'antd'
+import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table } from 'antd'
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -209,6 +209,117 @@ const PanelKpisCharts = ({
   )
 }
 
+const PanelProductosStock = () => {
+  const [loading, setLoading] = useState(false)
+  const [productos, setProductos] = useState<any[]>([])
+
+  const cargar = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res: any = await apiService.get('/productos?limit=2000&take=2000')
+      const lista = Array.isArray(res) ? res : (res?.data || [])
+      const norm = lista.map((p: any) => ({
+        id: p.idProducto ?? p.id,
+        nombre: p.nombreProducto ?? p.nombre ?? '—',
+        codigo: p.codigoBarras ?? p.codigo_barras ?? '—',
+        stockActual: Number(p.stockActual ?? p.stock_actual ?? 0),
+        stockMin: Number(p.stockMin ?? p.stock_min ?? 0),
+        stockMax: Number(p.stockMax ?? p.stock_max ?? 0),
+        categoria: p.categoriaInsumo ?? p.categoria_insumo ?? null,
+        estado: p.estado,
+      }))
+      setProductos(norm)
+    } catch (e: any) {
+      message.error('Error cargando productos: ' + (e?.message || e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    cargar()
+  }, [cargar])
+
+  const sobreStock = productos.filter((p) => Number(p.stockMax) > 0 && Number(p.stockActual) > Number(p.stockMax))
+  const bajoStock = productos.filter((p) => Number(p.stockMin) > 0 && Number(p.stockActual) <= Number(p.stockMin))
+
+  const cols = (tipo: 'sobre' | 'bajo') => [
+    { title: 'Producto', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
+    { title: 'Código', dataIndex: 'codigo', key: 'codigo', width: 150 },
+    {
+      title: 'Categoría',
+      dataIndex: 'categoria',
+      key: 'categoria',
+      width: 180,
+      render: (v: string | null) => (v ? <Tag>{v}</Tag> : <span style={{ color: '#bbb' }}>—</span>),
+    },
+    {
+      title: 'Stock Actual',
+      dataIndex: 'stockActual',
+      key: 'stockActual',
+      width: 140,
+      render: (v: number) => <Tag color={tipo === 'sobre' ? 'orange' : 'red'}>{v} uds</Tag>,
+    },
+    { title: 'Stock Mínimo', dataIndex: 'stockMin', key: 'stockMin', width: 130 },
+    { title: 'Stock Máximo', dataIndex: 'stockMax', key: 'stockMax', width: 130 },
+  ]
+
+  return (
+    <div>
+      <Row gutter={[16, 16]} style={{ marginTop: 4 }}>
+        <Col xs={24} lg={12}>
+          <Card
+            size="small"
+            title={`🟠 SobreStock (${sobreStock.length})`}
+            extra={<Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button>}
+          >
+            <Alert
+              type="warning"
+              showIcon
+              message="Productos por encima de su stock máximo."
+              style={{ marginBottom: 12 }}
+            />
+            <Table
+              rowKey="id"
+              size="small"
+              loading={loading}
+              dataSource={sobreStock}
+              columns={cols('sobre') as any}
+              pagination={{ pageSize: 8 }}
+              locale={{ emptyText: 'Sin productos en sobrestock' }}
+              scroll={{ x: 600 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card
+            size="small"
+            title={`🔴 Bajo Stock (${bajoStock.length})`}
+            extra={<Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button>}
+          >
+            <Alert
+              type="error"
+              showIcon
+              message="Productos en o por debajo de su stock mínimo."
+              style={{ marginBottom: 12 }}
+            />
+            <Table
+              rowKey="id"
+              size="small"
+              loading={loading}
+              dataSource={bajoStock}
+              columns={cols('bajo') as any}
+              pagination={{ pageSize: 8 }}
+              locale={{ emptyText: 'Sin productos con bajo stock' }}
+              scroll={{ x: 600 }}
+            />
+          </Card>
+        </Col>
+      </Row>
+    </div>
+  )
+}
+
 const Dashboard = () => {
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([dayjs().startOf('month'), dayjs().endOf('month')])
   const { hasPermission, usuario } = useAuth()
@@ -258,7 +369,10 @@ const Dashboard = () => {
   )
 
   useEffect(() => {
-    cargarDashboard(perfilActivo)
+    // La pestaña 'productos' carga sus propios datos (PanelProductosStock); no consulta KPIs.
+    if (perfilActivo !== 'productos') {
+      cargarDashboard(perfilActivo)
+    }
   }, [perfilActivo, cargarDashboard])
 
   const tabItems: any[] = [
@@ -274,6 +388,17 @@ const Dashboard = () => {
       ),
     },
   ]
+  if (hasPermission('dashboard', 'bodega') || hasPermission('productos', 'ver') || usuario?.rol === 'GERENCIA') {
+    tabItems.unshift({
+      key: 'productos',
+      label: (
+        <span>
+          🛍️ Productos <Tag color={perfilActivo === 'productos' ? 'orange' : 'default'}>Stock</Tag>
+        </span>
+      ),
+      children: <PanelProductosStock />,
+    })
+  }
   if (hasPermission('dashboard', 'bodega') || usuario?.rol === 'GERENCIA') {
     tabItems.unshift({
       key: 'bodega',
@@ -308,7 +433,7 @@ const Dashboard = () => {
           Dashboard - Panel de Control
         </Title>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button icon={<ReloadOutlined />} onClick={() => cargarDashboard(perfilActivo)} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={() => { if (perfilActivo !== 'productos') cargarDashboard(perfilActivo) }} loading={loading}>
             Refrescar
           </Button>
           <RangePicker
