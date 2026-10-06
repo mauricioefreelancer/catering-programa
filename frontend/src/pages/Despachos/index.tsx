@@ -321,12 +321,13 @@ const Despachos = () => {
       message.error('No hay sesión de usuario (idUsuario). Re-inicia sesión.')
       return
     }
-    const items = grupo.items.filter((i) => i.cantDespachada > 0)
-    if (items.length === 0) {
-      message.warning('No hay cantidades seleccionadas para despachar en esta máquina.')
+    const aDespachar = grupo.items.filter((i) => i.cantDespachada > 0)
+    const aCero = grupo.items.filter((i) => i.cantDespachada === 0)
+    if (aDespachar.length === 0 && aCero.length === 0) {
+      message.warning('No hay líneas de producto para procesar en esta máquina.')
       return
     }
-    for (const it of items) {
+    for (const it of aDespachar) {
       if (it.cantDespachada > (it.stockActualProducto ?? Number.MAX_SAFE_INTEGER)) {
         message.error(
           `${it.nombreProducto}: Cantidad despachada ${it.cantDespachada} supera el stock actual (${it.stockActualProducto}).`,
@@ -338,7 +339,7 @@ const Despachos = () => {
       setProcesandoMaq((p) => ({ ...p, [grupo.idMaquina]: true }))
       const body = {
         idUsuario: Number(usuario.idUsuario),
-        items: items.map((i) => ({
+        items: grupo.items.map((i) => ({
           idPedido: i.idPedido,
           cantDespachada: i.cantDespachada,
           observaciones: `Despacho ${grupo.serial} - ${i.nombreProducto}`,
@@ -346,9 +347,13 @@ const Despachos = () => {
       }
       const res = await apiService.post('/despachos', body)
       const creados = res?.total ?? Array.isArray(res?.despachos) ? res.despachos.length : 0
-      message.success(
-        `✅ Despacho confirmado: ${creados} línea(s) procesada(s). Stock descontado automáticamente.`,
-      )
+      const cerrados = aCero.length
+      const msgBase = `✅ ${creados} línea(s) despachada(s). Stock descontado automáticamente.`
+      const msgFinal =
+        cerrados > 0
+          ? `✅ ${creados} línea(s) despachada(s). ${cerrados} pedido(s) cerrado(s) sin despacho (0 uds).`
+          : msgBase
+      message.success(msgFinal)
       await cargar(true)
     } catch (e: any) {
       console.error('[Despachos] confirmar error:', e)
@@ -664,19 +669,17 @@ const Despachos = () => {
                           title={`Confirmar despacho a máquina ${g.serial}?`}
                           description={
                             totalAhora === 0
-                              ? '❌ No hay líneas con cantidad > 0 para despachar.'
+                              ? 'Se cerrarán los pedidos de esta máquina SIN despachar unidades ni descontar stock (0 uds).'
                               : `Se descontarán ${totalAhora} unidades del stock de bodega en ${g.items.filter((i) => i.cantDespachada > 0).length} producto(s).`
                           }
-                          okText="Sí, despachar"
+                          okText="Sí, confirmar"
                           cancelText="Cancelar"
-                          okButtonProps={{ disabled: totalAhora === 0 }}
                           onConfirm={() => confirmar(g)}
                         >
                           <Button
                             type="primary"
                             icon={<SendOutlined />}
                             loading={!!procesandoMaq[g.idMaquina]}
-                            disabled={totalAhora === 0}
                           >
                             ✅ Confirmar Despacho
                           </Button>

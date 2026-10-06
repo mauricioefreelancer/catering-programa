@@ -55,6 +55,20 @@ export class DespachosService {
           const cantDespachada = Math.min(cantSolicitada, stockActual);
           if (cantDespachada < 0) throw new BadRequestException(`Cantidad negativa en pedido ${item.idPedido}`);
 
+          // Despacho de 0 unidades: no se envía nada de este producto a la máquina.
+          // Se cierra el pedido (solo si aún está PENDIENTE) sin descontar stock y sin
+          // crear un registro de despacho en bodega. Esto permite cerrar pedidos de
+          // productos que no requieren despacho a esa máquina.
+          if (cantDespachada === 0) {
+            if (pedido.estado === 'PENDIENTE') {
+              await tx.pedidosOperador.update({
+                where: { idPedido: pedido.idPedido },
+                data: { estado: 'APROBADO' },
+              });
+            }
+            continue;
+          }
+
           const pendienteDesp = cantSugerida - cantDespachada;
 
           if (cantDespachada > 0) {
