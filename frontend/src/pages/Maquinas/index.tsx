@@ -450,7 +450,7 @@ const Maquinas = () => {
   const saveEspiral = async () => {
     try {
       const values = await formEsp.validateFields()
-      const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
+      const prod = productos.find((p) => (p.idProducto ?? p.id) === values.productoId)
       const prodName = prod?.nombreProducto ?? prod?.nombre
       const esCafe = editing?.tipo === 'CAFE'
       // En café no se pide código de espiral; se genera internamente (I01, I02…) con un secuencial único
@@ -547,7 +547,7 @@ const Maquinas = () => {
   const saveBoton = async () => {
     try {
       const values = await formBtn.validateFields()
-      const prod = productos.find((p) => p.idProducto ?? p.id === values.productoId)
+      const prod = productos.find((p) => (p.idProducto ?? p.id) === values.productoId)
       const prodName = prod?.nombreProducto ?? prod?.nombre
       let ns: BotonNRQ[]
 
