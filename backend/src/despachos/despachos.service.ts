@@ -36,51 +36,57 @@ export class DespachosService {
   }
 
   async create(dto: CreateDespachoDto) {
-    return this.prisma.$transaction(async (tx) => {
-      const result: any[] = [];
-      for (const item of dto.items) {
-        const pedido = await tx.pedidosOperador.findUnique({
-          where: { idPedido: item.idPedido },
-          include: { producto: true },
-        });
-        if (!pedido) throw new NotFoundException(`Pedido ${item.idPedido} no encontrado`);
-        if (pedido.estado === 'APROBADO' || pedido.estado === 'RECHAZADO') {
-          throw new BadRequestException(`Pedido ${item.idPedido} ya está ${pedido.estado}`);
-        }
-
-        const stockActual = (pedido.producto as any).stockActual ?? 0;
-        const cantSugerida = pedido.cantSugerida;
-        const cantSolicitada = item.cantDespachada ?? cantSugerida;
-        const cantDespachada = Math.min(cantSolicitada, stockActual);
-        if (cantDespachada < 0) throw new BadRequestException(`Cantidad negativa en pedido ${item.idPedido}`);
-
-        const pendienteDesp = cantSugerida - cantDespachada;
-
-        if (cantDespachada > 0) {
-          await tx.productos.update({
-            where: { idProducto: pedido.idProducto },
-            data: { stockActual: { decrement: cantDespachada } },
+    return this.prisma.$transaction(
+      async (tx) => {
+        const result: any[] = [];
+        for (const item of dto.items) {
+          const pedido = await tx.pedidosOperador.findUnique({
+            where: { idPedido: item.idPedido },
+            include: { producto: true },
           });
+          if (!pedido) throw new NotFoundException(`Pedido ${item.idPedido} no encontrado`);
+          if (pedido.estado === 'APROBADO' || pedido.estado === 'RECHAZADO') {
+            throw new BadRequestException(`Pedido ${item.idPedido} ya está ${pedido.estado}`);
+          }
+
+          const stockActual = (pedido.producto as any).stockActual ?? 0;
+          const cantSugerida = pedido.cantSugerida;
+          const cantSolicitada = item.cantDespachada ?? cantSugerida;
+          const cantDespachada = Math.min(cantSolicitada, stockActual);
+          if (cantDespachada < 0) throw new BadRequestException(`Cantidad negativa en pedido ${item.idPedido}`);
+
+          const pendienteDesp = cantSugerida - cantDespachada;
+
+          if (cantDespachada > 0) {
+            await tx.productos.update({
+              where: { idProducto: pedido.idProducto },
+              data: { stockActual: { decrement: cantDespachada } },
+            });
+          }
+
+          const nuevoEstado = pendienteDesp <= 0 ? 'APROBADO' : 'PARCIAL';
+          await tx.pedidosOperador.update({
+            where: { idPedido: pedido.idPedido },
+            data: { estado: nuevoEstado },
+          });
+
+          const desp = await tx.despachosBodega.create({
+            data: {
+              idPedido: pedido.idPedido,
+              idUsuario: dto.idUsuario,
+              cantDespachada,
+              pendienteDesp,
+              observaciones: item.observaciones ?? null,
+            },
+          });
+          result.push(desp);
         }
-
-        const nuevoEstado = pendienteDesp <= 0 ? 'APROBADO' : 'PARCIAL';
-        await tx.pedidosOperador.update({
-          where: { idPedido: pedido.idPedido },
-          data: { estado: nuevoEstado },
-        });
-
-        const desp = await tx.despachosBodega.create({
-          data: {
-            idPedido: pedido.idPedido,
-            idUsuario: dto.idUsuario,
-            cantDespachada,
-            pendienteDesp,
-            observaciones: item.observaciones ?? null,
-          },
-        });
-        result.push(desp);
-      }
-      return { despachos: result, total: result.length };
-    });
+        return { despachos: result, total: result.length };
+      },
+      // Aumenta los timeouts de la transacción interactiva:
+      // - `timeout`: duración máxima de la transacción (default 5000 ms) → 60 s
+      // - `maxWait`: espera a que la transacción esté disponible ante presión del pool (default 2000 ms) → 30 s
+      { timeout: 60000, maxWait: 30000 },
+    );
   }
 }
