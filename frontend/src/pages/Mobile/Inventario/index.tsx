@@ -7,7 +7,6 @@ import {
   message,
   Typography,
   Space,
-  Table,
   Tag,
   Result,
   Alert,
@@ -201,77 +200,18 @@ const InventarioMobile = () => {
 
   const totalNRQVendidas = useMemo(() => botones.reduce((s, b) => s + (b.valor || 0), 0), [botones])
 
-  const colsEsp = [
-    { title: 'Esp.', dataIndex: 'espiral', width: 70, render: (v: string) => <Tag color="blue" style={{ fontSize: 16, fontWeight: 'bold' }}>{v}</Tag> },
-    {
-      title: 'Producto',
-      dataIndex: 'productoNombre',
-      render: (v: string, r: EspiralRow) => (
-        <div>
-          <Text strong>{v}</Text>
-          <div style={{ fontSize: 11, color: '#888' }}>Cap. Máx: {r.capacidad_max}</div>
-        </div>
-      ),
-    },
-    {
-      title: (
-        <span style={{ color: '#722ed1', fontWeight: 'bold' }}>
-          Físico Digitado
-        </span>
-      ),
-      dataIndex: 'fisico_digitado',
-      width: 160,
-      render: (_: any, r: EspiralRow, i: number) => (
-        <InputNumber
-          size="large"
-          min={0}
-          max={r.capacidad_max}
-          value={r.fisico_digitado}
-          style={{ width: '100%', fontWeight: 'bold', fontSize: 18 }}
-          onChange={(v: any) => {
-            const n = [...espirales]
-            n[i] = { ...n[i], fisico_digitado: Number(v) || 0 }
-            const sug = Math.max(0, r.capacidad_max - (Number(v) || 0))
-            n[i].cant_sugerida = sug
-            setEspirales(n)
-          }}
-        />
-      ),
-    },
-    {
-      title: 'Cant Sugerida',
-      dataIndex: 'cant_sugerida',
-      width: 110,
-      align: 'center' as const,
-      render: (v: number) => {
-        if (v <= 0) return <Tag type="circle">0</Tag>
-        return <Tag color="blue" style={{ fontSize: 15, fontWeight: 'bold' }}>+{v}</Tag>
-      },
-    },
-  ]
+  const actualizarFisico = (i: number, v: number, r: EspiralRow) => {
+    const n = [...espirales]
+    n[i] = { ...n[i], fisico_digitado: Number(v) || 0 }
+    n[i].cant_sugerida = Math.max(0, r.capacidad_max - (Number(v) || 0))
+    setEspirales(n)
+  }
 
-  const colsNRQ = [
-    { title: 'Botón', dataIndex: 'boton', width: 90, render: (v: string) => <Tag color="purple" style={{ fontSize: 16, fontWeight: 'bold' }}>{v}</Tag> },
-    { title: 'Producto Dosificado', dataIndex: 'productoNombre', render: (v: string) => <Text strong>{v}</Text> },
-    {
-      title: 'NRQ (Contador)',
-      dataIndex: 'valor',
-      width: 220,
-      render: (_: any, r: NRQRow, i: number) => (
-        <InputNumber
-          size="large"
-          min={0}
-          value={r.valor}
-          style={{ width: '100%', fontWeight: 'bold', fontSize: 18 }}
-          onChange={(v: any) => {
-            const n = [...botones]
-            n[i] = { ...n[i], valor: Number(v) || 0 }
-            setBotones(n)
-          }}
-        />
-      ),
-    },
-  ]
+  const actualizarBotones = (i: number, v: number) => {
+    const n = [...botones]
+    n[i] = { ...n[i], valor: Number(v) || 0 }
+    setBotones(n)
+  }
 
   const canAdvanceStep1 = () => {
     // Se permite avanzar aunque el físico digitado sea 0 (el operador puede llegar
@@ -444,14 +384,45 @@ const InventarioMobile = () => {
                 message="💡 Digita la cantidad que hay ACTUALMENTE en cada espiral. El sistema calcula automáticamente la Cantidad Sugerida para llenar a Capacidad Máxima."
                 style={{ marginBottom: 8 }}
               />
-              <Table
-                size="small"
-                rowKey="key"
-                dataSource={espirales}
-                columns={colsEsp}
-                pagination={false}
-                scroll={{ y: 500, x: 'max-content' }}
-              />
+              <div className="mobile-espiral-list">
+                {espirales.map((e, i) => (
+                  <Card key={e.key} size="small" style={{ marginBottom: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                    <Row gutter={8} align="middle">
+                      <Col xs={6}>
+                        <Tag color="blue" style={{ fontSize: 16, fontWeight: 'bold', margin: 0 }}>{e.espiral}</Tag>
+                      </Col>
+                      <Col xs={18}>
+                        <Text strong style={{ fontSize: 13 }}>{e.productoNombre}</Text>
+                        <div style={{ fontSize: 11, color: '#888' }}>Cap. Máx: {e.capacidad_max}</div>
+                      </Col>
+                    </Row>
+                    <Divider style={{ margin: '8px 0' }} />
+                    <Row gutter={8} align="middle">
+                      <Col xs={13}>
+                        <Text style={{ fontSize: 11, color: '#722ed1', fontWeight: 600 }}>Físico Digitado</Text>
+                        <InputNumber
+                          size="large"
+                          min={0}
+                          max={e.capacidad_max}
+                          value={e.fisico_digitado}
+                          style={{ width: '100%', fontWeight: 'bold', fontSize: 18 }}
+                          onChange={(v: any) => actualizarFisico(i, Number(v), e)}
+                        />
+                      </Col>
+                      <Col xs={11} style={{ textAlign: 'right' }}>
+                        <Text style={{ fontSize: 11, color: '#888' }}>Cant. Sugerida</Text>
+                        <div>
+                          {e.cant_sugerida <= 0 ? (
+                            <Tag type="circle" style={{ fontSize: 16 }}>0</Tag>
+                          ) : (
+                            <Tag color="blue" style={{ fontSize: 16, fontWeight: 'bold' }}>+{e.cant_sugerida}</Tag>
+                          )}
+                        </div>
+                      </Col>
+                    </Row>
+                  </Card>
+                ))}
+              </div>
             </>
           ) : (
             <Alert
@@ -520,14 +491,29 @@ const InventarioMobile = () => {
                       ☕ Contadores NRQ por Botón (Dosificadora)
                     </Text>
                     <Divider style={{ margin: '6px 0' }} />
-                    <Table
-                      size="small"
-                      rowKey="key"
-                      dataSource={botones}
-                      columns={colsNRQ}
-                      pagination={false}
-                      scroll={{ y: 400, x: 'max-content' }}
-                    />
+                    <div className="mobile-nrq-list">
+                      {botones.map((b, i) => (
+                        <Card key={b.key} size="small" style={{ marginBottom: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
+                          <Row gutter={8} align="middle">
+                            <Col xs={7}>
+                              <Tag color="purple" style={{ fontSize: 16, fontWeight: 'bold', margin: 0 }}>{b.boton}</Tag>
+                            </Col>
+                            <Col xs={17}>
+                              <Text strong style={{ fontSize: 13 }}>{b.productoNombre}</Text>
+                            </Col>
+                          </Row>
+                          <Divider style={{ margin: '8px 0' }} />
+                          <Text style={{ fontSize: 11, color: '#722ed1', fontWeight: 600 }}>NRQ (Contador)</Text>
+                          <InputNumber
+                            size="large"
+                            min={0}
+                            value={b.valor}
+                            style={{ width: '100%', fontWeight: 'bold', fontSize: 18, marginTop: 4 }}
+                            onChange={(v: any) => actualizarBotones(i, Number(v))}
+                          />
+                        </Card>
+                      ))}
+                    </div>
                     {consumoEstimado.length > 0 && (
                       <Card size="small" title="🧪 Vista previa: Materia Prima consumida" style={{ marginTop: 10, background: '#fffbe6', borderColor: '#ffe58f' }}>
                         {consumoEstimado.map((c, i) => (
