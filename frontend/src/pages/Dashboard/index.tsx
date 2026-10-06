@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input } from 'antd'
+import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input, Space } from 'antd'
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -275,6 +275,45 @@ const PanelProductosStock = () => {
     { title: 'Stock Máximo', dataIndex: 'stockMax', key: 'stockMax', width: 130 },
   ]
 
+  const descargarPDFStock = () => {
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 14
+
+    doc.setFontSize(15)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(33, 37, 41)
+    doc.text('STOCK ACTUAL DE PRODUCTOS', margin, 16)
+    doc.setFontSize(8.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(90)
+    doc.text(`Generado: ${new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}`, pageWidth - margin, 16, { align: 'right' })
+    doc.setDrawColor(180, 180, 180)
+    doc.setLineWidth(0.3)
+    doc.line(margin, 20, pageWidth - margin, 20)
+
+    const cuerpo = productosFiltrados.map((p: any) => [
+      p.nombre || '—',
+      p.codigo && p.codigo !== '—' ? p.codigo : '—',
+      p.categoria || '—',
+      String(p.stockActual || 0),
+      String(p.stockMin || 0),
+      String(p.stockMax || 0),
+    ])
+
+    autoTable(doc, {
+      startY: 26,
+      theme: 'striped',
+      headStyles: { fillColor: [52, 58, 64], textColor: 255 },
+      styles: { fontSize: 8, cellPadding: 2 },
+      margin: { left: margin, right: margin },
+      head: [['Producto', 'Código', 'Categoría', 'Stock Actual', 'Stock Mín.', 'Stock Máx.']],
+      body: cuerpo.length ? cuerpo : [['Sin productos registrados', '', '', '', '', '']],
+    })
+
+    doc.save('Stock_Actual_Productos.pdf')
+  }
+
   const cols = (tipo: 'sobre' | 'bajo') => [
     { title: 'Producto', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
     { title: 'Código', dataIndex: 'codigo', key: 'codigo', width: 150 },
@@ -349,7 +388,7 @@ const PanelProductosStock = () => {
         </Col>
       </Row>
 
-      <Card size="small" title="📦 Stock Actual de Todos los Productos" style={{ marginTop: 16 }} extra={<Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button>}>
+      <Card size="small" title="📦 Stock Actual de Todos los Productos" style={{ marginTop: 16 }} extra={<Space><Button size="small" icon={<DownloadOutlined />} onClick={descargarPDFStock}>Descargar PDF</Button><Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button></Space>}>
         <Alert
           type="info"
           showIcon
