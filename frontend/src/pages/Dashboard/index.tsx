@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select } from 'antd'
+import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input, Space } from 'antd'
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -215,6 +215,7 @@ const PanelKpisCharts = ({
 const PanelProductosStock = () => {
   const [loading, setLoading] = useState(false)
   const [productos, setProductos] = useState<any[]>([])
+  const [busquedaStock, setBusquedaStock] = useState('')
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -245,6 +246,59 @@ const PanelProductosStock = () => {
 
   const sobreStock = productos.filter((p) => Number(p.stockMax) > 0 && Number(p.stockActual) > Number(p.stockMax))
   const bajoStock = productos.filter((p) => Number(p.stockMin) > 0 && Number(p.stockActual) <= Number(p.stockMin))
+
+  const stockFiltrado = productos.filter((p) => {
+    const q = busquedaStock.trim().toLowerCase()
+    if (!q) return true
+    return String(p.nombre).toLowerCase().includes(q) || String(p.codigo).toLowerCase().includes(q) || String(p.categoria || '').toLowerCase().includes(q)
+  })
+
+  const colsStock = [
+    { title: 'Producto', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
+    { title: 'Código', dataIndex: 'codigo', key: 'codigo', width: 150 },
+    {
+      title: 'Categoría',
+      dataIndex: 'categoria',
+      key: 'categoria',
+      width: 180,
+      render: (v: string | null) => (v ? <Tag>{v}</Tag> : <span style={{ color: '#bbb' }}>—</span>),
+    },
+    {
+      title: 'Stock Actual',
+      dataIndex: 'stockActual',
+      key: 'stockActual',
+      width: 130,
+      render: (v: number) => <Tag color="blue">{v} uds</Tag>,
+    },
+    {
+      title: 'Stock Mínimo',
+      dataIndex: 'stockMin',
+      key: 'stockMin',
+      width: 120,
+      render: (v: number, r: any) => (Number(r.stockMin) > 0 ? `${v} uds` : '—'),
+    },
+    {
+      title: 'Stock Máximo',
+      dataIndex: 'stockMax',
+      key: 'stockMax',
+      width: 120,
+      render: (v: number, r: any) => (Number(r.stockMax) > 0 ? `${v} uds` : '—'),
+    },
+    {
+      title: 'Estado',
+      dataIndex: 'stockActual',
+      key: 'estado',
+      width: 150,
+      render: (_: number, r: any) => {
+        const max = Number(r.stockMax)
+        const min = Number(r.stockMin)
+        const act = Number(r.stockActual)
+        if (max > 0 && act > max) return <Tag color="orange">Sobre stock</Tag>
+        if (min > 0 && act <= min) return <Tag color="red">Bajo stock</Tag>
+        return <Tag color="green">Adecuado</Tag>
+      },
+    },
+  ]
 
   const cols = (tipo: 'sobre' | 'bajo') => [
     { title: 'Producto', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
@@ -315,6 +369,37 @@ const PanelProductosStock = () => {
               pagination={{ pageSize: 8 }}
               locale={{ emptyText: 'Sin productos con bajo stock' }}
               scroll={{ x: 600 }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col span={24}>
+          <Card
+            size="small"
+            title={`📦 Stock Actual de Todos los Productos (${productos.length})`}
+            extra={
+              <Space>
+                <Input.Search
+                  allowClear
+                  placeholder="Buscar producto..."
+                  style={{ width: 260 }}
+                  onChange={(e) => setBusquedaStock(e.target.value)}
+                />
+                <Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button>
+              </Space>
+            }
+          >
+            <Table
+              rowKey="id"
+              size="small"
+              loading={loading}
+              dataSource={stockFiltrado}
+              columns={colsStock}
+              pagination={{ pageSize: 10 }}
+              locale={{ emptyText: 'Sin productos para el filtro' }}
+              scroll={{ x: 900 }}
             />
           </Card>
         </Col>
