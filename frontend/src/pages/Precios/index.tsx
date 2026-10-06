@@ -17,7 +17,7 @@ import {
   Divider,
   Spin,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, SaveOutlined, RiseOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, SaveOutlined, RiseOutlined, ReloadOutlined, EditOutlined } from '@ant-design/icons'
 import { usePermissions } from '../../hooks/usePermissions'
 import { apiService } from '../../api/services/api'
 
@@ -56,6 +56,7 @@ const Precios = () => {
   const [fProducto, setFProducto] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [editMap, setEditMap] = useState<Record<number, number>>({})
+  const [editingRowId, setEditingRowId] = useState<number | null>(null)
   const [openIPC, setOpenIPC] = useState(false)
   const [loading, setLoading] = useState(false)
   const [ipcForm] = Form.useForm()
@@ -229,19 +230,33 @@ const Precios = () => {
     { title: 'Producto', dataIndex: 'productoNombre', key: 'p', render: (v: string) => <strong>{v}</strong> },
     { title: 'Costo Total', dataIndex: 'costo_total', key: 'ct', render: (v: number) => `$ ${v.toLocaleString('es-CO')}`, width: 130 },
     {
-      title: 'Precio Venta (editable)',
+      title: 'Precio Venta',
       dataIndex: 'precio_venta',
       key: 'pv',
-      width: 200,
-      render: (v: number, r: Precio) => (
-        <InputNumber
-          min={0}
-          value={v}
-          prefix="$"
-          style={{ width: '100%' }}
-          onChange={(val) => updatePrice(r.id, Number(val))}
-        />
-      ),
+      width: 240,
+      render: (v: number, r: Precio) => {
+        const esEdicion = editingRowId === r.id
+        return (
+          <Space.Compact style={{ width: '100%' }}>
+            {esEdicion ? (
+              <InputNumber
+                min={0}
+                defaultValue={v}
+                prefix="$"
+                style={{ width: '100%' }}
+                onChange={(val) => updatePrice(r.id, Number(val))}
+              />
+            ) : (
+              <span style={{ lineHeight: '32px', fontSize: 13 }}>$ {v.toLocaleString('es-CO')}</span>
+            )}
+            {esEdicion ? (
+              <Button type="primary" onClick={() => setEditingRowId(null)}>Ok</Button>
+            ) : (
+              <Button icon={<EditOutlined />} onClick={() => setEditingRowId(r.id)}>Editar</Button>
+            )}
+          </Space.Compact>
+        )
+      },
     },
     {
       title: 'Margen %',
@@ -269,7 +284,7 @@ const Precios = () => {
           </Select>
           {perm.crear && (
             <>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setOpenCrear(true); crearForm.resetFields() }}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setOpenCrear(true); crearForm.resetFields(); crearForm.setFieldsValue({ idCliente: fCliente ?? undefined }) }}>
                 Nueva Asignación
               </Button>
               <Button icon={<RiseOutlined />} onClick={() => setOpenIPC(true)}>
@@ -408,8 +423,11 @@ const Precios = () => {
         width={520}
       >
         <Form form={crearForm} layout="vertical" onFinish={handleCrear}>
+          {fCliente ? (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }} message={`Se usará el cliente del filtro: ${clientes.find((c) => c.id === fCliente)?.razonSocial || clientes.find((c) => c.id === fCliente)?.nombre || `Cliente #${fCliente}`}. Si desea otro, limpie el filtro de cliente.`} />
+          ) : null}
           <Form.Item name="idCliente" label="Cliente" rules={[{ required: true, message: 'Seleccione el cliente' }]}>
-            <Select showSearch placeholder="Seleccione el cliente" optionFilterProp="children">
+            <Select showSearch placeholder="Seleccione el cliente" optionFilterProp="children" disabled={!!fCliente}>
               {clientes.map((c) => <Option key={c.id} value={c.id}>{c.razonSocial || c.nombre || `Cliente #${c.id}`}</Option>)}
             </Select>
           </Form.Item>
