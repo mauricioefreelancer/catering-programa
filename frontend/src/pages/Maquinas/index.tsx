@@ -19,10 +19,12 @@ import {
   Checkbox,
   Modal,
 } from 'antd'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
 import { apiService } from '../../api/services/api'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 const { Title } = Typography
 const { Option } = Select
@@ -652,6 +654,159 @@ const Maquinas = () => {
     return (prov?.razonSocial ?? prov?.razon_social ?? prov?.nombre ?? '')
   }
 
+  const descargarPDFMaquina = () => {
+    if (!editing) {
+      message.warning('Primero debe abrir la máquina en edición para descargar su información')
+      return
+    }
+    const esCafe = editing.tipo === 'CAFE'
+    const mp: MediosPago = editing.mediosPago ?? ({} as MediosPago)
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 14
+
+    // ---- Encabezado ----
+    doc.setFontSize(16)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Ficha de Máquina Vending', margin, 18)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    const fecha = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
+    doc.text(`Generado: ${fecha}`, pageWidth - margin, 18, { align: 'right' })
+    doc.setDrawColor(22, 119, 255)
+    doc.setLineWidth(0.6)
+    doc.line(margin, 22, pageWidth - margin, 22)
+
+    let y = 30
+
+    // ---- Resumen datos básicos ----
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(22, 119, 255)
+    doc.text('Datos Básicos', margin, y)
+    doc.setTextColor(0, 0, 0)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2 },
+      head: [['Campo', 'Valor']],
+      body: [
+        ['Serial', editing.serial || '—'],
+        ['Marca', editing.marca || '—'],
+        ['Tipo', editing.tipo],
+        ['Estado', editing.estado],
+        ['Ubicación / Zona', editing.zona || '—'],
+        ['Base en Dinero ($)', editing.base ? editing.base.toLocaleString('es-CO') : '—'],
+      ],
+    })
+    y = (doc as any).lastAutoTable.finalY + 8
+
+    // ---- Asignaciones ----
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(22, 119, 255)
+    doc.text('Asignaciones', margin, y)
+    doc.setTextColor(0, 0, 0)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2 },
+      head: [['Asignación', 'Responsable']],
+      body: [
+        ['Cliente', editing.clienteNombre || 'Sin asignar'],
+        ['Operador a Cargo', editing.operadorNombre || 'Sin asignar'],
+      ],
+    })
+    y = (doc as any).lastAutoTable.finalY + 8
+
+    // ---- Medios de pago (con seriales) ----
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(22, 119, 255)
+    doc.text('Medios de Pago Asignados', margin, y)
+    doc.setTextColor(0, 0, 0)
+    y += 4
+    const nombrarSerial = (label: string, activo: boolean, serial?: string) => ({
+      medio: label,
+      activo: activo ? 'Sí' : 'No',
+      serial: serial || '—',
+    })
+    const filasMedios = [
+      nombrarSerial('Veos', !!mp.veos, mp.serialVeos),
+      nombrarSerial('Datafono', !!mp.datafono, mp.serialDatafono),
+      nombrarSerial('Cupos', !!mp.cupos, mp.serialCupos),
+      nombrarSerial('Efectivo - Monedero', true, mp.serialEfectivoMonedero),
+      nombrarSerial('Efectivo - Billetero', true, mp.serialEfectivoBilletero),
+    ]
+    autoTable(doc, {
+      startY: y,
+      theme: 'grid',
+      styles: { fontSize: 9, cellPadding: 2 },
+      head: [['Medio de Pago', 'Activo', 'Serial']],
+      body: filasMedios.map((f) => [f.medio, f.activo, f.serial]),
+    })
+    y = (doc as any).lastAutoTable.finalY + 8
+
+    // ---- Mapa de la máquina ----
+    let tituloMapa = 'Mapa MP (Espirales)'
+    let columnas: string[] = ['Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.']
+    let filas: any[] = []
+
+    if (esCafe) {
+      tituloMapa = 'Mapa de Insumos'
+      columnas = ['Espiral', 'Producto Asignado', 'Capacidad Actual', 'Capacidad Máx.']
+      filas = espirales.map((e) => [
+        e.espiral,
+        e.productoNombre || 'Sin asignar',
+        e.cantidad_actual ?? 0,
+        e.capacidad_max ?? 0,
+      ])
+      if (botones.length > 0) {
+        tituloMapa = 'Mapa de Insumos + Botones NRQ'
+        columnas = ['Botón/Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.']
+        const filasBotones = botones.map((b) => [
+          b.boton,
+          b.productoNombre || 'Sin asignar',
+          b.precio_venta_cliente ?? '—',
+          '—',
+          '—',
+        ])
+        filas = [...filasBotones, ...filas]
+      }
+    } else {
+      filas = espirales.map((e) => [
+        e.espiral,
+        e.productoNombre || 'Sin asignar',
+        e.precio_venta_cliente !== undefined && e.precio_venta_cliente !== null
+          ? `$${Number(e.precio_venta_cliente).toLocaleString('es-CO')}`
+          : '—',
+        e.cantidad_actual ?? 0,
+        e.capacidad_max ?? 0,
+      ])
+    }
+
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(22, 119, 255)
+    doc.text(tituloMapa, margin, y)
+    doc.setTextColor(0, 0, 0)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      theme: 'striped',
+      headStyles: { fillColor: [22, 119, 255] },
+      styles: { fontSize: 9, cellPadding: 2 },
+      head: [columnas],
+      body: filas.length ? filas : [['No hay productos asignados', '', '', '', '']],
+      columnStyles: esCafe && botones.length === 0 ? {} : { 0: { cellWidth: 30 } },
+    })
+
+    const fileName = `Maquina_${String(editing.serial || editing.id).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`
+    doc.save(fileName)
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -669,14 +824,21 @@ const Maquinas = () => {
         title={editing ? 'Editar Máquina' : 'Nueva Máquina'} open={open} onClose={resetDrawer} onSubmit={handleSubmit}
         initialValues={editing || { tipo: 'SNACK', estado: 'OPERANDO' }} loading={loading} width={920}
       >
-        <Form.Item name="tipo" label="Tipo Máquina" rules={[{ required: true }]} initialValue="SNACK">
-          <Select>
-            <Option value="SNACK">🥨 SNACK (Sólidos)</Option>
-            <Option value="BEBIDA">🥤 BEBIDA (Líquidos)</Option>
-            <Option value="COMBINADA">🧃 COMBINADA</Option>
-            <Option value="CAFE">☕ CAFÉ (Dosificadora)</Option>
-          </Select>
-        </Form.Item>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <Form.Item name="tipo" label="Tipo Máquina" rules={[{ required: true }]} initialValue="SNACK" style={{ flex: 1, minWidth: 0 }}>
+            <Select>
+              <Option value="SNACK">🥨 SNACK (Sólidos)</Option>
+              <Option value="BEBIDA">🥤 BEBIDA (Líquidos)</Option>
+              <Option value="COMBINADA">🧃 COMBINADA</Option>
+              <Option value="CAFE">☕ CAFÉ (Dosificadora)</Option>
+            </Select>
+          </Form.Item>
+          {editing && (
+            <Form.Item label="&nbsp;" style={{ flexShrink: 0, marginBottom: 24 }}>
+              <Button icon={<DownloadOutlined />} onClick={descargarPDFMaquina}>Descargar PDF</Button>
+            </Form.Item>
+          )}
+        </div>
         <Tabs
           items={[
             {
