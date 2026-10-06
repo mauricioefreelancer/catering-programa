@@ -14,13 +14,14 @@ import {
   Spin,
   Drawer,
   Descriptions,
+  Divider,
 } from 'antd'
 import { WalletOutlined, CheckCircleOutlined, ReloadOutlined, EyeOutlined, WarningOutlined, SaveOutlined } from '@ant-design/icons'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { useAuth } from '../../../hooks/useAuth'
 import { apiService } from '../../../api/services/api'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 
 // Medios de pago que maneja una máquina (Efectivo siempre está presente).
 const MEDIOS_DIGITALES = ['veos', 'datafono', 'cupos'] as const
@@ -83,7 +84,8 @@ const Efectivo = () => {
   const [selected, setSelected] = useState<VisitaRecaudo | null>(null)
   const [nrActual, setNrActual] = useState<number | null>(null)
   const [digitales, setDigitales] = useState<Record<string, number | null>>({})
-  const [efectivoRecog, setEfectivoRecog] = useState<number | null>(null)
+  const [billetes, setBilletes] = useState<number | null>(null)
+  const [monedas, setMonedas] = useState<number | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [guardandoParcial, setGuardandoParcial] = useState(false)
 
@@ -121,9 +123,10 @@ const Efectivo = () => {
       }
     }
     setDigitales(precarga)
-    setEfectivoRecog(v.recaudoGuardado?.efectivoEsperado !== undefined && v.recaudoGuardado?.estado === 'PENDIENTE'
-      ? v.recaudoGuardado.efectivoEsperado
-      : null)
+    // Efectivo recogido: se divide en billetes y monedas (su suma = efectivo total).
+    // No se precarga un desglose previo: el operador digita el detalle de cada visita.
+    setBilletes(null)
+    setMonedas(null)
   }
 
   const buildBody = (efectivo: number | null) => {
@@ -169,10 +172,11 @@ const Efectivo = () => {
       message.error(`NR debe ser >= NR Anterior (${selected.nrAnterior})`)
       return
     }
-    if (efectivoRecog === null || efectivoRecog < 0) {
-      message.error('Ingrese el efectivo recogido por el operador')
+    if (billetes === null || monedas === null || billetes < 0 || monedas < 0) {
+      message.error('Digite la cantidad de billetes y de monedas que trajo el operador')
       return
     }
+    const efectivoTotal = billetes + monedas
     setGuardando(true)
     const existePendiente = selected.idRecaudo != null && selected.estado === 'PENDIENTE' && selected.recaudoGuardado?.estado === 'PENDIENTE'
     try {
@@ -180,14 +184,14 @@ const Efectivo = () => {
       let accion: string
       if (existePendiente) {
         // Ya se guardaron los medios digitales; solo completamos el efectivo (PATCH).
-        res = await apiService.patch(`/tesoreria/efectivo-nr/${selected.idRecaudo}`, { efectivoRecog })
+        res = await apiService.patch(`/tesoreria/efectivo-nr/${selected.idRecaudo}`, { efectivoRecog: efectivoTotal })
         accion = 'cerrado'
       } else {
-        res = await apiService.post('/tesoreria/efectivo-nr', buildBody(efectivoRecog))
+        res = await apiService.post('/tesoreria/efectivo-nr', buildBody(efectivoTotal))
         accion = 'cerrado'
       }
       const idRecaudo = res?.id ?? res?.idRecaudo ?? res?.data?.idRecaudo ?? Math.floor(Math.random() * 10000)
-      message.success(`✅ Recaudo #${idRecaudo} ${accion} para la visita ${selected.idGrupo}`)
+      message.success(`✅ Recaudo #${idRecaudo} ${accion} para la visita ${selected.idGrupo}. Efectivo: $${efectivoTotal.toLocaleString('es-CO')} (billetes $${billetes.toLocaleString('es-CO')} + monedas $${monedas.toLocaleString('es-CO')})`)
       setSelected(null)
       loadData(true)
     } catch (err: any) {
@@ -204,6 +208,7 @@ const Efectivo = () => {
   const mediosActivosSel = selected ? mediosActivos(selected.maquina) : []
   const sumaDigitales = mediosActivosSel.reduce((acc, k) => acc + (digitales[k] ?? 0), 0)
   const efectivoEsperado = Math.max(0, totalVendidoActual - sumaDigitales)
+  const efectivoRecogTotal = (billetes ?? 0) + (monedas ?? 0)
   const esPendienteCerrable = !!selected && selected.idRecaudo != null && selected.estado === 'PENDIENTE' && selected.recaudoGuardado?.estado === 'PENDIENTE'
 
   const columns = [
@@ -436,19 +441,45 @@ const Efectivo = () => {
             prefix="$"
             valueStyle={{ color: '#cf1322' }}
           />
-          <div style={{ height: 12 }} />
-          <label style={{ fontWeight: 600 }}>Efectivo Recogido ($): {mediosActivosSel.length > 0 ? '* (obligatorio para cerrar)' : ''}</label>
-          <InputNumber
-            size="large"
-            style={{ width: '100%', marginTop: 8 }}
-            min={0}
-            prefix="$"
-            value={efectivoRecog}
-            onChange={(v: any) => setEfectivoRecog(Number(v))}
-            placeholder="Digite el efectivo físico que trajo el operador"
-            formatter={(v: any) => `$ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
-            parser={(v: any) => Number(String(v).replace(/[\$\s,]/g, ''))}
-          />
+          <Divider style={{ margin: '12px 0' }} />
+          <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>
+            El operador entrega el efectivo en dos partes: billetes por un lado y monedas por otro. La suma de ambos es el Efectivo Recogido.
+          </div>
+          <Row gutter={12}>
+            <Col xs={12}>
+              <label style={{ fontWeight: 600 }}>💵 Billetes ($):</label>
+              <InputNumber
+                size="large"
+                style={{ width: '100%', marginTop: 8 }}
+                min={0}
+                prefix="$"
+                value={billetes}
+                onChange={(v: any) => setBilletes(v == null ? null : Number(v))}
+                placeholder="Billetes"
+                formatter={(v: any) => `$ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={(v: any) => Number(String(v).replace(/[\$\s,]/g, ''))}
+              />
+            </Col>
+            <Col xs={12}>
+              <label style={{ fontWeight: 600 }}>🪙 Monedas ($):</label>
+              <InputNumber
+                size="large"
+                style={{ width: '100%', marginTop: 8 }}
+                min={0}
+                prefix="$"
+                value={monedas}
+                onChange={(v: any) => setMonedas(v == null ? null : Number(v))}
+                placeholder="Monedas"
+                formatter={(v: any) => `$ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
+                parser={(v: any) => Number(String(v).replace(/[\$\s,]/g, ''))}
+              />
+            </Col>
+          </Row>
+          <div style={{ marginTop: 12, padding: '8px 12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6 }}>
+            <Text strong style={{ fontSize: 15 }}>
+              💰 Efectivo Recogido (Billetes + Monedas): ${efectivoRecogTotal.toLocaleString('es-CO')}
+            </Text>
+          </div>
         </Card>
 
         <Descriptions
@@ -474,8 +505,16 @@ const Efectivo = () => {
           <Descriptions.Item label="Efectivo Esperado">
             {fmt(efectivoEsperado)}
           </Descriptions.Item>
-          <Descriptions.Item label="Efectivo Recogido">
-            {fmt(efectivoRecog)}
+          <Descriptions.Item label="Billetes Recogidos">
+            {fmt(billetes)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Monedas Recogidas">
+            {fmt(monedas)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Efectivo Recogido (total)">
+            <Tag color={efectivoRecogTotal > 0 ? 'green' : 'default'} style={{ fontWeight: 600 }}>
+              {fmt(efectivoRecogTotal)}
+            </Tag>
           </Descriptions.Item>
         </Descriptions>
 
