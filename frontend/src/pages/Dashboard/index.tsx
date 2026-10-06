@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input, Space } from 'antd'
+import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input } from 'antd'
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -215,7 +215,7 @@ const PanelKpisCharts = ({
 const PanelProductosStock = () => {
   const [loading, setLoading] = useState(false)
   const [productos, setProductos] = useState<any[]>([])
-  const [busquedaStock, setBusquedaStock] = useState('')
+  const [busqueda, setBusqueda] = useState('')
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -247,57 +247,32 @@ const PanelProductosStock = () => {
   const sobreStock = productos.filter((p) => Number(p.stockMax) > 0 && Number(p.stockActual) > Number(p.stockMax))
   const bajoStock = productos.filter((p) => Number(p.stockMin) > 0 && Number(p.stockActual) <= Number(p.stockMin))
 
-  const stockFiltrado = productos.filter((p) => {
-    const q = busquedaStock.trim().toLowerCase()
-    if (!q) return true
-    return String(p.nombre).toLowerCase().includes(q) || String(p.codigo).toLowerCase().includes(q) || String(p.categoria || '').toLowerCase().includes(q)
-  })
+  // Búsqueda por nombre o código (sensible al escaneo de código de barras).
+  const termino = busqueda.trim().toLowerCase()
+  const productosFiltrados = termino
+    ? productos.filter((p) =>
+        String(p.nombre || '').toLowerCase().includes(termino) ||
+        String(p.codigo || '').toLowerCase().includes(termino)
+      )
+    : productos
 
   const colsStock = [
     { title: 'Producto', dataIndex: 'nombre', key: 'nombre', render: (v: string) => <strong>{v}</strong> },
-    { title: 'Código', dataIndex: 'codigo', key: 'codigo', width: 150 },
-    {
-      title: 'Categoría',
-      dataIndex: 'categoria',
-      key: 'categoria',
-      width: 180,
-      render: (v: string | null) => (v ? <Tag>{v}</Tag> : <span style={{ color: '#bbb' }}>—</span>),
-    },
+    { title: 'Código', dataIndex: 'codigo', key: 'codigo', width: 170, render: (v: string) => (v && v !== '—' ? <code>{v}</code> : <span style={{ color: '#bbb' }}>—</span>) },
+    { title: 'Categoría', dataIndex: 'categoria', key: 'categoria', width: 180, render: (v: string | null) => (v ? <Tag>{v}</Tag> : <span style={{ color: '#bbb' }}>—</span>) },
     {
       title: 'Stock Actual',
       dataIndex: 'stockActual',
       key: 'stockActual',
-      width: 130,
-      render: (v: number) => <Tag color="blue">{v} uds</Tag>,
-    },
-    {
-      title: 'Stock Mínimo',
-      dataIndex: 'stockMin',
-      key: 'stockMin',
-      width: 120,
-      render: (v: number, r: any) => (Number(r.stockMin) > 0 ? `${v} uds` : '—'),
-    },
-    {
-      title: 'Stock Máximo',
-      dataIndex: 'stockMax',
-      key: 'stockMax',
-      width: 120,
-      render: (v: number, r: any) => (Number(r.stockMax) > 0 ? `${v} uds` : '—'),
-    },
-    {
-      title: 'Estado',
-      dataIndex: 'stockActual',
-      key: 'estado',
-      width: 150,
-      render: (_: number, r: any) => {
-        const max = Number(r.stockMax)
-        const min = Number(r.stockMin)
-        const act = Number(r.stockActual)
-        if (max > 0 && act > max) return <Tag color="orange">Sobre stock</Tag>
-        if (min > 0 && act <= min) return <Tag color="red">Bajo stock</Tag>
-        return <Tag color="green">Adecuado</Tag>
+      width: 140,
+      render: (v: number, r: any) => {
+        const marcador = Number(r.stockMax) > 0 && Number(v) > Number(r.stockMax) ? 'orange'
+          : Number(r.stockMin) > 0 && Number(v) <= Number(r.stockMin) ? 'red' : 'green'
+        return <Tag color={marcador}>{v} uds</Tag>
       },
     },
+    { title: 'Stock Mínimo', dataIndex: 'stockMin', key: 'stockMin', width: 130 },
+    { title: 'Stock Máximo', dataIndex: 'stockMax', key: 'stockMax', width: 130 },
   ]
 
   const cols = (tipo: 'sobre' | 'bajo') => [
@@ -374,36 +349,33 @@ const PanelProductosStock = () => {
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col span={24}>
-          <Card
-            size="small"
-            title={`📦 Stock Actual de Todos los Productos (${productos.length})`}
-            extra={
-              <Space>
-                <Input.Search
-                  allowClear
-                  placeholder="Buscar producto..."
-                  style={{ width: 260 }}
-                  onChange={(e) => setBusquedaStock(e.target.value)}
-                />
-                <Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button>
-              </Space>
-            }
-          >
-            <Table
-              rowKey="id"
-              size="small"
-              loading={loading}
-              dataSource={stockFiltrado}
-              columns={colsStock}
-              pagination={{ pageSize: 10 }}
-              locale={{ emptyText: 'Sin productos para el filtro' }}
-              scroll={{ x: 900 }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <Card size="small" title="📦 Stock Actual de Todos los Productos" style={{ marginTop: 16 }} extra={<Button icon={<ReloadOutlined />} onClick={cargar} loading={loading} size="small">Refrescar</Button>}>
+        <Alert
+          type="info"
+          showIcon
+          message='Busca productos por nombre o por código. El campo de código soporta escaneo con lector de código de barras: escanea y presiona Enter.'
+          style={{ marginBottom: 12 }}
+        />
+        <Input.Search
+          allowClear
+          value={busqueda}
+          placeholder="Buscar por nombre o código de barras (escanea y Enter)..."
+          onChange={(e) => setBusqueda(e.target.value)}
+          size="middle"
+          style={{ maxWidth: 420, marginBottom: 12 }}
+          enterButton
+        />
+        <Table
+          rowKey="id"
+          size="small"
+          loading={loading}
+          dataSource={productosFiltrados}
+          columns={colsStock as any}
+          pagination={{ pageSize: 15 }}
+          locale={{ emptyText: 'Sin productos que coincidan con la búsqueda' }}
+          scroll={{ x: 700 }}
+        />
+      </Card>
     </div>
   )
 }
