@@ -8,6 +8,7 @@ import {
   UserOutlined,
   InboxOutlined,
   ReloadOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons'
 import {
   BarChart,
@@ -27,6 +28,8 @@ import {
 import dayjs, { Dayjs } from 'dayjs'
 import { useAuth } from '../../hooks/useAuth'
 import { apiService } from '../../api/services/api'
+import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 const { Title } = Typography
 const { RangePicker } = DatePicker
@@ -489,6 +492,86 @@ const PanelIngresosBodega = () => {
 
   useEffect(() => { cargar() }, [cargar])
 
+  const descargarPDFIngreso = (ing: any) => {
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 16
+
+    // Encabezado sobrio
+    doc.setFontSize(15)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(33, 37, 41)
+    doc.text('INGRESO A BODEGA', margin, 17)
+    doc.setFontSize(8.5)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(90)
+    doc.text(`Generado: ${new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}`, pageWidth - margin, 17, { align: 'right' })
+    doc.setDrawColor(180, 180, 180)
+    doc.setLineWidth(0.3)
+    doc.line(margin, 21, pageWidth - margin, 21)
+
+    const detalle = Array.isArray(ing.detalle) ? ing.detalle : []
+    let totalUnidades = 0
+    let totalValor = 0
+    for (const d of detalle) {
+      totalUnidades += Number(d.cantidad || 0)
+      totalValor += Number(d.costoTotal || 0)
+    }
+
+    doc.setFontSize(10.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(33, 37, 41)
+    let y = 28
+    doc.text('DATOS DE LA FACTURA', margin, y)
+    y += 3.5
+    autoTable(doc, {
+      startY: y,
+      theme: 'plain',
+      styles: { fontSize: 8, cellPadding: { top: 1.4, right: 2, bottom: 1.4, left: 0 } },
+      columnStyles: { 0: { fontStyle: 'bold', textColor: [90, 90, 90], cellWidth: 55 }, 1: { textColor: [33, 37, 41] } },
+      margin: { left: margin, right: margin },
+      body: [
+        ['Nº de Factura', ing.factura || '—'],
+        ['Fecha', ing.fecha ? dayjs(ing.fecha).format('DD/MM/YYYY HH:mm') : '—'],
+        ['Proveedor', ing.proveedor || '—'],
+        ['Observaciones', ing.observaciones || '—'],
+        ['Ingresado por', `${ing.usuario || '—'}${ing.login ? ` (@${ing.login})` : ''}`],
+      ],
+    })
+    y = (doc as any).lastAutoTable.finalY as number
+
+    y += 6
+    doc.setFontSize(10.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(33, 37, 41)
+    let tituloDetalle = `PRODUCTOS (${detalle.length})`
+    doc.text(tituloDetalle, margin, y)
+    y += 3.5
+    autoTable(doc, {
+      startY: y,
+      theme: 'striped',
+      headStyles: { fillColor: [52, 58, 64], textColor: 255 },
+      styles: { fontSize: 8.5, cellPadding: 2 },
+      margin: { left: margin, right: margin },
+      head: [['Producto', 'Cantidad', 'Costo Unitario', 'Costo Total']],
+      body: detalle.length
+        ? detalle.map((d: any) => [
+            d.producto || '—',
+            `${d.cantidad || 0} uds`,
+            `$ ${Number(d.costoUnitario || 0).toLocaleString('es-CO')}`,
+            `$ ${Number(d.costoTotal || 0).toLocaleString('es-CO')}`,
+          ])
+        : [['Sin detalle de productos', '', '', '']],
+      foot: [
+        ['TOTAL', `${totalUnidades} uds`, '', `$ ${totalValor.toLocaleString('es-CO')}`],
+      ],
+      footStyles: { fillColor: [240, 240, 240], textColor: 33, fontStyle: 'bold' },
+    })
+
+    const fileName = `IngresoBodega_${String(ing.factura || ing.idIngreso).replace(/[^A-Za-z0-9_-]/g, '_')}.pdf`
+    doc.save(fileName)
+  }
+
   const expandable = {
     expandedRowRender: (ing: any) => {
       const cols = [
@@ -518,6 +601,9 @@ const PanelIngresosBodega = () => {
     { title: 'Productos', dataIndex: 'detalle', key: 'nprod', width: 110, render: (d: any[]) => <Tag color="geekblue">{d?.length || 0} ítems</Tag> },
     { title: 'Observaciones', dataIndex: 'observaciones', key: 'obs', render: (v: string) => (v || <span style={{ color: '#bbb' }}>—</span>) },
     { title: 'Ingresado por', dataIndex: 'usuario', key: 'usuario', width: 200, render: (v: string, r: any) => (<div>{v || '—'}{r.login ? <div style={{ fontSize: 11, color: '#888' }}>@{r.login}</div> : null}</div>) },
+    { title: '', dataIndex: 'idIngreso', key: 'pdf', width: 130, align: 'center' as any, render: (_: any, ing: any) => (
+        <Button size="small" icon={<DownloadOutlined />} onClick={() => descargarPDFIngreso(ing)}>Descargar PDF</Button>
+      ) },
   ]
 
   return (
