@@ -324,4 +324,89 @@ export class DashboardService {
       eventosSinSerial: sinSerial,
     };
   }
+
+  // ============================================================
+  // INGRESOS A BODEGA (entradas de inventario)
+  // Consulta los ingresos a bodega por rango de fechas y, opcionalmente,
+  // por usuario que los registró, con los datos de la factura, proveedor,
+  // producto, cantidad y costo unitario, además de la auditoría del usuario.
+  // GET /dashboard/ingresos-bodega?fechaDesde=&fechaHasta=&usuarioId=
+  // ============================================================
+  async ingresosBodega(query: { fechaDesde?: string; fechaHasta?: string; usuarioId?: string }) {
+    const where: any = {};
+    if (query.fechaDesde) {
+      const d = new Date(query.fechaDesde);
+      if (!isNaN(d.getTime())) where.fechaHora = { ...(where.fechaHora ?? {}), gte: d };
+    }
+    if (query.fechaHasta) {
+      const d = new Date(query.fechaHasta);
+      if (!isNaN(d.getTime())) where.fechaHora = { ...(where.fechaHora ?? {}), lte: d };
+    }
+    if (query.usuarioId) {
+      const uid = parseInt(query.usuarioId);
+      if (!isNaN(uid)) where.idUsuario = uid;
+    }
+
+    const ingresos = await this.prisma.ingresosBodega.findMany({
+      where,
+      include: {
+        proveedor: { select: { razonSocial: true } },
+        usuario: { select: { idUsuario: true, nombreCompleto: true, usuarioLogin: true } },
+        detalleIngresos: {
+          include: { producto: { select: { nombreProducto: true } } },
+        },
+      },
+      orderBy: { fechaHora: 'desc' },
+    });
+
+    // KPIs acumulados sobre el detalle de los ingresos.
+    let totalUnidades = 0;
+    let totalValor = 0;
+    for (const ing of ingresos) {
+      for (const d of ing.detalleIngresos) {
+        totalUnidades += d.cantidadRecib || 0;
+        totalValor += Number(d.costoUnitarioCompra || 0) * (d.cantidadRecib || 0);
+      }
+    }
+
+    const filas = ingresos.map((ing) => ({
+      idIngreso: ing.idIngreso,
+      factura: ing.facturaNum,
+      fecha: ing.fechaHora,
+      proveedor: ing.proveedor?.razonSocial ?? null,
+      observaciones: ing.observaciones,
+      idUsuario: ing.idUsuario,
+      usuario: ing.usuario ? `${ing.usuario.nombreCompleto}` : null,
+      login: ing.usuario ? ing.usuario.usuarioLogin : null,
+      detalle: ing.detalleIngresos.map((d) => ({
+        idDetIngreso: d.idDetIngreso,
+        idProducto: d.idProducto,
+        producto: d.producto?.nombreProducto ?? null,
+        cantidad: d.cantidadRecib,
+        costoUnitario: Number(d.costoUnitarioCompra),
+        costoTotal: Number(d.costoUnitarioCompra) * (d.cantidadRecib || 0),
+      })),
+    }));
+
+    return {
+      kpis: [
+        { id: 'ing_bodega_total', nombre: 'Ingresos Realizados', valor: ingresos.length, unidad: 'ingresos' },
+        { id: 'ing_bodega_unidades', nombre: 'Unidades Recibidas', valor: totalUnidades, unidad: 'unidades' },
+        { id: 'ing_bodega_valor', nombre: 'Valor Total Ingresado', valor: totalValor, unidad: 'COP' },
+        { id: 'ing_bodega_usuarios', nombre: 'Usuarios que Ingresaron', valor: new Set(ingresos.map((i) => i.idUsuario)).size, unidad: 'usuarios' },
+      ],
+      ingresos: filas,
+      usuarios: await this.usuariosConIngresos(),
+    };
+  }
+
+  // Lista de usuarios activos para el filtro del dashboard.
+  private async usuariosConIngresos() {
+    const usuarios = await this.prisma.usuariosSistema.findMany({
+      where: { estado: true },
+      select: { idUsuario: true, nombreCompleto: true, usuarioLogin: true },
+      orderBy: { nombreCompleto: 'asc' },
+    });
+    return usuarios.map((u) => ({ id: u.idUsuario, nombre: u.nombreCompleto, login: u.usuarioLogin }));
+  }
 }

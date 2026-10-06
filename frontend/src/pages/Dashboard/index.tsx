@@ -461,6 +461,135 @@ const PanelDispositivos = () => {
   )
 }
 
+const PanelIngresosBodega = () => {
+  const [loading, setLoading] = useState(false)
+  const [datos, setDatos] = useState<any>({ kpis: [], ingresos: [], usuarios: [] })
+  const [rangeIng, setRangeIng] = useState<[Dayjs | null, Dayjs | null] | null>([dayjs().subtract(3, 'month'), dayjs()])
+  const [usuarioFiltro, setUsuarioFiltro] = useState<string>('')
+
+  const cargar = useCallback(async () => {
+    setLoading(true)
+    try {
+      const params: any = {}
+      if (rangeIng && rangeIng[0]) params.fechaDesde = rangeIng[0].startOf('day').toISOString()
+      if (rangeIng && rangeIng[1]) params.fechaHasta = rangeIng[1].endOf('day').toISOString()
+      if (usuarioFiltro) params.usuarioId = usuarioFiltro
+      const res: any = await apiService.get('/dashboard/ingresos-bodega', params)
+      setDatos({
+        kpis: Array.isArray(res?.kpis) ? res.kpis : [],
+        ingresos: Array.isArray(res?.ingresos) ? res.ingresos : [],
+        usuarios: Array.isArray(res?.usuarios) ? res.usuarios : [],
+      })
+    } catch (e: any) {
+      message.error('Error cargando ingresos a bodega: ' + (e?.message || e))
+    } finally {
+      setLoading(false)
+    }
+  }, [rangeIng, usuarioFiltro])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const expandable = {
+    expandedRowRender: (ing: any) => {
+      const cols = [
+        { title: 'Producto', dataIndex: 'producto', key: 'producto', render: (v: string) => <strong>{v || '—'}</strong> },
+        { title: 'Cantidad', dataIndex: 'cantidad', key: 'cantidad', render: (v: number) => `${v} uds` },
+        { title: 'Costo Unitario', dataIndex: 'costoUnitario', key: 'costoUnitario', render: (v: number) => `$ ${v.toLocaleString('es-CO')}` },
+        { title: 'Costo Total', dataIndex: 'costoTotal', key: 'costoTotal', render: (v: number) => <Tag color="blue">$ {v.toLocaleString('es-CO')}</Tag> },
+      ]
+      return (
+        <Table
+          rowKey={(r: any) => `${ing.idIngreso}-${r.idDetIngreso ?? r.idProducto}`}
+          size="small"
+          dataSource={ing.detalle || []}
+          columns={cols as any}
+          pagination={false}
+          locale={{ emptyText: 'Sin detalle de productos' }}
+          scroll={{ x: 500 }}
+        />
+      )
+    },
+  }
+
+  const columns = [
+    { title: 'Factura', dataIndex: 'factura', key: 'factura', width: 140, render: (v: string) => <code>{v || '—'}</code> },
+    { title: 'Fecha', dataIndex: 'fecha', key: 'fecha', width: 170, render: (v: string) => (v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '—') },
+    { title: 'Proveedor', dataIndex: 'proveedor', key: 'proveedor', width: 220, render: (v: string) => (v || <span style={{ color: '#bbb' }}>—</span>) },
+    { title: 'Productos', dataIndex: 'detalle', key: 'nprod', width: 110, render: (d: any[]) => <Tag color="geekblue">{d?.length || 0} ítems</Tag> },
+    { title: 'Observaciones', dataIndex: 'observaciones', key: 'obs', render: (v: string) => (v || <span style={{ color: '#bbb' }}>—</span>) },
+    { title: 'Ingresado por', dataIndex: 'usuario', key: 'usuario', width: 200, render: (v: string, r: any) => (<div>{v || '—'}{r.login ? <div style={{ fontSize: 11, color: '#888' }}>@{r.login}</div> : null}</div>) },
+  ]
+
+  return (
+    <div>
+      <Card size="small" style={{ marginBottom: 12 }}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} md={9}>
+            <RangePicker
+              value={rangeIng as any}
+              onChange={(v: any) => setRangeIng(v as any)}
+              style={{ width: '100%' }}
+            />
+          </Col>
+          <Col xs={24} md={7}>
+            <Select
+              allowClear
+              showSearch
+              value={usuarioFiltro || undefined}
+              placeholder="Filtrar por usuario que ingresó"
+              onChange={(v: any) => setUsuarioFiltro(v ? String(v) : '')}
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              options={(datos.usuarios || []).map((u: any) => ({ value: String(u.id), label: `${u.nombre}${u.login ? ` (@${u.login})` : ''}` }))}
+            />
+          </Col>
+          <Col xs={24} md={8} style={{ textAlign: 'right' }}>
+            <Button icon={<ReloadOutlined />} onClick={cargar} loading={loading}>
+              Buscar
+            </Button>
+          </Col>
+        </Row>
+      </Card>
+
+      <Row gutter={[16, 16]}>
+        {(datos.kpis || []).map((k: any, i: number) => (
+          <Col xs={12} lg={6} key={k.id || `ikpi-${i}`}>
+            <Card size="small">
+              <Statistic
+                title={k.nombre}
+                value={formatearValor(k.valor, k.unidad)}
+                valueStyle={{ fontSize: 20 }}
+              />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Card size="small" title="Ingresos a bodega por rango de fechas y usuario" style={{ marginTop: 16 }}>
+        <Alert
+          type="info"
+          showIcon
+          message="Consulta los ingresos a bodega (compras) registrados en el rango de fechas seleccionado, con su factura, proveedor, productos, cantidades y costos, así como el usuario que realizó cada ingreso."
+          style={{ marginBottom: 12 }}
+        />
+        {!loading && !datos.ingresos?.length && (
+          <Empty description="Sin ingresos a bodega para el filtro seleccionado" style={{ padding: 30 }} />
+        )}
+        <Table
+          rowKey="idIngreso"
+          size="small"
+          loading={loading}
+          dataSource={datos.ingresos || []}
+          columns={columns as any}
+          expandable={expandable}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 1100 }}
+        />
+      </Card>
+    </div>
+  )
+}
+
 const Dashboard = () => {
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([dayjs().startOf('month'), dayjs().endOf('month')])
   const { hasPermission, usuario } = useAuth()
@@ -510,8 +639,8 @@ const Dashboard = () => {
   )
 
   useEffect(() => {
-    // Las pestañas 'productos' y 'dispositivos' cargan sus propios datos; no consultan KPIs.
-    if (perfilActivo !== 'productos' && perfilActivo !== 'dispositivos') {
+    // Las pestañas 'productos', 'dispositivos' e 'ingresos-bodega' cargan sus propios datos; no consultan KPIs.
+    if (perfilActivo !== 'productos' && perfilActivo !== 'dispositivos' && perfilActivo !== 'ingresos-bodega') {
       cargarDashboard(perfilActivo)
     }
   }, [perfilActivo, cargarDashboard])
@@ -577,6 +706,17 @@ const Dashboard = () => {
       children: <PanelDispositivos />,
     })
   }
+  if (hasPermission('dashboard', 'ver') || usuario?.rol === 'GERENCIA') {
+    tabItems.push({
+      key: 'ingresos-bodega',
+      label: (
+        <span>
+          🏭 Ingresos Bodega <Tag color={perfilActivo === 'ingresos-bodega' ? 'cyan' : 'default'}>Compras</Tag>
+        </span>
+      ),
+      children: <PanelIngresosBodega />,
+    })
+  }
 
   return (
     <div>
@@ -585,7 +725,7 @@ const Dashboard = () => {
           Dashboard - Panel de Control
         </Title>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button icon={<ReloadOutlined />} onClick={() => { if (perfilActivo !== 'productos') cargarDashboard(perfilActivo) }} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={() => { if (perfilActivo !== 'productos' && perfilActivo !== 'dispositivos' && perfilActivo !== 'ingresos-bodega') cargarDashboard(perfilActivo) }} loading={loading}>
             Refrescar
           </Button>
           <RangePicker

@@ -25,4 +25,10 @@ export class DashboardController {
   dispositivos(@Query() q: { fechaDesde?: string; fechaHasta?: string; maquinaId?: string; tipoMedio?: string }) {
     return this.srv.dispositivos(q);
   }
+
+  @Get('ingresos-bodega')
+  @Permissions('dashboard', 'ver')
+  ingresosBodega(@Query() q: { fechaDesde?: string; fechaHasta?: string; usuarioId?: string }) {
+    return this.srv.ingresosBodega(q);
+  }
 }
