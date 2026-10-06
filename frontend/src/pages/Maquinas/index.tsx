@@ -663,99 +663,88 @@ const Maquinas = () => {
     const mp: MediosPago = editing.mediosPago ?? ({} as MediosPago)
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
-    const margin = 14
+    const margin = 16
+    const gris = 90
 
-    // ---- Encabezado ----
-    doc.setFontSize(16)
+    // ---- Encabezado sobrio ----
+    doc.setFontSize(15)
     doc.setFont('helvetica', 'bold')
-    doc.text('Ficha de Máquina Vending', margin, 18)
-    doc.setFontSize(10)
+    doc.setTextColor(33, 37, 41)
+    doc.text('FICHA DE MÁQUINA VENDING', margin, 17)
+    doc.setFontSize(8.5)
     doc.setFont('helvetica', 'normal')
+    doc.setTextColor(gris)
     const fecha = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
-    doc.text(`Generado: ${fecha}`, pageWidth - margin, 18, { align: 'right' })
-    doc.setDrawColor(22, 119, 255)
-    doc.setLineWidth(0.6)
-    doc.line(margin, 22, pageWidth - margin, 22)
+    doc.text(`Generado: ${fecha}`, pageWidth - margin, 17, { align: 'right' })
+    doc.setDrawColor(180, 180, 180)
+    doc.setLineWidth(0.3)
+    doc.line(margin, 21, pageWidth - margin, 21)
 
-    let y = 30
+    let y = 26
 
-    // ---- Resumen datos básicos ----
-    doc.setFontSize(12)
+    // ---- Resumen compacto: datos básicos + asignaciones ----
+    const filasDatos = [
+      ['Serial', editing.serial || '—'],
+      ['Marca', editing.marca || '—'],
+      ['Tipo', editing.tipo],
+      ['Estado', editing.estado],
+      ['Ubicación / Zona', editing.zona || '—'],
+      ['Base en Dinero ($)', editing.base ? editing.base.toLocaleString('es-CO') : '—'],
+      ['Cliente', editing.clienteNombre || 'Sin asignar'],
+      ['Operador a Cargo', editing.operadorNombre || 'Sin asignar'],
+    ]
+    doc.setFontSize(10.5)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(22, 119, 255)
-    doc.text('Datos Básicos', margin, y)
-    doc.setTextColor(0, 0, 0)
-    y += 4
+    doc.setTextColor(33, 37, 41)
+    doc.text('INFORMACIÓN GENERAL', margin, y)
+    doc.setFontSize(8)
+    y += 3.5
     autoTable(doc, {
       startY: y,
-      theme: 'grid',
-      styles: { fontSize: 9, cellPadding: 2 },
-      head: [['Campo', 'Valor']],
-      body: [
-        ['Serial', editing.serial || '—'],
-        ['Marca', editing.marca || '—'],
-        ['Tipo', editing.tipo],
-        ['Estado', editing.estado],
-        ['Ubicación / Zona', editing.zona || '—'],
-        ['Base en Dinero ($)', editing.base ? editing.base.toLocaleString('es-CO') : '—'],
-      ],
+      theme: 'plain',
+      styles: { fontSize: 8, cellPadding: { top: 1.2, right: 2, bottom: 1.2, left: 0 } },
+      columnStyles: { 0: { fontStyle: 'bold', textColor: [90, 90, 90], cellWidth: 55 }, 1: { textColor: [33, 37, 41] } },
+      margin: { left: margin, right: margin },
+      body: filasDatos,
     })
-    y = (doc as any).lastAutoTable.finalY + 8
+    y = (doc as any).lastAutoTable.finalY as number
 
-    // ---- Asignaciones ----
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(22, 119, 255)
-    doc.text('Asignaciones', margin, y)
-    doc.setTextColor(0, 0, 0)
-    y += 4
-    autoTable(doc, {
-      startY: y,
-      theme: 'grid',
-      styles: { fontSize: 9, cellPadding: 2 },
-      head: [['Asignación', 'Responsable']],
-      body: [
-        ['Cliente', editing.clienteNombre || 'Sin asignar'],
-        ['Operador a Cargo', editing.operadorNombre || 'Sin asignar'],
-      ],
-    })
-    y = (doc as any).lastAutoTable.finalY + 8
-
-    // ---- Medios de pago (con seriales) ----
-    doc.setFontSize(12)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(22, 119, 255)
-    doc.text('Medios de Pago Asignados', margin, y)
-    doc.setTextColor(0, 0, 0)
-    y += 4
-    const nombrarSerial = (label: string, activo: boolean, serial?: string) => ({
-      medio: label,
-      activo: activo ? 'Sí' : 'No',
-      serial: serial || '—',
-    })
-    const filasMedios = [
+    // ---- Medios de pago (compacto) ----
+    const nombrarSerial = (label: string, activo: boolean, serial?: string) =>
+      activo ? `${label}: ${serial || 'sin serial'}` : null
+    const mediosActivos = [
       nombrarSerial('Veos', !!mp.veos, mp.serialVeos),
       nombrarSerial('Datafono', !!mp.datafono, mp.serialDatafono),
       nombrarSerial('Cupos', !!mp.cupos, mp.serialCupos),
-      nombrarSerial('Efectivo - Monedero', true, mp.serialEfectivoMonedero),
-      nombrarSerial('Efectivo - Billetero', true, mp.serialEfectivoBilletero),
-    ]
+      nombrarSerial('Monedero', true, mp.serialEfectivoMonedero),
+      nombrarSerial('Billetero', true, mp.serialEfectivoBilletero),
+    ].filter(Boolean) as string[]
+    const filasMedios = mediosActivos.length ? mediosActivos.map((m) => [m]) : [['Sin medios de pago digitales registrados']]
+
+    y += 6
+    doc.setFontSize(10.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(33, 37, 41)
+    doc.text('MEDIOS DE PAGO', margin, y)
+    doc.setFontSize(8)
+    y += 3.5
     autoTable(doc, {
       startY: y,
-      theme: 'grid',
-      styles: { fontSize: 9, cellPadding: 2 },
-      head: [['Medio de Pago', 'Activo', 'Serial']],
-      body: filasMedios.map((f) => [f.medio, f.activo, f.serial]),
+      theme: 'plain',
+      styles: { fontSize: 8, cellPadding: { top: 1.2, right: 2, bottom: 1.2, left: 0 }, textColor: [33, 37, 41] },
+      margin: { left: margin, right: margin },
+      columnStyles: { 0: { cellWidth: 120 } },
+      body: filasMedios,
     })
-    y = (doc as any).lastAutoTable.finalY + 8
+    y = (doc as any).lastAutoTable.finalY as number
 
     // ---- Mapa de la máquina ----
-    let tituloMapa = 'Mapa MP (Espirales)'
+    let tituloMapa = 'MAPA MP (ESPIRALES)'
     let columnas: string[] = ['Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.']
     let filas: any[] = []
 
     if (esCafe) {
-      tituloMapa = 'Mapa de Insumos'
+      tituloMapa = 'MAPA DE INSUMOS'
       columnas = ['Espiral', 'Producto Asignado', 'Capacidad Actual', 'Capacidad Máx.']
       filas = espirales.map((e) => [
         e.espiral,
@@ -764,7 +753,7 @@ const Maquinas = () => {
         e.capacidad_max ?? 0,
       ])
       if (botones.length > 0) {
-        tituloMapa = 'Mapa de Insumos + Botones NRQ'
+        tituloMapa = 'MAPA DE INSUMOS + BOTONES NRQ'
         columnas = ['Botón/Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.']
         const filasBotones = botones.map((b) => [
           b.boton,
@@ -787,17 +776,17 @@ const Maquinas = () => {
       ])
     }
 
-    doc.setFontSize(12)
+    doc.setFontSize(10.5)
     doc.setFont('helvetica', 'bold')
-    doc.setTextColor(22, 119, 255)
-    doc.text(tituloMapa, margin, y)
-    doc.setTextColor(0, 0, 0)
-    y += 4
+    doc.setTextColor(33, 37, 41)
+    doc.text(tituloMapa, margin, y + 6)
+    y += 9.5
     autoTable(doc, {
       startY: y,
       theme: 'striped',
-      headStyles: { fillColor: [22, 119, 255] },
-      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [52, 58, 64], textColor: 255 },
+      styles: { fontSize: 8.5, cellPadding: 2 },
+      margin: { left: margin, right: margin },
       head: [columnas],
       body: filas.length ? filas : [['No hay productos asignados', '', '', '', '']],
       columnStyles: esCafe && botones.length === 0 ? {} : { 0: { cellWidth: 30 } },
