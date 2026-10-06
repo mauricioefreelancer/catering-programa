@@ -240,6 +240,7 @@ const Precios = () => {
           <Space.Compact style={{ width: '100%' }}>
             {esEdicion ? (
               <InputNumber
+                size="small"
                 min={0}
                 defaultValue={v}
                 prefix="$"
@@ -247,12 +248,12 @@ const Precios = () => {
                 onChange={(val) => updatePrice(r.id, Number(val))}
               />
             ) : (
-              <span style={{ lineHeight: '32px', fontSize: 13 }}>$ {v.toLocaleString('es-CO')}</span>
+              <span style={{ lineHeight: '24px', fontSize: 13 }}>$ {v.toLocaleString('es-CO')}</span>
             )}
             {esEdicion ? (
-              <Button type="primary" onClick={() => setEditingRowId(null)}>Ok</Button>
+              <Button type="primary" size="small" onClick={() => setEditingRowId(null)}>Ok</Button>
             ) : (
-              <Button icon={<EditOutlined />} onClick={() => setEditingRowId(r.id)}>Editar</Button>
+              <Button size="small" icon={<EditOutlined />} onClick={() => setEditingRowId(r.id)}>Editar</Button>
             )}
           </Space.Compact>
         )
