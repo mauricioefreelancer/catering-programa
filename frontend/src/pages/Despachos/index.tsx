@@ -382,7 +382,6 @@ const Despachos = () => {
       producto: it.nombreProducto,
       fisico: it.fisicoDigitado,
       sugerida: it.cantSugerida,
-      prevDesp: it.totalDespachadoPrevio,
       despachar: it.cantDespachada,
       stockActual: it.stockActualProducto ?? 0,
       estadoGrupo: g.estado,
@@ -415,20 +414,6 @@ const Despachos = () => {
       width: 120,
       align: 'center' as const,
       render: (v: number) => <Tag color="blue">{v}</Tag>,
-    },
-    {
-      title: 'Previ. Despachado',
-      dataIndex: 'totalDespachadoPrevio',
-      width: 140,
-      align: 'center' as const,
-      render: (v: number) =>
-        v > 0 ? (
-          <Tag color="geekblue">
-            <CheckCircleOutlined /> {v}
-          </Tag>
-        ) : (
-          <Tag color="default">— 0 —</Tag>
-        ),
     },
     {
       title: 'Stock Actual (Bodega)',
@@ -790,13 +775,6 @@ const Despachos = () => {
               align: 'center' as const,
               width: 90,
               render: (v: any) => <Tag color="blue">{v}</Tag>,
-            },
-            {
-              title: 'Prev. Desp.',
-              dataIndex: 'prevDesp',
-              align: 'center' as const,
-              width: 90,
-              render: (v: any) => (v > 0 ? <Tag color="geekblue">{v}</Tag> : '—'),
             },
             {
               title: 'Stock Bodega',
