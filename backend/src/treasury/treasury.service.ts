@@ -53,6 +53,27 @@ export class TreasuryService {
     // de lo contrario queda PENDIENTE hasta completarse.
     const tieneEfectivo = dto.efectivoRecog !== undefined && dto.efectivoRecog !== null;
     const efectivoRecog = tieneEfectivo ? Math.max(0, Number(dto.efectivoRecog)) : 0;
+
+    // El efectivo recogido se desglosa en BILLETES y MONEDAS (el operador entrega por
+    // separado). Su suma debe coincidir con el efectivo total recogido.
+    const tieneSplit =
+      (dto.efectivoBilletes !== undefined && dto.efectivoBilletes !== null) ||
+      (dto.efectivoMonedas !== undefined && dto.efectivoMonedas !== null);
+    let efectivoBilletes = 0;
+    let efectivoMonedas = 0;
+    if (tieneSplit) {
+      efectivoBilletes = Math.max(0, Number(dto.efectivoBilletes ?? 0));
+      efectivoMonedas = Math.max(0, Number(dto.efectivoMonedas ?? 0));
+      const sumaSplit = efectivoBilletes + efectivoMonedas;
+      if (tieneEfectivo && Math.abs(sumaSplit - efectivoRecog) > 0.001) {
+        throw new BadRequestException(
+          `La suma de Billetes + Monedas (${sumaSplit.toFixed(2)}) debe coincidir con el Efectivo Recogido (${efectivoRecog.toFixed(2)})`,
+        );
+      }
+    } else if (tieneEfectivo) {
+      // Recaudos existentes / compatibilidad: si solo se conoce el efectivo total, se asume en billetes.
+      efectivoBilletes = efectivoRecog;
+    }
     const estado = tieneEfectivo ? 'CERRADO' : 'PENDIENTE';
     const diferenciaRec = efectivoRecog - efectivoEsperado;
 
@@ -81,6 +102,8 @@ export class TreasuryService {
         mediosNoEfectivo: new Prisma.Decimal(mediosNoEfectivo),
         efectivoEsperado: new Prisma.Decimal(efectivoEsperado),
         efectivoRecog: new Prisma.Decimal(efectivoRecog),
+        efectivoBilletes: new Prisma.Decimal(efectivoBilletes),
+        efectivoMonedas: new Prisma.Decimal(efectivoMonedas),
         diferenciaRec: new Prisma.Decimal(diferenciaRec),
         estado,
       },
@@ -130,7 +153,7 @@ export class TreasuryService {
     // 4) Recaudos ya existentes por visita (CERRADO o PENDIENTE)
     const gruposRecaudados = await this.prisma.tesoreriaEfectivoNr.findMany({
       where: { idGrupo: { in: visitas.map((v) => v.idGrupo) } },
-      select: { idGrupo: true, idRecaudo: true, estado: true, efectivoEsperado: true, veosRecog: true, datafonoRecog: true, cuposRecog: true },
+      select: { idGrupo: true, idRecaudo: true, estado: true, efectivoEsperado: true, efectivoRecog: true, efectivoBilletes: true, efectivoMonedas: true, veosRecog: true, datafonoRecog: true, cuposRecog: true },
     });
     const recAudados = new Map(gruposRecaudados.map((r) => [r.idGrupo, r]));
 
@@ -138,11 +161,57 @@ export class TreasuryService {
     const idsMaq = [...new Set(visitas.map((v) => v.idMaquina))];
     const idsOp = [...new Set(visitas.map((v) => v.idOperador))];
     const [maqs, ops] = await Promise.all([
-      this.prisma.maquinasYTiendas.findMany({ where: { idMaquina: { in: idsMaq } }, select: { idMaquina: true, serial: true, ubicacionEsp: true, mediosPago: true, tarifaPromedioOverride: true } }),
+      this.prisma.maquinasYTiendas.findMany({ where: { idMaquina: { in: idsMaq } }, select: { idMaquina: true, serial: true, ubicacionEsp: true, mediosPago: true, tarifaPromedioOverride: true, idCliente: true } }),
       this.prisma.operadores.findMany({ where: { idOperador: { in: idsOp } }, select: { idOperador: true, nombreCompleto: true, zonaAsignada: true } }),
     ]);
     const maqMap = new Map(maqs.map((m) => [m.idMaquina, m]));
     const opMap = new Map(ops.map((o) => [o.idOperador, o]));
+
+    // 6) Total Despachado por visita (= Σ cantidad sugerida de cada producto de la
+    // visita x precio de venta asignado al cliente). Si el cliente no tiene precio
+    // configurado para el producto, se usa el costo base; si tampoco hay, 0.
+    const visitasIds = visitas.map((v) => v.idGrupo);
+    const pedidosVisita = visitasIds.length
+      ? await this.prisma.pedidosOperador.findMany({
+          where: { idGrupo: { in: visitasIds } },
+          select: { idGrupo: true, idProducto: true, cantSugerida: true },
+        })
+      : [];
+    // Cliente al que pertenece cada máquina de las visitas
+    const clientesDeVisita = new Map<number, number | null>();
+    for (const v of visitas) clientesDeVisita.set(v.idGrupo, maqMap.get(v.idMaquina)?.idCliente ?? null);
+    // Precios por (cliente, producto) que abarquen todos los clientes/productos de las visitas
+    const productosVisita = [...new Set(pedidosVisita.map((p) => p.idProducto))];
+    const clientesVisita = [...new Set([...clientesDeVisita.values()].filter((c): c is number => c != null))];
+    const preciosPorClienteProducto = new Map<string, number>();
+    if (productosVisita.length && clientesVisita.length) {
+      const precios = await this.prisma.preciosCliente.findMany({
+        where: { idProducto: { in: productosVisita }, idCliente: { in: clientesVisita } },
+        select: { idCliente: true, idProducto: true, precioVenta: true },
+      });
+      for (const pr of precios) preciosPorClienteProducto.set(`${pr.idCliente}_${pr.idProducto}`, Number(pr.precioVenta));
+    }
+    // Costo base por producto (fallback cuando el cliente no tiene precio configurado)
+    const costoBasePorProducto = new Map<number, number>();
+    if (productosVisita.length) {
+      const prods = await this.prisma.productos.findMany({
+        where: { idProducto: { in: productosVisita } },
+        select: { idProducto: true, costoBase: true },
+      });
+      for (const pr of prods) costoBasePorProducto.set(pr.idProducto, Number(pr.costoBase));
+    }
+    // Acumula el total despachado por idGrupo
+    const totalDespachadoPorVisita = new Map<number, number>();
+    for (const p of pedidosVisita) {
+      if (p.idGrupo == null) continue;
+      const idCliente = clientesDeVisita.get(p.idGrupo) ?? null;
+      const precio =
+        idCliente != null
+          ? preciosPorClienteProducto.get(`${idCliente}_${p.idProducto}`) ?? costoBasePorProducto.get(p.idProducto) ?? 0
+          : costoBasePorProducto.get(p.idProducto) ?? 0;
+      const cantidad = Number(p.cantSugerida) || 0;
+      totalDespachadoPorVisita.set(p.idGrupo, (totalDespachadoPorVisita.get(p.idGrupo) ?? 0) + cantidad * precio);
+    }
 
     // La tarifa queda obsoleta: el NR ya es venta en dinero acumulada.
     // (Se mantiene la consulta de máquinas sin tarifa para no romper la respuesta.)
@@ -161,6 +230,7 @@ export class TreasuryService {
           nrActual: v.nrActual,
           diferenciaNR,
           totalVendido: diferenciaNR, // NR acumulado de valor en $: la diferencia ya es venta en dinero
+          totalDespachado: totalDespachadoPorVisita.get(v.idGrupo) ?? 0,
           maquina: maqMap.get(v.idMaquina) ?? null,
           operador: opMap.get(v.idOperador) ?? null,
           estado: est?.estado ?? 'PENDIENTE',
@@ -170,6 +240,9 @@ export class TreasuryService {
                 idRecaudo: est.idRecaudo,
                 estado: est.estado,
                 efectivoEsperado: Number(est.efectivoEsperado || 0),
+                efectivoRecog: Number(est.efectivoRecog || 0),
+                efectivoBilletes: Number(est.efectivoBilletes || 0),
+                efectivoMonedas: Number(est.efectivoMonedas || 0),
                 veosRecog: Number(est.veosRecog || 0),
                 datafonoRecog: Number(est.datafonoRecog || 0),
                 cuposRecog: Number(est.cuposRecog || 0),
@@ -181,6 +254,272 @@ export class TreasuryService {
       .sort((a, b) => b.fechaVisita.getTime() - a.fechaVisita.getTime());
 
     return { total: lista.length, visitas: lista };
+  }
+
+  // "Vendido por Visita": mapea las ventas de cada máquina en cada visita del operador,
+  // mostrando el total despachado (= Σ cantidad sugerida x precio del cliente) junto al
+  // total vendido (diferencia NR). FiltrA por fecha, máquina y/o cliente.
+  async vendidoPorVisita(query: any) {
+    const fechaInicio = query?.fechaInicio ? new Date(query.fechaInicio + 'T00:00:00') : null;
+    const fechaFin = query?.fechaFin ? new Date(query.fechaFin + 'T23:59:59') : null;
+    const idMaquina = query?.idMaquina ? Number(query.idMaquina) : undefined;
+    const idCliente = query?.idCliente ? Number(query.idCliente) : undefined;
+
+    // 1) Pedidos con lectura NR (visitas) dentro del rango de fechas
+    const wherePedidos: any = { nrActualMedido: { not: null } };
+    if (fechaInicio && fechaFin) wherePedidos.fechaHora = { gte: fechaInicio, lte: fechaFin };
+    if (idMaquina) wherePedidos.idMaquina = idMaquina;
+    const pedidos = await this.prisma.pedidosOperador.findMany({
+      where: wherePedidos,
+      select: { idGrupo: true, idMaquina: true, idOperador: true, idProducto: true, idMapaMp: true, fechaHora: true, nrActualMedido: true, cantSugerida: true },
+      orderBy: { fechaHora: 'asc' },
+    });
+
+    // 2) Agrupar por idGrupo (visita)
+    type Visita = { idGrupo: number; idMaquina: number; idOperador: number; fechaVisita: Date; nrActual: number; nrAnterior: number };
+    const mapa = new Map<number, Visita>();
+    for (const p of pedidos) {
+      if (p.idGrupo == null) continue;
+      const nr = Number(p.nrActualMedido) || 0;
+      const act = mapa.get(p.idGrupo);
+      if (!act) {
+        mapa.set(p.idGrupo, { idGrupo: p.idGrupo, idMaquina: p.idMaquina, idOperador: p.idOperador, fechaVisita: p.fechaHora, nrActual: nr, nrAnterior: 0 });
+      } else {
+        if (p.fechaHora < act.fechaVisita) act.fechaVisita = p.fechaHora;
+        if (nr > act.nrActual) act.nrActual = nr;
+      }
+    }
+    const visitas = [...mapa.values()].sort((a, b) => a.fechaVisita.getTime() - b.fechaVisita.getTime());
+
+    // 3) NR anterior por máquina usando la historia COMPLETA (sin limitarse a la ventana
+    // de fechas filtrada), de modo que el "total vendido" sea estable y coherente sin
+    // importar el rango de fechas o el filtro de cliente/máquina elegido.
+    const maquinasDeVisitas = [...new Set(visitas.map((v) => v.idMaquina))];
+    const historiaNr = maquinasDeVisitas.length
+      ? await this.prisma.pedidosOperador.findMany({
+          where: { idMaquina: { in: maquinasDeVisitas }, nrActualMedido: { not: null } },
+          select: { idGrupo: true, idMaquina: true, fechaHora: true, nrActualMedido: true },
+          orderBy: [{ idMaquina: 'asc' }, { fechaHora: 'asc' }],
+        })
+      : [];
+    const ultimoNrPorMaquina = new Map<number, number>();
+    const nrAnteriorPorVisita = new Map<number, number>();
+    const nrChequeado = new Set<number>();
+    for (const h of historiaNr) {
+      if (h.idGrupo == null) continue;
+      if (!nrChequeado.has(h.idGrupo)) {
+        nrAnteriorPorVisita.set(h.idGrupo, ultimoNrPorMaquina.get(h.idMaquina) ?? 0);
+        nrChequeado.add(h.idGrupo);
+      }
+      const nrH = Number(h.nrActualMedido) || 0;
+      if (nrH > (ultimoNrPorMaquina.get(h.idMaquina) ?? 0)) ultimoNrPorMaquina.set(h.idMaquina, nrH);
+    }
+    for (const v of visitas) v.nrAnterior = nrAnteriorPorVisita.get(v.idGrupo) ?? 0;
+
+    // 4) Máquinas y operadores de las visitas
+    const idsMaq = [...new Set(visitas.map((v) => v.idMaquina))];
+    const idsOp = [...new Set(visitas.map((v) => v.idOperador))];
+    const [maqs, ops] = await Promise.all([
+      this.prisma.maquinasYTiendas.findMany({ where: { idMaquina: { in: idsMaq } }, select: { idMaquina: true, serial: true, ubicacionEsp: true, idCliente: true } }),
+      this.prisma.operadores.findMany({ where: { idOperador: { in: idsOp } }, select: { idOperador: true, nombreCompleto: true, zonaAsignada: true } }),
+    ]);
+    const maqMap = new Map(maqs.map((m) => [m.idMaquina, m]));
+    const opMap = new Map(ops.map((o) => [o.idOperador, o]));
+
+    // 5) Filtrar por cliente (la máquina pertenece a un cliente)
+    const visitasFiltradas = visitas.filter((v) => {
+      if (idCliente == null) return true;
+      return maqMap.get(v.idMaquina)?.idCliente === idCliente;
+    });
+    const visitasIds = visitasFiltradas.map((v) => v.idGrupo);
+
+    // 6) Detalle de productos por visita + precios + costo base para el total despachado.
+    // El "total despachado" del informe se calcula con lo EFECTIVAMENTE despachado desde
+    // DESPACHOS_BODEGA (no el faltante teórico), porque bodega puede no tener suficiente
+    // stock para todas las máquinas. Así cuadra con lo que bodega realmente envió.
+    const pedidosVisita = visitasIds.length
+      ? await this.prisma.pedidosOperador.findMany({
+          where: { idGrupo: { in: visitasIds } },
+          select: {
+            idGrupo: true,
+            idProducto: true,
+            cantSugerida: true,
+            despachosBodega: { select: { cantDespachada: true } },
+          },
+        })
+      : [];
+    const totalDespachadoPorVisita = new Map<number, number>();
+    const totalSugeridoPorVisita = new Map<number, number>();
+    const totalPendientePorVisita = new Map<number, number>();
+    const totalVendidoProductosPorVisita = new Map<number, number>();
+    const totalCantidadPorVisita = new Map<number, number>();
+    const pendientePorProductoVisita = new Map<number, Map<number, number>>();
+    const despachadoPorProductoVisita = new Map<number, Map<number, number>>();
+    const vendidoPorProductoVisita = new Map<number, Record<number, number>>();
+    const clientesDeVisita = new Map<number, number | null>();
+    for (const v of visitasFiltradas) clientesDeVisita.set(v.idGrupo, maqMap.get(v.idMaquina)?.idCliente ?? null);
+
+    const productosVisita = [...new Set(pedidosVisita.map((p) => p.idProducto))];
+    const clientesVisita = [...new Set([...clientesDeVisita.values()].filter((c): c is number => c != null))];
+    const preciosPorClienteProducto = new Map<string, number>();
+    if (productosVisita.length && clientesVisita.length) {
+      const precios = await this.prisma.preciosCliente.findMany({
+        where: { idProducto: { in: productosVisita }, idCliente: { in: clientesVisita } },
+        select: { idCliente: true, idProducto: true, precioVenta: true },
+      });
+      for (const pr of precios) preciosPorClienteProducto.set(`${pr.idCliente}_${pr.idProducto}`, Number(pr.precioVenta));
+    }
+    const costoBasePorProducto = new Map<number, number>();
+    if (productosVisita.length) {
+      const prods = await this.prisma.productos.findMany({ where: { idProducto: { in: productosVisita } }, select: { idProducto: true, costoBase: true } });
+      for (const pr of prods) costoBasePorProducto.set(pr.idProducto, Number(pr.costoBase));
+    }
+    for (const p of pedidosVisita) {
+      if (p.idGrupo == null) continue;
+      const idClienteActual = clientesDeVisita.get(p.idGrupo) ?? null;
+      const precio =
+        idClienteActual != null
+          ? preciosPorClienteProducto.get(`${idClienteActual}_${p.idProducto}`) ?? costoBasePorProducto.get(p.idProducto) ?? 0
+          : costoBasePorProducto.get(p.idProducto) ?? 0;
+      const sugerido = Number(p.cantSugerida) || 0;
+      const despachadoReal = p.despachosBodega.reduce((acc: number, d) => acc + d.cantDespachada, 0);
+      const pendiente = Math.max(0, sugerido - despachadoReal);
+
+      totalSugeridoPorVisita.set(p.idGrupo, (totalSugeridoPorVisita.get(p.idGrupo) ?? 0) + sugerido * precio);
+      totalDespachadoPorVisita.set(p.idGrupo, (totalDespachadoPorVisita.get(p.idGrupo) ?? 0) + despachadoReal * precio);
+      totalPendientePorVisita.set(p.idGrupo, (totalPendientePorVisita.get(p.idGrupo) ?? 0) + pendiente * precio);
+      // Total vendido por productos = lo efectivamente cubierto (sugerido - pendiente),
+      // es decir lo que sí se considera vendido porque se repuso. El pendiente NO es venta.
+      totalVendidoProductosPorVisita.set(p.idGrupo, (totalVendidoProductosPorVisita.get(p.idGrupo) ?? 0) + (sugerido - pendiente) * precio);
+      totalCantidadPorVisita.set(p.idGrupo, (totalCantidadPorVisita.get(p.idGrupo) ?? 0) + sugerido);
+
+      // Desglose por producto: despachado real y pendiente por reponer.
+      const despMap = despachadoPorProductoVisita.get(p.idGrupo) ?? new Map<number, number>();
+      despMap.set(p.idProducto, (despMap.get(p.idProducto) ?? 0) + despachadoReal);
+      despachadoPorProductoVisita.set(p.idGrupo, despMap);
+      const pendMap = pendientePorProductoVisita.get(p.idGrupo) ?? new Map<number, number>();
+      pendMap.set(p.idProducto, (pendMap.get(p.idProducto) ?? 0) + pendiente);
+      pendientePorProductoVisita.set(p.idGrupo, pendMap);
+
+      // Subtotal VENDIDO por producto = (sugerido − pendiente) × precio; NO cuenta el pendiente.
+      const vendMap = vendidoPorProductoVisita.get(p.idGrupo) ?? {};
+      vendMap[p.idProducto] = (vendMap[p.idProducto] ?? 0) + (sugerido - pendiente) * precio;
+      vendidoPorProductoVisita.set(p.idGrupo, vendMap);
+    }
+
+    // 7) Ensamblar respuesta con desglose por producto
+    const detallePorVisita = new Map<number, any[]>();
+    for (const p of pedidosVisita) {
+      if (p.idGrupo == null) continue;
+      const idClienteActual = clientesDeVisita.get(p.idGrupo) ?? null;
+      const precio =
+        idClienteActual != null
+          ? preciosPorClienteProducto.get(`${idClienteActual}_${p.idProducto}`) ?? costoBasePorProducto.get(p.idProducto) ?? 0
+          : costoBasePorProducto.get(p.idProducto) ?? 0;
+      const sugerido = Number(p.cantSugerida) || 0;
+      const despachadoReal = p.despachosBodega.reduce((acc: number, d) => acc + d.cantDespachada, 0);
+      const pendiente = Math.max(0, sugerido - despachadoReal);
+      const arr = detallePorVisita.get(p.idGrupo) ?? [];
+      arr.push({
+        idProducto: p.idProducto,
+        cantidadSugerida: sugerido,
+        despachado: despachadoReal,
+        pendiente,
+        precio,
+        subtotal: despachadoReal * precio,
+        subtotalVendido: (sugerido - pendiente) * precio,
+      });
+      detallePorVisita.set(p.idGrupo, arr);
+    }
+
+    // 8) Persistir (backfill) los totales de visitas que aún no tienen registro en
+    // VENTAS_POR_VISITA. Una vez guardada, la visita queda inmutable en la BD.
+    // Se toleran errores de concurrencia (P2002) para no perder la consulta ni los datos.
+    for (const v of visitasFiltradas) {
+      const diferenciaNR = Math.max(0, v.nrActual - v.nrAnterior);
+      try {
+        await this.prisma.ventasPorVisita.upsert({
+          where: { idGrupo: v.idGrupo },
+          create: {
+            idGrupo: v.idGrupo,
+            idMaquina: v.idMaquina,
+            idCliente: maqMap.get(v.idMaquina)?.idCliente ?? null,
+            idOperador: v.idOperador,
+            fechaVisita: v.fechaVisita,
+            nrAnterior: BigInt(v.nrAnterior),
+            nrActual: BigInt(v.nrActual),
+            totalVendido: new Prisma.Decimal(diferenciaNR),
+            totalDespachado: new Prisma.Decimal(totalDespachadoPorVisita.get(v.idGrupo) ?? 0),
+            totalVendidoProductos: new Prisma.Decimal(totalVendidoProductosPorVisita.get(v.idGrupo) ?? 0),
+            unidadesSugeridas: totalCantidadPorVisita.get(v.idGrupo) ?? 0,
+            detalle: detallePorVisita.get(v.idGrupo) ?? [],
+            firmaOrigen: 'BACKFILL',
+          },
+          // Actualiza solo el "Total_Vendido_Productos" real (depende del despacho, que ocurre
+          // después del registro) sin alterar el NR ni los demás totales del histórico.
+          update: { totalVendidoProductos: new Prisma.Decimal(totalVendidoProductosPorVisita.get(v.idGrupo) ?? 0) },
+        });
+      } catch {
+        // Concurrencia (P2002) o error transitorio: no se detiene la consulta. La visita
+        // se devuelve esta llamada desde el cálculo en vivo y el guardado se reintenta en
+        // la próxima consulta. Así nunca se pierde la respuesta ni los datos calculados.
+      }
+    }
+
+    // 9) Leer los registros persistidos para devolver SIEMPRE el histórico inmutable
+    const persistedMap = new Map<number, any>();
+    const persisted = await this.prisma.ventasPorVisita.findMany({ where: { idGrupo: { in: visitasIds } } });
+    for (const p of persisted) if (p.idGrupo != null) persistedMap.set(p.idGrupo, p);
+
+    const idClienteNombreMap = new Map<number, string>();
+    if (clientesVisita.length) {
+      const cli = await this.prisma.clientes.findMany({ where: { idCliente: { in: clientesVisita } }, select: { idCliente: true, razonSocial: true } });
+      for (const c of cli) idClienteNombreMap.set(c.idCliente, c.razonSocial);
+    }
+
+    const lista = visitasFiltradas
+      .map((v) => {
+        const reg = persistedMap.get(v.idGrupo);
+        const maquina = maqMap.get(v.idMaquina) ?? null;
+        const clienteId = maquina?.idCliente ?? null;
+        return {
+          idGrupo: v.idGrupo,
+          idMaquina: v.idMaquina,
+          serial: maquina?.serial ?? null,
+          ubicacionEsp: maquina?.ubicacionEsp ?? null,
+          idCliente: clienteId,
+          cliente: clienteId != null ? idClienteNombreMap.get(clienteId) ?? null : null,
+          idOperador: v.idOperador,
+          operador: opMap.get(v.idOperador)?.nombreCompleto ?? `Op #${v.idOperador}`,
+          zona: opMap.get(v.idOperador)?.zonaAsignada ?? null,
+          fechaVisita: reg?.fechaVisita ?? v.fechaVisita,
+          nrAnterior: reg ? Number(reg.nrAnterior) : v.nrAnterior,
+          nrActual: reg ? Number(reg.nrActual) : v.nrActual,
+          totalVendido: reg ? Number(reg.totalVendido) : Math.max(0, v.nrActual - v.nrAnterior),
+          // El "total despachado" del informe es lo EFECTIVAMENTE despachado (desde
+          // DESPACHOS_BODEGA), no el faltante teórico guardado en VENTAS_POR_VISITA.
+          totalDespachado: totalDespachadoPorVisita.get(v.idGrupo) ?? 0,
+          // "Total vendido productos" = Σ (sugerido − pendiente) × precio. Solo cuenta lo
+          // repuesto realmente; el pendiente (deuda con la máquina) NO es venta.
+          totalVendidoProductos: reg ? Number(reg.totalVendidoProductos ?? totalVendidoProductosPorVisita.get(v.idGrupo) ?? 0) : totalVendidoProductosPorVisita.get(v.idGrupo) ?? 0,
+          totalSugerido: totalSugeridoPorVisita.get(v.idGrupo) ?? 0,
+          totalPendiente: totalPendientePorVisita.get(v.idGrupo) ?? 0,
+          unidadesSugeridas: totalCantidadPorVisita.get(v.idGrupo) ?? 0,
+          detalle: detallePorVisita.get(v.idGrupo) ?? [],
+          subtotalVendidoPorProducto: vendidoPorProductoVisita.get(v.idGrupo) ?? {},
+        };
+      })
+      .sort((a, b) => b.fechaVisita.getTime() - a.fechaVisita.getTime());
+
+    return {
+      total: lista.length,
+      totalDespachado: lista.reduce((s, r) => s + r.totalDespachado, 0),
+      totalSugerido: lista.reduce((s, r) => s + r.totalSugerido, 0),
+      totalPendiente: lista.reduce((s, r) => s + r.totalPendiente, 0),
+      totalVendido: lista.reduce((s, r) => s + r.totalVendido, 0),
+      totalVendidoProductos: lista.reduce((s, r) => s + (r.totalVendidoProductos ?? 0), 0),
+      visitas: lista,
+    };
   }
 
   async checkClosedForMutation(id: number, metodo: string) {
@@ -202,12 +541,33 @@ export class TreasuryService {
       throw new BadRequestException('Debe digitar el efectivo recogido para cerrar el recaudo');
     }
     const efectivoRecog = Math.max(0, Number(dto.efectivoRecog));
+    // Desglose en billetes/monedas. Si no se envían, se asume todo en billetes.
+    const tieneSplit =
+      (dto.efectivoBilletes !== undefined && dto.efectivoBilletes !== null) ||
+      (dto.efectivoMonedas !== undefined && dto.efectivoMonedas !== null);
+    let efectivoBilletes = r.efectivoBilletes ? Number(r.efectivoBilletes) : 0;
+    let efectivoMonedas = r.efectivoMonedas ? Number(r.efectivoMonedas) : 0;
+    if (tieneSplit) {
+      efectivoBilletes = Math.max(0, Number(dto.efectivoBilletes ?? 0));
+      efectivoMonedas = Math.max(0, Number(dto.efectivoMonedas ?? 0));
+      const sumaSplit = efectivoBilletes + efectivoMonedas;
+      if (Math.abs(sumaSplit - efectivoRecog) > 0.001) {
+        throw new BadRequestException(
+          `La suma de Billetes + Monedas (${sumaSplit.toFixed(2)}) debe coincidir con el Efectivo Recogido (${efectivoRecog.toFixed(2)})`,
+        );
+      }
+    } else {
+      efectivoBilletes = efectivoRecog;
+      efectivoMonedas = 0;
+    }
     const efectivoEsperado = Number(r.efectivoEsperado || 0);
     const diferenciaRec = efectivoRecog - efectivoEsperado;
     return this.prisma.tesoreriaEfectivoNr.update({
       where: { idRecaudo: id },
       data: {
         efectivoRecog: new Prisma.Decimal(efectivoRecog),
+        efectivoBilletes: new Prisma.Decimal(efectivoBilletes),
+        efectivoMonedas: new Prisma.Decimal(efectivoMonedas),
         diferenciaRec: new Prisma.Decimal(diferenciaRec),
         estado: 'CERRADO',
       },

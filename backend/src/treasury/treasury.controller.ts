@@ -44,4 +44,8 @@ export class TreasuryController {
   @Get('facturacion-nrq')
   @Permissions('tesoreria', 'ver')
   facturacionNrq(@Query() q: QueryFacturacionNrqDto) { return this.srv.facturacionNrq(q); }
+
+  @Get('vendido-por-visita')
+  @Permissions('tesoreria', 'ver')
+  vendidoPorVisita(@Query() q: any) { return this.srv.vendidoPorVisita(q); }
 }

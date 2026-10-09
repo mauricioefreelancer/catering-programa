@@ -14,14 +14,13 @@ import {
   Spin,
   Drawer,
   Descriptions,
-  Divider,
 } from 'antd'
 import { WalletOutlined, CheckCircleOutlined, ReloadOutlined, EyeOutlined, WarningOutlined, SaveOutlined } from '@ant-design/icons'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { useAuth } from '../../../hooks/useAuth'
 import { apiService } from '../../../api/services/api'
 
-const { Title, Text } = Typography
+const { Title } = Typography
 
 // Medios de pago que maneja una máquina (Efectivo siempre está presente).
 const MEDIOS_DIGITALES = ['veos', 'datafono', 'cupos'] as const
@@ -43,6 +42,9 @@ interface RecaudoGuardado {
   idRecaudo: number
   estado: string
   efectivoEsperado: number
+  efectivoRecog: number
+  efectivoBilletes: number
+  efectivoMonedas: number
   veosRecog: number
   datafonoRecog: number
   cuposRecog: number
@@ -57,6 +59,7 @@ interface VisitaRecaudo {
   nrActual: number
   diferenciaNR: number
   totalVendido: number
+  totalDespachado: number
   estado: 'PENDIENTE' | 'CERRADO'
   idRecaudo: number | null
   maquina?: { serial?: string; ubicacionEsp?: string; mediosPago?: MediosPago | null } | null
@@ -84,8 +87,8 @@ const Efectivo = () => {
   const [selected, setSelected] = useState<VisitaRecaudo | null>(null)
   const [nrActual, setNrActual] = useState<number | null>(null)
   const [digitales, setDigitales] = useState<Record<string, number | null>>({})
-  const [billetes, setBilletes] = useState<number | null>(null)
-  const [monedas, setMonedas] = useState<number | null>(null)
+  const [efectivoBilletes, setEfectivoBilletes] = useState<number | null>(null)
+  const [efectivoMonedas, setEfectivoMonedas] = useState<number | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [guardandoParcial, setGuardandoParcial] = useState(false)
 
@@ -123,10 +126,17 @@ const Efectivo = () => {
       }
     }
     setDigitales(precarga)
-    // Efectivo recogido: se divide en billetes y monedas (su suma = efectivo total).
-    // No se precarga un desglose previo: el operador digita el detalle de cada visita.
-    setBilletes(null)
-    setMonedas(null)
+    // Desglose del efectivo en billetes y monedas. Si hay recaudo guardado pendiente, se
+    // prellenan con los valores previos (o con el esperado si no existían aun).
+    const recDisp = v.recaudoGuardado
+    if (recDisp && (recDisp.efectivoBilletes > 0 || recDisp.efectivoMonedas > 0)) {
+      setEfectivoBilletes(recDisp.efectivoBilletes)
+      setEfectivoMonedas(recDisp.efectivoMonedas)
+    } else {
+      const esperado = v.recaudoGuardado?.efectivoEsperado ?? null
+      setEfectivoBilletes(esperado !== null && v.estado === 'PENDIENTE' ? esperado : null)
+      setEfectivoMonedas(null)
+    }
   }
 
   const buildBody = (efectivo: number | null) => {
@@ -142,7 +152,13 @@ const Efectivo = () => {
     for (const k of MEDIOS_DIGITALES) {
       if (medios.includes(k)) body[`${k}Recog`] = digitales[k] ?? 0
     }
-    if (efectivo !== null) body.efectivoRecog = efectivo
+    if (efectivo !== null) {
+      const billetes = Number(efectivoBilletes ?? 0)
+      const monedas = Number(efectivoMonedas ?? 0)
+      body.efectivoRecog = billetes + monedas
+      body.efectivoBilletes = billetes
+      body.efectivoMonedas = monedas
+    }
     return body
   }
 
@@ -172,11 +188,13 @@ const Efectivo = () => {
       message.error(`NR debe ser >= NR Anterior (${selected.nrAnterior})`)
       return
     }
-    if (billetes === null || monedas === null || billetes < 0 || monedas < 0) {
-      message.error('Digite la cantidad de billetes y de monedas que trajo el operador')
+    const billetes = Number(efectivoBilletes ?? 0)
+    const monedas = Number(efectivoMonedas ?? 0)
+    const efectivoTotal = billetes + monedas
+    if (efectivoBilletes === null && efectivoMonedas === null) {
+      message.error('Ingrese el efectivo recogido (billetes y/o monedas) por el operador')
       return
     }
-    const efectivoTotal = billetes + monedas
     setGuardando(true)
     const existePendiente = selected.idRecaudo != null && selected.estado === 'PENDIENTE' && selected.recaudoGuardado?.estado === 'PENDIENTE'
     try {
@@ -184,14 +202,18 @@ const Efectivo = () => {
       let accion: string
       if (existePendiente) {
         // Ya se guardaron los medios digitales; solo completamos el efectivo (PATCH).
-        res = await apiService.patch(`/tesoreria/efectivo-nr/${selected.idRecaudo}`, { efectivoRecog: efectivoTotal })
+        res = await apiService.patch(`/tesoreria/efectivo-nr/${selected.idRecaudo}`, {
+          efectivoRecog: efectivoTotal,
+          efectivoBilletes: billetes,
+          efectivoMonedas: monedas,
+        })
         accion = 'cerrado'
       } else {
         res = await apiService.post('/tesoreria/efectivo-nr', buildBody(efectivoTotal))
         accion = 'cerrado'
       }
       const idRecaudo = res?.id ?? res?.idRecaudo ?? res?.data?.idRecaudo ?? Math.floor(Math.random() * 10000)
-      message.success(`✅ Recaudo #${idRecaudo} ${accion} para la visita ${selected.idGrupo}. Efectivo: $${efectivoTotal.toLocaleString('es-CO')} (billetes $${billetes.toLocaleString('es-CO')} + monedas $${monedas.toLocaleString('es-CO')})`)
+      message.success(`✅ Recaudo #${idRecaudo} ${accion} para la visita ${selected.idGrupo}`)
       setSelected(null)
       loadData(true)
     } catch (err: any) {
@@ -208,8 +230,8 @@ const Efectivo = () => {
   const mediosActivosSel = selected ? mediosActivos(selected.maquina) : []
   const sumaDigitales = mediosActivosSel.reduce((acc, k) => acc + (digitales[k] ?? 0), 0)
   const efectivoEsperado = Math.max(0, totalVendidoActual - sumaDigitales)
-  const efectivoRecogTotal = (billetes ?? 0) + (monedas ?? 0)
   const esPendienteCerrable = !!selected && selected.idRecaudo != null && selected.estado === 'PENDIENTE' && selected.recaudoGuardado?.estado === 'PENDIENTE'
+  const efectivoTotalActual = (Number(efectivoBilletes ?? 0)) + (Number(efectivoMonedas ?? 0))
 
   const columns = [
     {
@@ -281,6 +303,17 @@ const Efectivo = () => {
       ),
     },
     {
+      title: 'Total Despachado ($)',
+      dataIndex: 'totalDespachado',
+      width: 170,
+      align: 'center' as const,
+      render: (v: number) => (
+        <Tag color="purple" style={{ fontWeight: 600 }}>
+          {fmt(v)}
+        </Tag>
+      ),
+    },
+    {
       title: 'Estado',
       dataIndex: 'estado',
       width: 110,
@@ -344,7 +377,7 @@ const Efectivo = () => {
             dataSource={visitas}
             size="middle"
             pagination={{ pageSize: 20, showTotal: (t) => `${t} visita(s)` }}
-            scroll={{ x: 1300 }}
+            scroll={{ x: 1500 }}
             locale={{ emptyText: 'No hay visitas con lectura NR registrada' }}
           />
         </Spin>
@@ -433,7 +466,7 @@ const Efectivo = () => {
           )}
         </Card>
 
-        <Card size="small" style={{ marginTop: 16 }} type="inner" title="💰 Efectivo que trae el operador">
+        <Card size="small" style={{ marginTop: 16 }} type="inner" title="💰 Efectivo que trae el operador (billetes + monedas)">
           <Statistic
             title="Efectivo ESPERADO (total vendido − medios digitales)"
             value={efectivoEsperado}
@@ -441,44 +474,39 @@ const Efectivo = () => {
             prefix="$"
             valueStyle={{ color: '#cf1322' }}
           />
-          <Divider style={{ margin: '12px 0' }} />
-          <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>
-            El operador entrega el efectivo en dos partes: billetes por un lado y monedas por otro. La suma de ambos es el Efectivo Recogido.
-          </div>
+          <div style={{ height: 12 }} />
           <Row gutter={12}>
-            <Col xs={12}>
-              <label style={{ fontWeight: 600 }}>💵 Billetes ($):</label>
+            <Col span={12}>
+              <label style={{ fontWeight: 600 }}>Billetes ($):</label>
               <InputNumber
                 size="large"
-                style={{ width: '100%', marginTop: 8 }}
+                style={{ width: '100%', marginTop: 4 }}
                 min={0}
                 prefix="$"
-                value={billetes}
-                onChange={(v: any) => setBilletes(v == null ? null : Number(v))}
-                placeholder="Billetes"
+                value={efectivoBilletes}
+                onChange={(v: any) => setEfectivoBilletes(v == null ? null : Number(v))}
+                placeholder="Efectivo en billetes"
                 formatter={(v: any) => `$ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                 parser={(v: any) => Number(String(v).replace(/[\$\s,]/g, ''))}
               />
             </Col>
-            <Col xs={12}>
-              <label style={{ fontWeight: 600 }}>🪙 Monedas ($):</label>
+            <Col span={12}>
+              <label style={{ fontWeight: 600 }}>Monedas ($):</label>
               <InputNumber
                 size="large"
-                style={{ width: '100%', marginTop: 8 }}
+                style={{ width: '100%', marginTop: 4 }}
                 min={0}
                 prefix="$"
-                value={monedas}
-                onChange={(v: any) => setMonedas(v == null ? null : Number(v))}
-                placeholder="Monedas"
+                value={efectivoMonedas}
+                onChange={(v: any) => setEfectivoMonedas(v == null ? null : Number(v))}
+                placeholder="Efectivo en monedas"
                 formatter={(v: any) => `$ ${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}
                 parser={(v: any) => Number(String(v).replace(/[\$\s,]/g, ''))}
               />
             </Col>
           </Row>
-          <div style={{ marginTop: 12, padding: '8px 12px', background: '#f6ffed', border: '1px solid #b7eb8f', borderRadius: 6 }}>
-            <Text strong style={{ fontSize: 15 }}>
-              💰 Efectivo Recogido (Billetes + Monedas): ${efectivoRecogTotal.toLocaleString('es-CO')}
-            </Text>
+          <div style={{ marginTop: 8, fontWeight: 600, color: '#1677ff' }}>
+            Efectivo Recogido: {fmt(efectivoTotalActual)}
           </div>
         </Card>
 
@@ -505,16 +533,14 @@ const Efectivo = () => {
           <Descriptions.Item label="Efectivo Esperado">
             {fmt(efectivoEsperado)}
           </Descriptions.Item>
-          <Descriptions.Item label="Billetes Recogidos">
-            {fmt(billetes)}
+          <Descriptions.Item label="Billetes">
+            {fmt(efectivoBilletes)}
           </Descriptions.Item>
-          <Descriptions.Item label="Monedas Recogidas">
-            {fmt(monedas)}
+          <Descriptions.Item label="Monedas">
+            {fmt(efectivoMonedas)}
           </Descriptions.Item>
           <Descriptions.Item label="Efectivo Recogido (total)">
-            <Tag color={efectivoRecogTotal > 0 ? 'green' : 'default'} style={{ fontWeight: 600 }}>
-              {fmt(efectivoRecogTotal)}
-            </Tag>
+            {fmt(efectivoTotalActual)}
           </Descriptions.Item>
         </Descriptions>
 

@@ -18,11 +18,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeftOutlined,
   SaveOutlined,
-  SyncOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons'
 import { apiService } from '../../api/services/api'
-import { offlineStore } from './offline.store'
 
 const { Text } = Typography
 
@@ -83,7 +81,6 @@ const ResumenMobile = () => {
 
   const [saving, setSaving] = useState(false)
   const [savedOk, setSavedOk] = useState(false)
-  const [offlineSaved, setOfflineSaved] = useState(false)
 
   const cargarDatos = useCallback(async () => {
     try {
@@ -192,9 +189,8 @@ const ResumenMobile = () => {
 
   const diffNR = (maquina?.nrActual || 0) - (maquina?.ultimoNR || 0)
 
-  const save = async (forceOffline = false) => {
+  const save = async () => {
     setSaving(true)
-    setOfflineSaved(false)
     try {
       const payload = {
         maquinaId: id,
@@ -215,39 +211,12 @@ const ResumenMobile = () => {
         savedAt: Date.now(),
       }
 
-      if (!forceOffline) {
-        await apiService.post('/inventarios/operario', payload as any)
-      } else {
-        throw new Error('FORCE_OFFLINE')
-      }
+      await apiService.post('/inventarios/operario', payload as any)
       setSavedOk(true)
       message.success('✅ Inventario enviado correctamente')
     } catch (e: any) {
-      try {
-        await offlineStore.addPending({
-          maquinaId: id,
-          maquinaSerial: maquina?.serial ?? `MAQ-${id}`,
-          espirales: (maquina?.espirales || []).map((e) => ({
-            espiral: e.espiral,
-            fisico: e.fisico,
-            sugerida: e.sugerida,
-            idMapaMp: e.idMapaMp,
-            idProducto: e.idProducto,
-          })),
-          nr_actual: datosContadores?.nrActual ?? maquina?.nrActual ?? 0,
-          nrq: (datosContadores?.botones || []).map((b) => ({
-            boton: b.boton,
-            productoNombre: b.productoNombre,
-            valor: b.valor,
-          })),
-          savedAt: Date.now(),
-        } as any)
-      } catch (err) {
-        console.error('Error guardando offline', err)
-      }
-      setOfflineSaved(true)
-      setSavedOk(true)
-      message.warning('📴 Sin conexión: Guardado OFFLINE. Sincronizará luego.')
+      const msg = e?.response?.data?.message || e?.message || 'No se pudo enviar el inventario'
+      message.error(`❌ Error al enviar el inventario: ${msg}. Verifique la conexión e intente nuevamente.`)
     } finally {
       setSaving(false)
     }
@@ -284,12 +253,8 @@ const ResumenMobile = () => {
       <Result
         status="success"
         icon={<CheckCircleOutlined />}
-        title={offlineSaved ? 'Guardado Offline ✓' : '¡Inventario Enviado! ✓'}
-        subTitle={
-          offlineSaved
-            ? 'El dispositivo no tenía conexión. Datos almacenados localmente. Presiona "Sincronizar" en el Topbar cuando haya red.'
-            : `Inventario para ${maquina?.serial} procesado. ${maquina?.totalSugeridas} unidades sugeridas para despacho.`
-        }
+        title="¡Inventario Enviado! ✓"
+        subTitle={`Inventario para ${maquina?.serial} procesado. ${maquina?.totalSugeridas} unidades sugeridas para despacho.`}
         extra={[
           <Button type="primary" size="large" icon={<ArrowLeftOutlined />} onClick={() => navigate('/mobile/home')}>
             Volver a Lista Máquinas
@@ -383,10 +348,7 @@ const ResumenMobile = () => {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
         <Button type="primary" size="large" loading={saving} icon={<SaveOutlined />} onClick={() => save()}>
-          💾 Guardar y Sincronizar (Online)
-        </Button>
-        <Button size="large" loading={saving} icon={<SyncOutlined />} onClick={() => save(true)}>
-          📴 Guardar local (Offline)
+          💾 Guardar Inventario (Online)
         </Button>
         <Button size="large" icon={<ArrowLeftOutlined />} onClick={() => navigate(`/mobile/contadores/${id}`)}>
           Corregir Datos

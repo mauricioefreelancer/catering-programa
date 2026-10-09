@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Query, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, Body, UseGuards, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { OperadorPedidoService } from './operador-pedido.service';
 import { CreatePedidoOperadorDto } from './dto/operador-pedido.dto';
 import { AuthGuard } from '@nestjs/passport';
@@ -25,7 +26,12 @@ export class OperadorPedidoController {
 
   @Post()
   @Permissions('pedidosOperador', 'crear')
-  create(@Body() dto: CreatePedidoOperadorDto) {
-    return this.srv.create(dto);
+  create(@Body() dto: CreatePedidoOperadorDto, @Req() req: Request) {
+    return this.srv.create(dto, this.userId(req));
+  }
+
+  private userId(req: Request): number | null {
+    const u = (req as any).user as any;
+    return u && typeof u.sub === 'number' ? u.sub : null;
   }
 }

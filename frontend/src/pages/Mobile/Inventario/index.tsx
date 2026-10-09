@@ -17,9 +17,8 @@ import {
   Spin,
 } from 'antd'
 import { useParams, useNavigate } from 'react-router-dom'
-import { CheckCircleOutlined, ArrowLeftOutlined, SaveOutlined, ArrowRightOutlined, SyncOutlined } from '@ant-design/icons'
+import { CheckCircleOutlined, ArrowLeftOutlined, SaveOutlined, ArrowRightOutlined } from '@ant-design/icons'
 import { apiService } from '../../../api/services/api'
-import { offlineStore } from '../offline.store'
 import { useAuth } from '../../../hooks/useAuth'
 
 const { Text } = Typography
@@ -69,7 +68,6 @@ const InventarioMobile = () => {
   const [nrActual, setNrActual] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [savedOk, setSavedOk] = useState(false)
-  const [offlineSaved, setOfflineSaved] = useState(false)
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -228,9 +226,8 @@ const InventarioMobile = () => {
     return true
   }
 
-  const save = async (forceOffline = false) => {
+  const save = async () => {
     setSaving(true)
-    setOfflineSaved(false)
     try {
       if (!idOperadorActual) {
         throw new Error('No se pudo identificar el operador asociado a este usuario.')
@@ -254,11 +251,7 @@ const InventarioMobile = () => {
           .filter((x: any) => x.idMapaNRQ && !isNaN(x.idMapaNRQ) && x.valor > 0),
       }
 
-      if (!forceOffline) {
-        await apiService.post('/pedidos-operador', dto)
-      } else {
-        throw new Error('FORCE_OFFLINE')
-      }
+      await apiService.post('/pedidos-operador', dto)
       setSavedOk(true)
       message.success('✅ Inventario enviado correctamente')
     } catch (e: any) {
@@ -267,26 +260,8 @@ const InventarioMobile = () => {
         setSaving(false)
         return
       }
-      try {
-        await offlineStore.addPending({
-          maquinaId: id,
-          maquinaSerial: maq.serial,
-          espirales: espirales.map((e) => ({
-            espiral: e.espiral,
-            fisico: e.fisico_digitado,
-            sugerida: e.cant_sugerida,
-            idMapaMp: e.idMapaMp,
-            idProducto: e.idProducto,
-          })),
-          nr_actual: nrActual || 0,
-          nrq: botones.map((b) => ({ boton: b.boton, valor: b.valor, idMapaNrq: b.idMapaNrq })),
-          idOperador: idOperadorActual ?? undefined,
-          savedAt: Date.now(),
-        } as any)
-      } catch { /* ignore */ }
-      setOfflineSaved(true)
-      setSavedOk(true)
-      message.warning('📴 Sin conexión: Guardado OFFLINE. Sincronizará luego.')
+      const msg = e?.response?.data?.message || e?.message || 'No se pudo enviar el inventario'
+      message.error(`❌ Error al enviar el inventario: ${msg}. Verifique la conexión e intente nuevamente.`)
     } finally {
       setSaving(false)
     }
@@ -305,21 +280,12 @@ const InventarioMobile = () => {
       <Result
         status="success"
         icon={<CheckCircleOutlined />}
-        title={offlineSaved ? 'Guardado Offline ✓' : '¡Inventario Enviado! ✓'}
-        subTitle={
-          offlineSaved
-            ? 'El dispositivo no tenía conexión. Datos almacenados localmente. Presiona "Sincronizar" en el Topbar cuando haya red.'
-            : `Inventario para ${maq.serial} procesado. ${totalSugeridas} unidades sugeridas para despacho.`
-        }
+        title="¡Inventario Enviado! ✓"
+        subTitle={`Inventario para ${maq.serial} procesado. ${totalSugeridas} unidades sugeridas para despacho.`}
         extra={[
           <Button type="primary" size="large" icon={<ArrowLeftOutlined />} onClick={() => navigate('/mobile/maquinas')}>
             Volver a Lista Máquinas
           </Button>,
-          offlineSaved ? (
-            <Button size="large" icon={<SyncOutlined />} onClick={() => navigate('/mobile/maquinas')}>
-              Sincronizar luego
-            </Button>
-          ) : null,
         ]}
       />
     )
@@ -606,9 +572,6 @@ const InventarioMobile = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
             <Button type="primary" size="large" loading={saving} icon={<SaveOutlined />} onClick={() => save()} disabled={!idOperadorActual}>
               💾 Guardar Inventario (Online)
-            </Button>
-            <Button size="large" loading={saving} icon={<SyncOutlined />} onClick={() => save(true)} disabled={!idOperadorActual}>
-              📴 Guardar Offline (Simular)
             </Button>
             <Button size="large" icon={<ArrowLeftOutlined />} onClick={() => setStep(1)}>
               Corregir Paso 2

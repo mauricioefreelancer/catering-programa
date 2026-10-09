@@ -47,6 +47,11 @@ export class InventoryService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // Configura el contexto de auditoría dentro de la MISMA transacción para que el
+      // trigger registre el usuario correcto (con pool de conexiones el contexto del
+      // middleware no llega a la conexión que ejecuta la mutación).
+      await this.setAuditContext(tx, dto.idUsuario);
+
       const ingreso = await tx.ingresosBodega.create({
         data: {
           idProveedor: dto.idProveedor,
@@ -90,5 +95,10 @@ export class InventoryService {
 
       return ingreso;
     });
+  }
+
+  private async setAuditContext(tx: Prisma.TransactionClient, userId?: number | null) {
+    const uid = userId ? String(userId) : '';
+    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', '${uid}', TRUE)`);
   }
 }

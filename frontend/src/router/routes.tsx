@@ -15,6 +15,7 @@ import Despachos from '../pages/Despachos'
 import PedidosOperador from '../pages/Pedidos'
 import Efectivo from '../pages/Tesoreria/Efectivo'
 import FacturacionNRQ from '../pages/Tesoreria/FacturacionNRQ'
+import VendidoPorVisita from '../pages/Tesoreria/VendidoPorVisita'
 import Roles from '../pages/Admin/Roles'
 import Usuarios from '../pages/Admin/Usuarios'
 import AdminDataPanel from '../pages/Admin/DataPanel'
@@ -169,6 +170,14 @@ export const routes = createBrowserRouter([
       {
         path: 'tesoreria/efectivo',
         element: <Navigate to="/tesoreria/recaudos" replace />,
+      },
+      {
+        path: 'tesoreria/vendido-por-visita',
+        element: (
+          <PermissionRoute modulo="tesoreria" accion="ver">
+            <VendidoPorVisita />
+          </PermissionRoute>
+        ),
       },
       {
         path: 'tesoreria/facturacion-nrq',

@@ -59,6 +59,8 @@ interface FilaPedido {
   nombreCompletoOperador?: string | null
   nombreProducto?: string | null
   totalDespachado?: number
+  capacidadMax?: number | null
+  fisicoEspiral?: number | null
 }
 
 interface ItemDespachoEdit {
@@ -71,6 +73,8 @@ interface ItemDespachoEdit {
   totalDespachadoPrevio: number
   stockActualProducto?: number
   espiralCodigo?: string | null
+  capacidadMax?: number | null
+  noReponer?: boolean
 }
 
 interface PedidoAgrupado {
@@ -153,6 +157,10 @@ const normalizarFila = (raw: any): FilaPedido => {
     totalDespachado: Number(
       raw.totalDespachado ?? raw.total_despachado ?? raw.totalDespachada ?? raw.total_despachada ?? 0,
     ),
+    capacidadMax:
+      raw.capacidadMax ?? raw.capacidad_max ?? raw.Capacidad_Max ?? raw['Capacidad_Max'] ?? null,
+    fisicoEspiral:
+      raw.fisicoEspiral ?? raw.fisico_espiral ?? raw['Fisico_Espiral'] ?? raw.fisicoDigitado ?? null,
   }
 }
 
@@ -160,6 +168,17 @@ const agruparPorMaquina = (filas: FilaPedido[], productosStockMap: Record<number
   const map = new Map<number, PedidoAgrupado>()
   for (const f of filas) {
     const stock = productosStockMap[f.idProducto] ?? 0
+    // Tope por física real del espiral: no se puede despachar más de lo que cabe.
+    // cupoRestante = capacidadMax − (físico digitado + ya despachado en este pedido).
+    const capacidadMax = f.capacidadMax ?? 0
+    const cupoRestante = capacidadMax > 0
+      ? Math.max(0, capacidadMax - ((f as any).fisicoEspiral ?? f.fisicoDigitado) - (f.totalDespachado ?? 0))
+      : Number.MAX_SAFE_INTEGER
+    let cantDespachada = Math.max(0, f.cantSugerida - (f.totalDespachado ?? 0))
+    if (cantDespachada > stock) cantDespachada = stock
+    if (cantDespachada > cupoRestante) cantDespachada = cupoRestante
+    if (cantDespachada < 0) cantDespachada = 0
+
     const item: ItemDespachoEdit = {
       idPedido: f.idPedido,
       idProducto: f.idProducto,
@@ -167,11 +186,11 @@ const agruparPorMaquina = (filas: FilaPedido[], productosStockMap: Record<number
       fisicoDigitado: f.fisicoDigitado,
       cantSugerida: f.cantSugerida,
       totalDespachadoPrevio: f.totalDespachado ?? 0,
-      cantDespachada: Math.max(0, f.cantSugerida - (f.totalDespachado ?? 0)),
+      cantDespachada,
       stockActualProducto: stock,
+      capacidadMax: capacidadMax > 0 ? capacidadMax : null,
+      noReponer: false,
     }
-    if (item.cantDespachada > stock) item.cantDespachada = stock
-    if (item.cantDespachada < 0) item.cantDespachada = 0
 
     if (!map.has(f.idMaquina)) {
       map.set(f.idMaquina, {
@@ -281,7 +300,32 @@ const Despachos = () => {
           ? {
               ...g,
               items: g.items.map((it) =>
-                it.idPedido === idPedido ? { ...it, cantDespachada: Math.max(0, Number(qty) || 0) } : it,
+                it.idPedido === idPedido
+                  ? {
+                      ...it,
+                      cantDespachada: Math.max(0, Number(qty) || 0),
+                      noReponer: false,
+                    }
+                  : it,
+              ),
+            }
+          : g,
+      ),
+    )
+  }
+
+  // "No reponer": marca la fila para que al confirmar NO se envíe producto a este espiral.
+  // Con ello este espiral no cuenta como venta y no vuelve a pedirse en la siguiente visita.
+  const toggleNoReponer = (idMaquina: number, idPedido: number) => {
+    setGrupos((prev) =>
+      prev.map((g) =>
+        g.idMaquina === idMaquina
+          ? {
+              ...g,
+              items: g.items.map((it) =>
+                it.idPedido === idPedido
+                  ? { ...it, noReponer: !it.noReponer, cantDespachada: it.noReponer ? it.cantDespachada : 0 }
+                  : it,
               ),
             }
           : g,
@@ -296,9 +340,13 @@ const Despachos = () => {
           ? {
               ...g,
               items: g.items.map((it) => {
+                // Tope por física real del espiral en el auto-sugerido.
+                const cupoRest = it.capacidadMax
+                  ? Math.max(0, it.capacidadMax - it.fisicoDigitado - it.totalDespachadoPrevio)
+                  : Number.MAX_SAFE_INTEGER
                 const faltante = Math.max(0, it.cantSugerida - it.totalDespachadoPrevio)
-                const desp = Math.min(faltante, it.stockActualProducto ?? Number.MAX_SAFE_INTEGER)
-                return { ...it, cantDespachada: desp }
+                const desp = Math.min(faltante, it.stockActualProducto ?? Number.MAX_SAFE_INTEGER, cupoRest)
+                return { ...it, cantDespachada: desp, noReponer: false }
               }),
             }
           : g,
@@ -310,7 +358,14 @@ const Despachos = () => {
     setGrupos((prev) =>
       prev.map((g) =>
         g.idMaquina === idMaquina
-          ? { ...g, items: g.items.map((it) => ({ ...it, cantDespachada: 0 })) }
+          ? {
+              ...g,
+              items: g.items.map((it) => ({
+                ...it,
+                cantDespachada: 0,
+                noReponer: false,
+              })),
+            }
           : g,
       ),
     )
@@ -323,7 +378,7 @@ const Despachos = () => {
     }
     const aDespachar = grupo.items.filter((i) => i.cantDespachada > 0)
     const aCero = grupo.items.filter((i) => i.cantDespachada === 0)
-    if (aDespachar.length === 0 && aCero.length === 0) {
+    if (aDespachar.length === 0 && aCero.length === 0 && !grupo.items.some((i) => i.noReponer)) {
       message.warning('No hay líneas de producto para procesar en esta máquina.')
       return
     }
@@ -341,7 +396,8 @@ const Despachos = () => {
         idUsuario: Number(usuario.idUsuario),
         items: grupo.items.map((i) => ({
           idPedido: i.idPedido,
-          cantDespachada: i.cantDespachada,
+          cantDespachada: i.noReponer ? 0 : i.cantDespachada,
+          noReponer: i.noReponer ?? undefined,
           observaciones: `Despacho ${grupo.serial} - ${i.nombreProducto}`,
         })),
       }
@@ -382,6 +438,7 @@ const Despachos = () => {
       producto: it.nombreProducto,
       fisico: it.fisicoDigitado,
       sugerida: it.cantSugerida,
+      prevDesp: it.totalDespachadoPrevio,
       despachar: it.cantDespachada,
       stockActual: it.stockActualProducto ?? 0,
       estadoGrupo: g.estado,
@@ -416,6 +473,20 @@ const Despachos = () => {
       render: (v: number) => <Tag color="blue">{v}</Tag>,
     },
     {
+      title: 'Previ. Despachado',
+      dataIndex: 'totalDespachadoPrevio',
+      width: 140,
+      align: 'center' as const,
+      render: (v: number) =>
+        v > 0 ? (
+          <Tag color="geekblue">
+            <CheckCircleOutlined /> {v}
+          </Tag>
+        ) : (
+          <Tag color="default">— 0 —</Tag>
+        ),
+    },
+    {
       title: 'Stock Actual (Bodega)',
       dataIndex: 'stockActualProducto',
       width: 160,
@@ -442,17 +513,29 @@ const Despachos = () => {
     {
       title: 'Cant Despachada Ahora',
       dataIndex: 'cantDespachada',
-      width: 200,
+      width: 220,
       render: (_: any, r: ItemDespachoEdit) =>
         perm.editar ? (
-          <InputNumber
-            size="large"
-            min={0}
-            max={r.stockActualProducto ?? 99999}
-            value={r.cantDespachada}
-            style={{ width: '100%' }}
-            onChange={(v: any) => actualizarCant(grupo.idMaquina, r.idPedido, Number(v))}
-          />
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            <InputNumber
+              size="large"
+              min={0}
+              max={r.stockActualProducto ?? 99999}
+              value={r.cantDespachada}
+              disabled={!!r.noReponer}
+              style={{ width: '100%' }}
+              onChange={(v: any) => actualizarCant(grupo.idMaquina, r.idPedido, Number(v))}
+            />
+            <Button
+              size="small"
+              danger
+              type={r.noReponer ? 'primary' : 'dashed'}
+              icon={<MinusCircleOutlined />}
+              onClick={() => toggleNoReponer(grupo.idMaquina, r.idPedido)}
+            >
+              {r.noReponer ? 'No se enviará nada' : 'No reponer'}
+            </Button>
+          </Space>
         ) : (
           <strong style={{ fontSize: 15 }}>{r.cantDespachada}</strong>
         ),
@@ -713,6 +796,7 @@ const Despachos = () => {
                     size="small"
                     scroll={{ x: 'max-content' }}
                     rowClassName={(r) => {
+                      if (r.noReponer) return 'ant-table-row-disabled'
                       const pend = Math.max(0, r.cantSugerida - r.totalDespachadoPrevio)
                       if (pend === 0) return 'ant-table-row-ok'
                       if ((r.stockActualProducto ?? 0) < pend) return 'ant-table-row-danger'
@@ -775,6 +859,13 @@ const Despachos = () => {
               align: 'center' as const,
               width: 90,
               render: (v: any) => <Tag color="blue">{v}</Tag>,
+            },
+            {
+              title: 'Prev. Desp.',
+              dataIndex: 'prevDesp',
+              align: 'center' as const,
+              width: 90,
+              render: (v: any) => (v > 0 ? <Tag color="geekblue">{v}</Tag> : '—'),
             },
             {
               title: 'Stock Bodega',

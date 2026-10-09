@@ -8,6 +8,8 @@ export class CreateEfectivoNrDto {
   @IsNumber() @IsNotEmpty() nrActual: number;
   @IsOptional() @IsNumber() nrAnterior?: number;
   @IsOptional() @IsNumber() efectivoRecog?: number;
+  @IsOptional() @IsNumber() efectivoBilletes?: number;
+  @IsOptional() @IsNumber() efectivoMonedas?: number;
   @IsOptional() @IsNumber() veosRecog?: number;
   @IsOptional() @IsNumber() datafonoRecog?: number;
   @IsOptional() @IsNumber() cuposRecog?: number;
@@ -17,6 +19,8 @@ export class CreateEfectivoNrDto {
 // DTO para completar (guardar parcial -> cerrar) un recaudo PENDIENTE con el efectivo.
 export class CompletarEfectivoNrDto {
   @IsOptional() @IsNumber() efectivoRecog?: number;
+  @IsOptional() @IsNumber() efectivoBilletes?: number;
+  @IsOptional() @IsNumber() efectivoMonedas?: number;
 }
 
 export class CreateSaldoDigitalDto {
@@ -40,4 +44,12 @@ export class QueryFacturacionNrqDto {
   @IsDateString() @IsNotEmpty() fechaFin: string;
   @IsOptional() @IsInt() idCliente?: string;
   @IsOptional() @IsInt() idProducto?: string;
+}
+
+// Query para "Vendido por Visita": mapea las ventas/despachos de cada máquina por visita.
+export class QueryVendidoPorVisitaDto {
+  @IsOptional() @IsDateString() fechaInicio?: string;
+  @IsOptional() @IsDateString() fechaFin?: string;
+  @IsOptional() @IsInt() idMaquina?: string;
+  @IsOptional() @IsInt() idCliente?: string;
 }

@@ -61,6 +61,7 @@ model Clientes {
   preciosCliente   PreciosCliente[]
   maquinasYTiendas  MaquinasYTiendas[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
+  ventasPorVisita VentasPorVisita[]
 
   @@map("CLIENTES")
 }
@@ -104,6 +105,7 @@ model Operadores {
   usuario          UsuariosSistema         @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
   maquinasYTiendas  MaquinasYTiendas[]
   pedidosOperador  PedidosOperador[]
+  ventasPorVisita  VentasPorVisita[]
   tesoreriaEfectivoNr TesoreriaEfectivoNr[]
 
   @@map("OPERADORES")
@@ -203,6 +205,7 @@ model MaquinasYTiendas {
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
   saldosDigitales SaldosDigitales[]
   historialMediosPago HistorialMediosPago[]
+  ventasPorVisita VentasPorVisita[]
 
   @@map("MAQUINAS_Y_TIENDAS")
 }
@@ -221,6 +224,7 @@ model MapaMateriaPrima {
   producto Productos        @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
   proveedor Proveedores?   @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   pedidosOperador PedidosOperador[]
+  despachosBodega  DespachosBodega[]
 
   @@unique([idMaquina, espiralCodigo], map: "uq_espiral_maquina")
   @@map("MAPA_MATERIA_PRIMA")
@@ -304,11 +308,44 @@ model DespachosBodega {
   cantDespachada Int                       @default(0) @map("Cant_Despachada")
   pendienteDesp  Int                       @default(0) @map("Pendiente_Desp")
   observaciones String?                   @map("Observaciones") @db.Text
+  idMapaMp       Int?                      @map("ID_Mapa_MP")
+  stockAntes     Int                       @default(0) @map("Stock_Antes")
+  stockDespues   Int                       @default(0) @map("Stock_Despues")
 
   pedido  PedidosOperador @relation(fields: [idPedido], references: [idPedido], onDelete: Restrict, onUpdate: Cascade)
   usuario UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
+  mapaMp  MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull, onUpdate: Cascade)
 
   @@map("DESPACHOS_BODEGA")
+}
+
+// Totales persistentes por visita del operador. Se generan al registrar la visita y se
+// respaldan (backfill) la primera vez que se consultan, quedando como histórico inmutable.
+model VentasPorVisita {
+  idVisita         Int                       @id @default(autoincrement()) @map("ID_Visita")
+  idGrupo         Int?                      @map("ID_Grupo") @unique
+  idMaquina       Int                       @map("ID_Maquina")
+  idCliente       Int?                      @map("ID_Cliente")
+  idOperador      Int                       @map("ID_Operador")
+  fechaVisita     DateTime                  @map("Fecha_Visita")
+  nrAnterior      BigInt                    @default(0) @map("NR_Anterior")
+  nrActual        BigInt                    @default(0) @map("NR_Actual")
+  totalVendido    Decimal                   @default(0) @map("Total_Vendido") @db.Decimal(18, 2)
+  totalDespachado Decimal                   @default(0) @map("Total_Despachado") @db.Decimal(18, 2)
+  totalVendidoProductos Decimal            @default(0) @map("Total_Vendido_Productos") @db.Decimal(18, 2)
+  unidadesSugeridas Int                    @default(0) @map("Unidades_Sugeridas")
+  detalle         Json?                     @map("Detalle")
+  firmaFecha      DateTime                  @default(now()) @map("Firma_Fecha")
+  firmaUsuario    Int?                      @map("Firma_Usuario")
+  firmaOrigen     String                    @default("REGISTRO") @map("Firma_Origen") @db.VarChar(20)
+
+  maquina   MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
+  cliente   Clientes?        @relation(fields: [idCliente], references: [idCliente], onDelete: SetNull, onUpdate: Cascade)
+  operador  Operadores       @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([idMaquina, fechaVisita])
+  @@index([idCliente])
+  @@map("VENTAS_POR_VISITA")
 }
 
 model TesoreriaEfectivoNr {
@@ -324,6 +361,8 @@ model TesoreriaEfectivoNr {
   tarifaAplicada Decimal                   @default(0) @map("Tarifa_Aplicada") @db.Decimal(18, 2)
   efectivoTeorico Decimal                   @default(0) @map("Efectivo_Teorico") @db.Decimal(18, 2)
   efectivoRecog Decimal                   @default(0) @map("Efectivo_Recog") @db.Decimal(18, 2)
+  efectivoBilletes Decimal                   @default(0) @map("Efectivo_Billetes") @db.Decimal(18, 2)
+  efectivoMonedas Decimal                   @default(0) @map("Efectivo_Monedas") @db.Decimal(18, 2)
   diferenciaRec Decimal                   @default(0) @map("Diferencia_Rec") @db.Decimal(18, 2)
   veosRecog     Decimal                   @default(0) @map("Veos_Recog") @db.Decimal(18, 2)
   datafonoRecog Decimal                   @default(0) @map("Datafono_Recog") @db.Decimal(18, 2)
