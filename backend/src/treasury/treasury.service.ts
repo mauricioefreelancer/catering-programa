@@ -21,13 +21,37 @@ export class TreasuryService {
 
     // NR anterior: se toma el enviado por el frontend (último NR digitado por el operador
     // en la visita previa) o, en su defecto, el último recaudo cerrado de la máquina.
+    // NO se usa `maquina.ultimoContadorNR` como respaldo: el registro de la visita ya lo
+    // sobrescribe con el nrActual, así que ya no representa el "anterior" real.
     let nrAnterior = dto.nrAnterior;
     if (nrAnterior === undefined || nrAnterior === null) {
       const ultimoCerrado = await this.prisma.tesoreriaEfectivoNr.findFirst({
         where: { idMaquina: dto.idMaquina, estado: 'CERRADO' },
         orderBy: { fechaHora: 'desc' },
       });
-      nrAnterior = ultimoCerrado ? Number(ultimoCerrado.nrActual) : (maq.ultimoContadorNR ? Number(maq.ultimoContadorNR) : 0);
+      if (ultimoCerrado) {
+        nrAnterior = Number(ultimoCerrado.nrActual);
+      } else {
+        // Sin historial de recaudos: se toma el NR de la visita inmediatamente anterior
+        // (pedidos con lectura NR), para no contabilizar todo el contador como venta.
+        const visitaActual = dto.idGrupo != null
+          ? await this.prisma.pedidosOperador.findFirst({
+              where: { idGrupo: dto.idGrupo },
+              orderBy: { fechaHora: 'asc' },
+              select: { fechaHora: true },
+            })
+          : null;
+        const pedidoAnterior = await this.prisma.pedidosOperador.findFirst({
+          where: {
+            idMaquina: dto.idMaquina,
+            nrActualMedido: { not: null },
+            ...(visitaActual ? { fechaHora: { lt: visitaActual.fechaHora } } : {}),
+          },
+          orderBy: { fechaHora: 'desc' },
+          select: { nrActualMedido: true },
+        });
+        nrAnterior = pedidoAnterior && pedidoAnterior.nrActualMedido != null ? Number(pedidoAnterior.nrActualMedido) : 0;
+      }
     }
     nrAnterior = Math.max(0, Number(nrAnterior));
     const nrActual = Math.max(0, Number(dto.nrActual));
@@ -77,11 +101,16 @@ export class TreasuryService {
     const estado = tieneEfectivo ? 'CERRADO' : 'PENDIENTE';
     const diferenciaRec = efectivoRecog - efectivoEsperado;
 
-    // Actualizar el último contador NR de la máquina con el nrActual
-    await this.prisma.maquinasYTiendas.update({
-      where: { idMaquina: dto.idMaquina },
-      data: { ultimoContadorNR: BigInt(nrActual) },
-    });
+    // Actualizar el último contador NR de la máquina SOLO si el nuevo valor es mayor.
+    // El registro de la visita ya pudo avanzarlo más que este recaudo (p.ej. un recaudo
+    // atrasado); retrocederlo desalinearía el "NR anterior" de la próxima visita.
+    const contadorActual = maq.ultimoContadorNR ? Number(maq.ultimoContadorNR) : 0;
+    if (nrActual > contadorActual) {
+      await this.prisma.maquinasYTiendas.update({
+        where: { idMaquina: dto.idMaquina },
+        data: { ultimoContadorNR: BigInt(nrActual) },
+      });
+    }
 
     return this.prisma.tesoreriaEfectivoNr.create({
       data: {

@@ -79,8 +79,12 @@ export class DespachosService {
           ).reduce((acc, d) => acc + d.cantDespachada, 0);
           const fisicoActualMaquina = (pedido.fisicoDigitado ?? 0) + totalDespachadoPrevio;
           let cupoRestante = stockActual;
-          if (capacidadMaxEspiral > 0 && fisicoActualMaquina < capacidadMaxEspiral) {
-            cupoRestante = Math.min(cupoRestante, capacidadMaxEspiral - fisicoActualMaquina);
+          // TOPE POR FÍSICA REAL DEL ESPIRAL (siempre): si el espiral ya está lleno
+          // (físico + lo ya despachado >= capacidad), el cupo se vacía. Antes, la
+          // condición `fisicoActualMaquina < capacidadMaxEspiral` saltaba el límite
+          // justo cuando el espiral estaba lleno y permitía sobre-despachar.
+          if (capacidadMaxEspiral > 0) {
+            cupoRestante = Math.min(cupoRestante, Math.max(0, capacidadMaxEspiral - fisicoActualMaquina));
           }
           cantDespachada = Math.min(cantDespachada, cupoRestante);
 
@@ -132,17 +136,30 @@ export class DespachosService {
             continue;
           }
 
-          const pendienteDesp = cantSugerida - cantDespachada;
+          // PENDIENTE ACUMULADO: se calcula contra el TOTAL despachado (lo de este despacho
+          // + lo ya despachado antes), no solo contra la cantidad actual. Antes, un segundo
+          // despacho de un pedido parcial calculaba el pendiente solo con lo enviado en esa
+          // llamada y dejaba el pedido en PARCIAL aunque ya estuviera cubierto en total.
+          const pendienteDesp = Math.max(0, cantSugerida - (totalDespachadoPrevio + cantDespachada));
 
           // Registro del estado del stock del producto para trazabilidad en el despacho.
           const stockAntes = Number(pedido.producto?.stockActual ?? 0);
           const stockDespues = Math.max(0, stockAntes - cantDespachada);
 
           if (cantDespachada > 0) {
-            await tx.productos.update({
-              where: { idProducto: pedido.idProducto },
+            // Descuento CONDICIONADO a nivel de BD: solo descuenta si en el momento del
+            // update el stock real sigue alcanzando. Dos despachos concurrentes del mismo
+            // producto ya no pueden dejar el stock en negativo (ambos leían el mismo
+            // stockAntes y descuentan sin condición).
+            const upd = await tx.productos.updateMany({
+              where: { idProducto: pedido.idProducto, stockActual: { gte: cantDespachada } },
               data: { stockActual: { decrement: cantDespachada } },
             });
+            if (upd.count === 0) {
+              throw new BadRequestException(
+                `Stock insuficiente para despachar ${cantDespachada} del producto ${pedido.producto?.nombreProducto ?? pedido.idProducto} (posible despacho simultáneo)`,
+              );
+            }
           }
 
           const nuevoEstado = pendienteDesp <= 0 ? 'APROBADO' : 'PARCIAL';
