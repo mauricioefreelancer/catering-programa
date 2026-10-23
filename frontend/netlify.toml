@@ -5,11 +5,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # ===== IMPORTANTE: CAMBIAR ESTA URL POR LA DE TU BACKEND DESPLEGADO (Railway / Render) =====
-  #   - Railway : https://catering-backend-production.up.railway.app/api
-  #   - Render  : https://catering-backend-abc1.onrender.com/api
-  # ⚠️ SIEMPRE TERMINA CON /api (NO olvidar la barra inversa final)
-  VITE_API_URL = "https://TU-BACKEND.onrender.com/api"
+  # Backend en Render (servicio catering-backend). ⚠️ SIEMPRE TERMINA CON /api
+  VITE_API_URL = "https://catering-backend-u27b.onrender.com/api"
 
 [[redirects]]
   from = "/*"
