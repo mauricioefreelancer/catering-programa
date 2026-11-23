@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePedidoOperadorDto } from './dto/operador-pedido.dto';
 import { EstadoPedido, PEDIDOS_ABIERTOS, pendientePedido, sugeridoPorEspiral } from '../common/reposicion';
-import { diferenciaContador, sugeridoMateriaPrima, vendidasPorEspiral } from '../common/contadores';
+import { diferenciaContador, vendidasPorEspiral } from '../common/contadores';
+import { calcularConsumoMateriaPrima } from '../common/consumo-materia-prima';
 import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
 import { calcularVentaTeorica, LineaVenta } from '../common/venta-teorica';
 
@@ -184,11 +185,15 @@ export class OperadorPedidoService {
             precio: precio?.toString() ?? null, porcentajeCliente: mapa.porcentajeCliente.toString() });
         }
 
-        const mpConsolidado = new Map<number, { consumo: Prisma.Decimal; equivalencia: Prisma.Decimal; idMapaMp: number }>();
+        const tolvas = maquina.mapaMateriaPrima.filter(m => m.producto.tipoProducto === 'MATERIA_PRIMA');
+        if (mapaNrqById.size && tolvas.some(t => !espiralesRegistrados.has(t.idMapaMp))) {
+          throw new BadRequestException('Registra el físico de todas las tolvas configuradas');
+        }
         const anteriorNrq = new Map(lecturas.botones.map(b => [b.idMapaNrq, b.lectura]));
         const nrqEntradas = dto.nrqLecturas?.map(b => ({ idMapaNRQ: b.idMapaNRQ, lectura: BigInt(b.lecturaActual) }))
           ?? dto.nrqItems?.map(b => ({ idMapaNRQ: b.idMapaNRQ, lectura: (anteriorNrq.get(b.idMapaNRQ) ?? 0n) + BigInt(b.valor) })) ?? [];
         const botonesProcesados = new Set<number>();
+        const unidadesCafe = new Map<number, bigint>();
 
         for (const nrqItem of nrqEntradas) {
           const nrq = mapaNrqById.get(nrqItem.idMapaNRQ);
@@ -200,6 +205,7 @@ export class OperadorPedidoService {
           const anterior = anteriorNrq.get(nrq.idMapaNrq) ?? nrq.lecturaInicial;
           const unidades = calcular(`Botón ${nrq.opcionBoton}`, anterior, nrqItem.lectura);
           const idProdTerm = nrq.idProdTerm;
+          unidadesCafe.set(idProdTerm, (unidadesCafe.get(idProdTerm) ?? 0n) + unidades);
           const precio = precioPorProducto.get(idProdTerm);
           lineasVenta.push({ unidades, precio: precio ?? null, porcentajeCliente: nrq.porcentajeCliente });
           detalleControles.push({ idMapaNrq: nrq.idMapaNrq, boton: nrq.opcionBoton,
@@ -210,46 +216,51 @@ export class OperadorPedidoService {
             lecturaAnterior: anterior, lecturaActual: nrqItem.lectura, unidades,
             precioUnitario: precio, subtotal: precio?.mul(unidades.toString()), porcentajeCliente: nrq.porcentajeCliente,
           } });
-          if (unidades === 0n) continue;
-          const recetas = await tx.recetasDosificados.findMany({
-            where: { idProdTerm },
-            include: { materiaPrima: true },
-          });
-          if (recetas.length === 0) continue;
-
-          for (const receta of recetas) {
-            const mp = receta.materiaPrima;
-            if (!mp) continue;
-            const consumo = receta.cantidadDosis.mul(unidades.toString());
-            const mapas = maquina.mapaMateriaPrima.filter((m) => m.idProducto === mp.idProducto);
-            if (mapas.some(m => espiralesRegistrados.has(m.idMapaMp))) continue;
-            if (mapas.length !== 1) throw new BadRequestException(`Configura un espiral para la materia prima ${mp.idProducto}`);
-
-            const anterior = mpConsolidado.get(mp.idProducto);
-            if (anterior) {
-              anterior.consumo = anterior.consumo.plus(consumo);
-            } else {
-              mpConsolidado.set(mp.idProducto, {
-                consumo, equivalencia: mp.equivalencia,
-                idMapaMp: mapas[0].idMapaMp,
-              });
-            }
-          }
         }
 
         if (dto.nrEfectivoActual != null && botonesProcesados.size !== mapaNrqById.size) {
           throw new BadRequestException('Registra la lectura de cada botón configurado');
         }
-        for (const [idProducto, { consumo, equivalencia, idMapaMp }] of mpConsolidado) {
-          const mapa = mapaMpById.get(idMapaMp)!;
-          if (equivalencia.lte(0)) throw new BadRequestException(`Equivalencia inválida para el producto ${idProducto}`);
-          const sugerida = sugeridoMateriaPrima(consumo, equivalencia, mapa.capacidadMax);
-          await crearPedido({
-              idProducto,
-              idMapaMp: mapa.idMapaMp,
-              fisicoDigitado: mapa.capacidadMax - sugerida,
-              cantSugerida: sugerida,
+const controlesMP: Prisma.InputJsonObject[] = [];
+        let diferenciaMpValor: Prisma.Decimal | null = null;
+        if (mapaNrqById.size) {
+          const recetas = await tx.recetasDosificados.findMany({
+            where: { idProdTerm: { in: maquina.mapaCafeNrq.map(b => b.idProdTerm) } },
+            include: { materiaPrima: true },
           });
+          const productosMP = new Map([
+            ...tolvas.map(t => [t.idProducto, t.producto] as const),
+            ...recetas.map(r => [r.idMatPrima, r.materiaPrima] as const),
+          ]);
+          const fisicosActuales = new Map(pedidosCreados.map(p => [p.idMapaMp, p.fisicoDigitado]));
+          let total = new Prisma.Decimal(0);
+          let completo = productosMP.size > 0 && botonesProcesados.size === mapaNrqById.size;
+          for (const [idProducto, mp] of productosMP) {
+            const fisicos = tolvas.filter(t => t.idProducto === idProducto).map(t => {
+              const anterior = anteriorPorEspiral.get(t.idMapaMp);
+              return {
+                idMapaMp: t.idMapaMp,
+                fisicoAnterior: anterior?.idProducto === idProducto ? anterior.fisicoDigitado : null,
+                despachado: anterior?.idProducto === idProducto ? anterior.despachado : 0,
+                fisicoActual: fisicosActuales.get(t.idMapaMp)!,
+              };
+            });
+            const dosis = recetas.filter(r => r.idMatPrima === idProducto).map(r => ({
+              unidades: botonesProcesados.size === mapaNrqById.size ? unidadesCafe.get(r.idProdTerm) ?? null : null,
+              cantidadDosis: r.cantidadDosis,
+            }));
+            const control = calcularConsumoMateriaPrima(dosis, fisicos, mp.equivalencia, mp.costoBase);
+            if (control.valorDiferencia == null) completo = false;
+            else total = total.plus(control.valorDiferencia);
+            controlesMP.push({
+              idProducto, nombre: mp.nombreProducto, unidadCompra: mp.unidadCompra, unidadConsumo: mp.unidadConsumo,
+              equivalencia: mp.equivalencia.toString(), costoBase: mp.costoBase.toString(), tolvas: fisicos,
+              consumoTeorico: control.consumoTeorico?.toString() ?? null, consumoReal: control.consumoReal?.toString() ?? null,
+              diferencia: control.diferencia?.toString() ?? null, valorDiferencia: control.valorDiferencia?.toString() ?? null,
+              inconsistencia: control.inconsistencia,
+            });
+          }
+          if (completo) diferenciaMpValor = total.toDecimalPlaces(2);
         }
 
         // Persistir los totales de la visita (VENTAS_POR_VISITA) para que queden como
@@ -306,9 +317,10 @@ export class OperadorPedidoService {
             totalVendidoProductos: ventaTeorica,
             ventaTeoricaProductos: detalleControles.length ? ventaTeorica : null,
             diferenciaVenta,
+            diferenciaMpValor,
             valorFacturarCliente: detalleControles.length ? valorFacturarCliente : null,
             unidadesSugeridas: unidadesSugeridasVisita,
-            detalle: { reposicion: detalleVisita, controles: detalleControles.map((linea, i) => ({
+            detalle: { reposicion: detalleVisita, controlesMP, controles: detalleControles.map((linea, i) => ({
               ...linea, inconsistencia: controles[i].inconsistencia, subtotal: controles[i].subtotal?.toString() ?? null,
               cobrado: controles[i].cobrado?.toString() ?? null, facturable: controles[i].facturable?.toString() ?? null,
             })) },
@@ -324,7 +336,6 @@ export class OperadorPedidoService {
           totalCreados: pedidosCreados.length,
           pedidos: pedidosCreados,
           nrqItemsProcesados: botonesProcesados.size,
-          mpDesdeRecetas: mpConsolidado.size,
         };
       },
       { timeout: 60000, maxWait: 30000 },
