@@ -29,11 +29,13 @@ export function calcularDespacho(p: {
   solicitado?: number;
   noReponer?: boolean;
 }) {
-  const pendienteAntes = pendientePedido(p.sugerido, p.acumulado);
   const cupo = Math.max(0, p.capacidad - p.fisico - p.acumulado);
+  // El faltante nunca supera lo que cabe en el espiral: si la capacidad se redujo
+  // después del pedido, lo que ya no cabe deja de estar pendiente y el pedido se cierra.
+  const pendienteAntes = Math.min(pendientePedido(p.sugerido, p.acumulado), cupo);
   const cantidad = p.noReponer
     ? 0
-    : Math.max(0, Math.min(p.solicitado ?? pendienteAntes, pendienteAntes, p.stock, cupo));
+    : Math.max(0, Math.min(p.solicitado ?? pendienteAntes, pendienteAntes, p.stock));
   const pendiente = pendienteAntes - cantidad;
   const estado = p.noReponer
     ? EstadoPedido.NO_REPONER

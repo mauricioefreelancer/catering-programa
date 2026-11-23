@@ -33,4 +33,19 @@ describe('Reposicion por espiral', () => {
   it.each([-1, 13, 2.5])('rechaza un fisico invalido (%s)', (fisico) => {
     expect(() => sugeridoPorEspiral(12, fisico)).toThrow(RangeError);
   });
+
+  it('cierra el faltante que ya no cabe porque la capacidad del espiral se redujo', () => {
+    // Pedido de 3 con físico 12 (capacidad 15); se entregaron 2 y la capacidad bajó a 14.
+    expect(calcularDespacho({ sugerido: 3, acumulado: 2, capacidad: 14, fisico: 12, stock: 45 })).toEqual({
+      cantidad: 0, pendiente: 0, estado: EstadoPedido.APROBADO,
+    });
+    // Si aún cabe una parte, se despacha solo esa parte y el pedido se cierra.
+    expect(calcularDespacho({ sugerido: 5, acumulado: 0, capacidad: 14, fisico: 12, stock: 45 })).toEqual({
+      cantidad: 2, pendiente: 0, estado: EstadoPedido.APROBADO,
+    });
+    // La falta de stock sí deja el faltante pendiente.
+    expect(calcularDespacho({ sugerido: 3, acumulado: 0, capacidad: 15, fisico: 12, stock: 1 })).toEqual({
+      cantidad: 1, pendiente: 2, estado: EstadoPedido.PARCIAL,
+    });
+  });
 });
