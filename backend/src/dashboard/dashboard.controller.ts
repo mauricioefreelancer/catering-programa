@@ -12,6 +12,12 @@ export class DashboardController {
   @Permissions('dashboard', 'ver')
   gerencia() { return this.srv.gerencia(); }
 
+  @Get('alertas-visitas')
+  @Permissions('dashboard', 'ver')
+  alertasVisitas(@Query() q: { fechaInicio?: string; fechaFin?: string; soloConAlerta?: string }) {
+    return this.srv.alertasVisitas(q);
+  }
+
   @Get('tesoreria')
   @Permissions('dashboard', 'ver')
   tesoreria() { return this.srv.tesoreria(); }

@@ -101,7 +101,7 @@ Módulo operador móvil PWA: `http://localhost:5173/mobile`
 - **Pre-Deploy Command**: `npx prisma migrate deploy`
 - **Start Command**: `npm run start:prod`
 - **Variables**: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `TARIFA_PROMEDIO_DEFAULT`, `UMBRAL_MARGEN`
-- **Alerta de venta**: `UMBRAL_DIFERENCIA_VENTA_COP` es opcional y vale `10000` por defecto. Para cambiarlo, configura en Render el monto en pesos, sin separadores, y reinicia el servicio. Inventario y Vendido por visita usan el mismo valor: alertan cuando la diferencia absoluta entre NR efectivo y venta estimada por espiral alcanza el umbral.
+- **Alertas de visita**: Administración → Parámetros permite editar las tolerancias de venta y materia prima, inicialmente de $10.000 COP cada una. Cada visita guarda el umbral aplicado y su resultado; un cambio no recalcula las alertas anteriores.
 - **Base ya existente**: antes de activar este despliegue, seguir la [guía de adopción del baseline](backend/prisma/BASELINE.md). No aplicar `0_baseline` sobre una base con tablas existentes.
 
 ### Frontend → Netlify

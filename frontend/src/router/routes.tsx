@@ -19,6 +19,7 @@ import SaldosDigitales from '../pages/Tesoreria/Saldos'
 import VendidoPorVisita from '../pages/Tesoreria/VendidoPorVisita'
 import Roles from '../pages/Admin/Roles'
 import Usuarios from '../pages/Admin/Usuarios'
+import Parametros from '../pages/Admin/Parametros'
 import AdminDataPanel from '../pages/Admin/DataPanel'
 import MobileLayout from '../pages/Mobile/MobileLayout'
 import HomeMobile from '../pages/Mobile/Home'
@@ -204,6 +205,7 @@ export const routes = createBrowserRouter([
           </PermissionRoute>
         ),
       },
+      { path: 'admin/parametros', element: <PermissionRoute modulo="admin" accion="editar"><Parametros /></PermissionRoute> },
       {
         path: 'admin/usuarios',
         element: (

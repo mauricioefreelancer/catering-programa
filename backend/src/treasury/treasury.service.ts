@@ -2,9 +2,11 @@ import { Injectable, NotFoundException, MethodNotAllowedException, BadRequestExc
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEfectivoNrDto, CompletarEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
 import { Prisma } from '@prisma/client';
-import { umbralDiferenciaVenta } from '../common/contadores';
 import { mesColombia, rangoColombia } from '../common/fecha-colombia';
 import { agruparFacturacionCliente } from '../common/facturacion-cliente';
+
+const conAlerta = (query: any): Prisma.VisitasWhereInput => query?.soloConAlerta === 'true' || query?.soloConAlerta === true
+  ? { ventas: { is: { OR: [{ alertaDiferencia: true }, { alertaMp: true }] } } } : {};
 
 @Injectable()
 export class TreasuryService {
@@ -103,12 +105,13 @@ export class TreasuryService {
     const where: Prisma.VisitasWhereInput = {
       idOperador, idMaquina, estado: { not: 'ANULADA' }, ventaNr: { not: null },
       fechaVisita: { gte: desde, lt: hasta },
+      ...conAlerta(query),
       ...(soloPendientes ? { OR: [{ recaudo: null }, { recaudo: { estado: 'PENDIENTE' } }] } : {}),
     };
     const [total, cabeceras] = await this.prisma.$transaction([
       this.prisma.visitas.count({ where }),
       this.prisma.visitas.findMany({
-        where, include: { recaudo: true }, orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
+        where, include: { recaudo: true, ventas: { select: { alertaDiferencia: true, alertaMp: true } } }, orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
         skip: (pagina - 1) * limite, take: limite,
       }),
     ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
@@ -194,6 +197,8 @@ export class TreasuryService {
           maquina: maqMap.get(v.idMaquina) ?? null,
           operador: opMap.get(v.idOperador) ?? null,
           estado: est?.estado ?? 'PENDIENTE',
+          estadoVisita: v.estado,
+          alerta: v.ventas?.alertaDiferencia === true || v.ventas?.alertaMp === true,
           idRecaudo: est?.idRecaudo ?? null,
           recaudoGuardado: est?.idRecaudo
             ? {
@@ -229,13 +234,15 @@ export class TreasuryService {
         idMaquina,
         idCliente,
         nrEfectivoActual: { not: null },
+        estado: { not: 'ANULADA' },
         fechaVisita: { gte: desde, lt: hasta },
+        ...conAlerta(query),
       },
       orderBy: [{ fechaVisita: 'asc' }, { idVisita: 'asc' }],
     });
     const visitasFiltradas = cabeceras.map(v => ({
       idGrupo: v.idVisita, idMaquina: v.idMaquina, idOperador: v.idOperador,
-      idCliente: v.idCliente, fechaVisita: v.fechaVisita,
+      idCliente: v.idCliente, fechaVisita: v.fechaVisita, estadoVisita: v.estado,
       nrActual: Number(v.nrEfectivoActual ?? 0n), nrAnterior: Number(v.nrEfectivoAnterior ?? 0n),
       ventaNr: Number(v.ventaNr ?? 0n),
     }));
@@ -392,7 +399,12 @@ export class TreasuryService {
           totalVendidoProductos: reg?.firmaOrigen === 'CONTADORES' ? Number(reg.totalVendidoProductos) : totalVendidoProductosPorVisita.get(v.idGrupo) ?? 0,
           ventaTeoricaProductos: reg?.ventaTeoricaProductos == null ? null : Number(reg.ventaTeoricaProductos),
           diferenciaVenta: reg?.diferenciaVenta == null ? null : Number(reg.diferenciaVenta),
-          alertaVenta: reg?.diferenciaVenta != null && Math.abs(Number(reg.diferenciaVenta)) >= umbralDiferenciaVenta(process.env.UMBRAL_DIFERENCIA_VENTA_COP),
+          alertaVenta: reg?.alertaDiferencia ?? null,
+          diferenciaMpValor: reg?.diferenciaMpValor == null ? null : Number(reg.diferenciaMpValor),
+          alertaMp: reg?.alertaMp ?? null,
+          estadoVisita: v.estadoVisita,
+          toleranciaAplicada: reg?.toleranciaAplicada == null ? null : Number(reg.toleranciaAplicada),
+          toleranciaMpAplicada: reg?.toleranciaMpAplicada == null ? null : Number(reg.toleranciaMpAplicada),
           diferenciaUnidades: reg?.diferenciaUnidades == null ? null : Number(reg.diferenciaUnidades),
           unidadesNrProducto: reg?.unidadesNrProducto == null ? null : Number(reg.unidadesNrProducto),
           valorFacturarCliente: reg?.valorFacturarCliente == null ? null : Number(reg.valorFacturarCliente),

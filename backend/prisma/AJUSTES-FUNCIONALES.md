@@ -30,3 +30,9 @@ Mantener intactos los archivos de migración ya aplicados. Para ensayos locales 
 Aplicar `20261124170000_nrq_espiral_facturacion` antes de arrancar el nuevo backend. Los cortes no se inventan para visitas antiguas. Las facturas existentes conservan sus importes; las nuevas usan el precio y porcentaje de cada lectura positiva entre el corte del mes anterior (exclusivo) y el actual (incluido), en hora de Colombia. El porcentaje agregado es efectivo sobre el valor de venta. Sin dos cortes no se genera factura para esa máquina.
 
 El nuevo endpoint es `/api/tesoreria/facturacion-cliente/generar`; el anterior queda como alias temporal. Las lecturas NRQ nuevas exigen un único mapa de origen. El `CHECK` se crea con `NOT VALID` para no borrar ni modificar lecturas antiguas cuyo botón se eliminó; las claves foráneas protegen los mapas con lecturas de nuevos borrados.
+
+## A7–A8: tolerancias y cierre de despacho
+
+Aplicar `20261124180000_parametros_tolerancia` antes de publicar el backend. La migración crea los dos parámetros en $10.000 COP y conserva sin evaluación las alertas anteriores. Administración → Parámetros permite cambiar los valores para próximas visitas sin reiniciar el servicio.
+
+Una visita registrada pasa a `DESPACHADA` cuando todos sus pedidos quedan aprobados, no repuestos o reemplazados. Una visita ya `RECAUDADA` conserva ese estado.

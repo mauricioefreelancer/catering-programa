@@ -177,7 +177,7 @@ export default function InventarioMobile() {
       {!idOperador && <Alert type="error" showIcon message="No existe operador asociado a esta visita." />}
       {controles.filter(c => c.unidades != null && c.unidades < 0).map(c =>
         <Alert key={c.idMapaMp} type="warning" showIcon message={`Espiral ${c.espiralCodigo}: el cruce de inventario da ${c.unidades} unidades vendidas. Revisa el físico digitado.`} />)}
-      {diferenciaVenta != null && Math.abs(diferenciaVenta) >= lecturas.umbralDiferenciaVenta &&
+      {diferenciaVenta != null && Math.abs(diferenciaVenta) >= Math.max(0.01, lecturas.umbralDiferenciaVenta) &&
         <Alert type="warning" showIcon message={`El NR efectivo difiere en $${formato(diferenciaVenta)} COP de la venta teórica de la máquina.`} />}
       <Card title="Físicos y pedido" size="small">{espirales.map(e =>
         <div key={e.idMapaMp}>{e.espiralCodigo} · {e.producto.nombreProducto}: físico {fisicos[e.idMapaMp]}, pedido {e.capacidadMax - (fisicos[e.idMapaMp] ?? 0)}{e.producto.tipoProducto === 'MATERIA_PRIMA' && ` (${e.producto.unidadCompra})`}</div>)}</Card>

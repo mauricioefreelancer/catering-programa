@@ -6,7 +6,7 @@ import {
 } from './dto/maquina.dto';
 import { Prisma } from '@prisma/client';
 import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
-import { umbralDiferenciaVenta } from '../common/contadores';
+import { ParametrosService } from '../admin/parametros.service';
 
 function porcentajeValido(valor: unknown): number | undefined {
   if (valor == null) return undefined;
@@ -31,7 +31,7 @@ function tipoCanonico(tipo?: string): string | undefined {
 
 @Injectable()
 export class MachinesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private parametros: ParametrosService) {}
 
   async findAll(query: QueryMaquinaDto) {
     const skip = query.skip ? parseInt(query.skip) : 0;
@@ -144,6 +144,7 @@ export class MachinesService {
   }
 
   async getUltimasLecturas(id: number) {
+    const tolerancias = await this.parametros.tolerancias();
     return this.prisma.$transaction(async tx => {
       const maquina = await tx.maquinasYTiendas.findUnique({
         where: { idMaquina: id },
@@ -163,7 +164,7 @@ export class MachinesService {
       return {
         ultimaVisitaId: visita?.idVisita ?? 0, ...lecturas, espirales,
         precios: precios.map(p => ({ idProducto: p.idProducto, precio: p.precioVenta.toNumber() })),
-        umbralDiferenciaVenta: umbralDiferenciaVenta(process.env.UMBRAL_DIFERENCIA_VENTA_COP),
+        umbralDiferenciaVenta: tolerancias.venta.toNumber(),
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }

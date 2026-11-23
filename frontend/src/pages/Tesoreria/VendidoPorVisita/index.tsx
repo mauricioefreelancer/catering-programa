@@ -17,6 +17,7 @@ import {
   Spin,
   Drawer,
   Descriptions,
+  Checkbox,
 } from 'antd'
 import { SearchOutlined, ReloadOutlined, EyeOutlined, ShopOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -61,7 +62,12 @@ interface VisitaVendido {
   diferenciaUnidades?: number | null
   unidadesNrProducto?: number | null
   valorFacturarCliente?: number | null
-  alertaVenta?: boolean
+  alertaVenta?: boolean | null
+  alertaMp?: boolean | null
+  diferenciaMpValor?: number | null
+  toleranciaAplicada?: number | null
+  toleranciaMpAplicada?: number | null
+  estadoVisita?: string
   controlesEspiral?: { idMapaMp: number; espiral: string; vendidas: number | null; precioCero: boolean; inconsistencia: string | null }[]
   totalSugerido: number
   totalPendiente: number
@@ -120,6 +126,7 @@ const VendidoPorVisita = () => {
       }
       if (values.idMaquina) params.idMaquina = values.idMaquina
       if (values.idCliente) params.idCliente = values.idCliente
+      if (values.soloConAlerta) params.soloConAlerta = true
 
       const res: any = await apiService.get('/tesoreria/vendido-por-visita', params)
       const lista: VisitaVendido[] =
@@ -145,6 +152,8 @@ const VendidoPorVisita = () => {
   }
 
   const columns = [
+    { title: 'Estado visita', dataIndex: 'estadoVisita', key: 'estadoVisita', render: (v: string, r: VisitaVendido) =>
+      <Space wrap><Tag>{v ?? '—'}</Tag>{(r.alertaVenta || r.alertaMp) && <Tag color="red">Alerta</Tag>}</Space> },
     { title: 'Visita #', dataIndex: 'idGrupo', key: 'g', width: 90, render: (v: number) => <strong>#{v}</strong>, fixed: 'left' as const },
     {
       title: 'Fecha',
@@ -273,6 +282,7 @@ const VendidoPorVisita = () => {
             <Row gutter={16}>
               <Col xs={24} md={9}>
                 <Form.Item label="&nbsp;" style={{ marginBottom: 0 }}>
+                  <Form.Item name="soloConAlerta" valuePropName="checked" noStyle><Checkbox>Solo con alerta</Checkbox></Form.Item>
                   <Space>
                     <Button
                       onClick={() => {
@@ -370,6 +380,11 @@ const VendidoPorVisita = () => {
               <Descriptions.Item label="Diferencia NR vs. venta teórica">
                 {detalleSel.diferenciaVenta == null ? '—' : <Tag color={detalleSel.alertaVenta ? 'red' : 'default'}>{fmt(detalleSel.diferenciaVenta)}</Tag>}
               </Descriptions.Item>
+              <Descriptions.Item label="Tolerancia de venta aplicada">{detalleSel.toleranciaAplicada == null ? 'Sin evaluación' : fmt(detalleSel.toleranciaAplicada)}</Descriptions.Item>
+              <Descriptions.Item label="Diferencia de materia prima">
+                {detalleSel.diferenciaMpValor == null ? '—' : <Tag color={detalleSel.alertaMp ? 'red' : 'default'}>{fmt(detalleSel.diferenciaMpValor)}</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Tolerancia MP aplicada">{detalleSel.toleranciaMpAplicada == null ? 'Sin evaluación' : fmt(detalleSel.toleranciaMpAplicada)}</Descriptions.Item>
               <Descriptions.Item label="Facturar al cliente">{detalleSel.valorFacturarCliente == null ? '—' : fmt(detalleSel.valorFacturarCliente)}</Descriptions.Item>
               <Descriptions.Item label="Sugerido ($)">{fmt(detalleSel.totalSugerido)}</Descriptions.Item>
               <Descriptions.Item label="Despachado ($)">{fmt(detalleSel.totalDespachado)}</Descriptions.Item>

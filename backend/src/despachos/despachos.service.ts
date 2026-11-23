@@ -77,6 +77,12 @@ export class DespachosService {
         const ids = [...new Set(dto.items.map(item => item.idPedido))];
         if (!ids.length) return { despachos: [], total: 0 };
         if (ids.length !== dto.items.length) throw new BadRequestException('No repita un pedido en el despacho');
+        // Serializa cierres de pedidos distintos de una misma visita antes de tomar los demás locks.
+        const visitas = await tx.$queryRaw<{ idVisita: number }[]>`
+          SELECT "ID_Visita" AS "idVisita" FROM "VISITAS"
+          WHERE "ID_Visita" IN (SELECT "ID_Grupo" FROM "PEDIDOS_OPERADOR" WHERE "ID_Pedido" IN (${Prisma.join(ids)}))
+          ORDER BY "ID_Visita" FOR UPDATE
+        `;
         await tx.$queryRaw`
           SELECT "ID_Pedido" FROM "PEDIDOS_OPERADOR"
           WHERE "ID_Pedido" IN (${Prisma.join(ids)}) ORDER BY "ID_Pedido" FOR UPDATE
@@ -144,6 +150,15 @@ export class DespachosService {
             },
           });
           result.push(desp);
+        }
+        if (visitas.length) {
+          await tx.visitas.updateMany({
+            where: {
+              idVisita: { in: visitas.map(v => v.idVisita) }, estado: 'REGISTRADA',
+              pedidos: { every: { estado: { in: ['APROBADO', 'NO_REPONER', 'REEMPLAZADO'] } } },
+            },
+            data: { estado: 'DESPACHADA' },
+          });
         }
         return { despachos: result, total: result.length };
       },

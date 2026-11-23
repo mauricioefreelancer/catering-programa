@@ -15,6 +15,7 @@ import {
   Drawer,
   Descriptions,
   DatePicker,
+  Checkbox,
 } from 'antd'
 import type { Dayjs } from 'dayjs'
 import { WalletOutlined, CheckCircleOutlined, ReloadOutlined, EyeOutlined, WarningOutlined, SaveOutlined } from '@ant-design/icons'
@@ -66,6 +67,8 @@ interface VisitaRecaudo {
   totalVendido: number
   totalDespachado: number
   estado: 'PENDIENTE' | 'CERRADO'
+  estadoVisita?: string
+  alerta?: boolean
   idRecaudo: number | null
   maquina?: { serial?: string; ubicacionEsp?: string; mediosPago?: MediosPago | null } | null
   operador?: { nombreCompleto?: string; zonaAsignada?: string } | null
@@ -85,6 +88,7 @@ const Efectivo = () => {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [soloPendientes, setSoloPendientes] = useState(true)
+  const [soloConAlerta, setSoloConAlerta] = useState(false)
   const [pagina, setPagina] = useState(1)
   const [total, setTotal] = useState(0)
   const [rango, setRango] = useState<[Dayjs | null, Dayjs | null] | null>(null)
@@ -103,7 +107,7 @@ const Efectivo = () => {
     setLoading(true)
     try {
       const res: any = await apiService.get<any>('/tesoreria/efectivo-nr/visitas', {
-        soloPendientes, pagina, limite: 20,
+        soloPendientes, soloConAlerta, pagina, limite: 20,
         fechaInicio: rango?.[0]?.format('YYYY-MM-DD'),
         fechaFin: rango?.[1]?.format('YYYY-MM-DD'),
       })
@@ -119,7 +123,7 @@ const Efectivo = () => {
       setLoading(false)
       setInitialLoading(false)
     }
-  }, [soloPendientes, pagina, rango])
+  }, [soloPendientes, soloConAlerta, pagina, rango])
 
   useEffect(() => {
     loadData()
@@ -234,6 +238,8 @@ const Efectivo = () => {
   const efectivoTotalActual = (Number(efectivoBilletes ?? 0)) + (Number(efectivoMonedas ?? 0))
 
   const columns = [
+    { title: 'Estado visita', dataIndex: 'estadoVisita', key: 'estadoVisita', render: (estado: string, v: VisitaRecaudo) =>
+      <Space wrap><Tag>{estado ?? '—'}</Tag>{v.alerta && <Tag color="red">Alerta</Tag>}</Space> },
     {
       title: 'Visita #',
       dataIndex: 'idGrupo',
@@ -361,6 +367,10 @@ const Efectivo = () => {
         >
           {soloPendientes ? 'Mostrando solo pendientes' : 'Mostrando todas las visitas'}
         </Button>
+        <Checkbox checked={soloConAlerta} onChange={(e: { target: { checked: boolean } }) => {
+          setPagina(1)
+          setSoloConAlerta(e.target.checked)
+        }}>Solo con alerta</Checkbox>
         <DatePicker.RangePicker onChange={(valores) => { setRango(valores); setPagina(1) }} format="DD/MM/YYYY" />
         <Button icon={<ReloadOutlined />} onClick={() => loadData()} loading={loading}>
           Recargar

@@ -87,6 +87,7 @@ const normalizar = (raw: any) => ({
     raw['NR_Actual_Medido'] ??
     null,
   estado: (raw.estado ?? raw.Estado ?? 'PENDIENTE') as EstadoPedido,
+  estadoVisita: raw.visita?.estado,
   idPedidoReemplazado: raw.idPedidoReemplazado ?? null,
   pendienteCongelado: raw.pendienteCongelado ?? null,
   observaciones: raw.observaciones ?? raw.Observaciones ?? raw['Observaciones'] ?? null,
@@ -269,6 +270,7 @@ const PedidosOperador = () => {
       : 0
 
   const columns = [
+    { title: 'Estado visita', key: 'estadoVisita', render: (_: unknown, g: any) => <Tag>{g.items[0]?.estadoVisita ?? '—'}</Tag> },
     {
       title: 'Pedido #',
       dataIndex: 'idGrupo',
