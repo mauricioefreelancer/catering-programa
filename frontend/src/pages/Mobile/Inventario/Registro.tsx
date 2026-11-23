@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { apiService } from '../../../api/services/api'
 import { useAuth } from '../../../hooks/useAuth'
 
-type Espiral = { idMapaMp: number; idProducto: number; espiralCodigo: string; capacidadMax: number; porcentajeCliente: number; producto: { nombreProducto: string; tipoProducto: string } }
+type Espiral = { idMapaMp: number; idProducto: number; espiralCodigo: string; capacidadMax: number; porcentajeCliente: number; producto: { nombreProducto: string; tipoProducto: string; unidadCompra: string } }
 type Boton = { idMapaNrq: number; idProdTerm: number; opcionBoton: string; porcentajeCliente: number; productoTerminado: { nombreProducto: string } }
 type Lecturas = {
   ultimaVisitaId: number; nrEfectivo: number | string
@@ -138,7 +138,7 @@ export default function InventarioMobile() {
     {paso === 0 && <>
       {!espirales.length && <Alert type="info" message="No hay espirales configurados. Puedes continuar a los contadores." />}
       {espirales.map(e => <Card key={e.idMapaMp} size="small" title={`${e.espiralCodigo} · ${e.producto.nombreProducto}`}>
-        <Space wrap>Físico <InputNumber min={0} max={e.capacidadMax} precision={0} value={fisicos[e.idMapaMp] ?? null}
+        <Space wrap>{e.producto.tipoProducto === 'MATERIA_PRIMA' ? `Físico (${e.producto.unidadCompra})` : 'Físico'} <InputNumber min={0} max={e.capacidadMax} precision={0} value={fisicos[e.idMapaMp] ?? null}
           onChange={(v: number | null) => setFisicos(r => ({ ...r, [e.idMapaMp]: v }))} />
           Capacidad: {e.capacidadMax} · Pedido: {entero(fisicos[e.idMapaMp]) ? Math.max(0, e.capacidadMax - fisicos[e.idMapaMp]!) : '—'}</Space>
       </Card>)}
@@ -165,7 +165,7 @@ export default function InventarioMobile() {
       {diferenciaVenta != null && Math.abs(diferenciaVenta) >= lecturas.umbralDiferenciaVenta &&
         <Alert type="warning" showIcon message={`El NR efectivo difiere en $${formato(diferenciaVenta)} COP de la venta teórica de la máquina.`} />}
       <Card title="Físicos y pedido" size="small">{espirales.map(e =>
-        <div key={e.idMapaMp}>{e.espiralCodigo} · {e.producto.nombreProducto}: físico {fisicos[e.idMapaMp]}, pedido {e.capacidadMax - (fisicos[e.idMapaMp] ?? 0)}</div>)}</Card>
+        <div key={e.idMapaMp}>{e.espiralCodigo} · {e.producto.nombreProducto}: físico {fisicos[e.idMapaMp]}, pedido {e.capacidadMax - (fisicos[e.idMapaMp] ?? 0)}{e.producto.tipoProducto === 'MATERIA_PRIMA' && ` (${e.producto.unidadCompra})`}</div>)}</Card>
       <Card title="Lecturas y diferencias" size="small">{lista.map(l =>
         <div key={l.key}><strong>{l.nombre}</strong>: anterior {formato(l.anterior)}, actual {l.actual == null ? '—' : formato(l.actual)}, diferencia {l.diferencia == null ? '—' : formato(l.diferencia)}</div>)}</Card>
     </>}

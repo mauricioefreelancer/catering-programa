@@ -12,3 +12,15 @@
 Aplicar `20261124150000_negociacion_clientes` antes de iniciar el backend actualizado. Publicar el frontend compatible junto con el backend. La migración no elimina columnas: los contadores NR producto se conservan como datos históricos. Los espirales antiguos marcados `Precio_Cero` migran al 100 % y sus máquinas a negociación especial. No se infieren porcentajes para lecturas NRQ anteriores a la migración.
 
 El control de venta excluye las tolvas y separa la parte cobrada por la máquina del valor a cargo del cliente. Si falta base comparable o precio, no se informa diferencia contra el NR efectivo y se conserva el motivo por línea.
+
+## A4: físico y consumo de materia prima
+
+Aplicar `20261124160000_control_consumo_mp` después de la migración de negociación y antes de arrancar el backend actualizado. Publicar el móvil junto con el backend. Las visitas anteriores conservan `Diferencia_MP_Valor` en `NULL`.
+
+El físico de cada tolva se registra en su unidad de compra y el pedido se calcula como capacidad menos físico. El control independiente convierte el consumo real a la unidad de consumo del producto, suma las dosis de los botones y conserva en `detalle.controlesMP` la equivalencia y el costo base usados. Si falta la base física de una tolva o una materia prima de la receta no tiene tolva, se conserva el motivo y el total no se informa como comparable.
+
+### Estado del esquema en Render
+
+Durante un ensayo, `DIRECT_URL` apuntaba a Render aunque `DATABASE_URL` apuntaba a loopback. Prisma aplicó en Render `20261124150000_negociacion_clientes` y `20261124160000_control_consumo_mp` el 23 de noviembre de 2026 a las 16:08 de Colombia. No se publicó código nuevo. La verificación posterior de solo lectura confirmó ambas migraciones completas, 35 filas en `STOCK_PROVEEDOR` y cero visitas con valor de diferencia MP.
+
+Mantener intactos los archivos de migración ya aplicados. Para ensayos locales de Prisma, asignar explícitamente **ambas** variables (`DATABASE_URL` y `DIRECT_URL`) a la misma instancia de loopback antes de ejecutar cualquier migración.

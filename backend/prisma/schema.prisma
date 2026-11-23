@@ -414,6 +414,7 @@ model VentasPorVisita {
   unidadesNrProducto BigInt? @map("Unidades_NR_Producto")
   ventaTeoricaProductos Decimal? @map("Venta_Teorica_Productos") @db.Decimal(18, 2)
   diferenciaVenta Decimal? @map("Diferencia_Venta") @db.Decimal(18, 2)
+  diferenciaMpValor Decimal? @map("Diferencia_MP_Valor") @db.Decimal(18, 2)
   diferenciaUnidades BigInt? @map("Diferencia_Unidades")
   valorFacturarCliente Decimal? @map("Valor_Facturar_Cliente") @db.Decimal(18, 2)
   unidadesSugeridas Int                    @default(0) @map("Unidades_Sugeridas")
