@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductoDto, UpdateProductoDto, CreateRecetaDto, QueryProductoDto } from './dto/producto.dto';
 import { Prisma } from '@prisma/client';
+import { bloquearCostos, recalcularPorMateriasPrimas, recalcularReceta } from '../common/costo-receta';
 
 const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const;
 
@@ -114,6 +115,9 @@ export class ProductsService {
   async create(dto: CreateProductoDto) {
     const data = normalizeProductoInput(dto);
     data.tipoProducto = data.tipoProducto ?? 'ESTANDAR';
+    if (data.tipoProducto === 'DOSIFICADO' && [data.costoBase, data.costoTotal, data.stockActual].some(v => v != null && Number(v) !== 0)) {
+      throw new BadRequestException('El dosificado no maneja stock y su costo se calcula desde la receta');
+    }
     if (!data.nombreProducto) throw new BadRequestException('El nombre del producto es obligatorio (nombre / nombreProducto)');
     if (!data.codigoBarras) data.codigoBarras = `SKU-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
     data.estado = data.estado ?? true;
@@ -128,9 +132,32 @@ export class ProductsService {
   }
 
   async update(id: number, dto: UpdateProductoDto) {
-    await this.findOne(id);
     const data = normalizeProductoInput(dto);
-    return this.prisma.productos.update({ where: { idProducto: id }, data });
+    return this.prisma.$transaction(async tx => {
+      await bloquearCostos(tx);
+      const previo = await tx.productos.findUnique({ where: { idProducto: id } });
+      if (!previo) throw new NotFoundException('Producto no encontrado');
+      const tipo = data.tipoProducto ?? previo.tipoProducto;
+      if (tipo !== previo.tipoProducto && (tipo === 'DOSIFICADO' || previo.tipoProducto === 'DOSIFICADO')) {
+        throw new BadRequestException('No se puede convertir un dosificado ni convertir otro producto en dosificado');
+      }
+      if (tipo === 'DOSIFICADO' && (data.costoBase != null || data.costoTotal != null || data.stockActual != null)) {
+        throw new BadRequestException('El dosificado no maneja stock y su costo se calcula desde la receta');
+      }
+      if (previo.tipoProducto === 'MATERIA_PRIMA' && tipo !== 'MATERIA_PRIMA' &&
+          await tx.recetasDosificados.count({ where: { idMatPrima: id } })) {
+        throw new BadRequestException('El ingrediente pertenece a una receta activa');
+      }
+      const actualizado = await tx.productos.update({ where: { idProducto: id }, data });
+      if (tipo === 'MATERIA_PRIMA' && (data.costoBase != null || data.equivalencia != null)) {
+        await recalcularPorMateriasPrimas(tx, [id]);
+      }
+      if (tipo === 'DOSIFICADO' && data.porcentajeImp != null) {
+        await recalcularReceta(tx, id);
+        return tx.productos.findUniqueOrThrow({ where: { idProducto: id } });
+      }
+      return actualizado;
+    });
   }
 
   async remove(id: number) {
@@ -142,15 +169,18 @@ export class ProductsService {
   }
 
   async addReceta(idProducto: number, dto: CreateRecetaDto) {
-    const producto = await this.findOne(idProducto);
+    return this.prisma.$transaction(async tx => {
+    await bloquearCostos(tx);
+    const producto = await tx.productos.findUnique({ where: { idProducto } });
+    if (!producto) throw new NotFoundException('Producto no encontrado');
     if (producto.tipoProducto !== 'DOSIFICADO') {
       throw new BadRequestException('Solo los productos DOSIFICADOS pueden tener recetas');
     }
-    const mp = await this.prisma.productos.findUnique({ where: { idProducto: dto.idMatPrima } });
+    const mp = await tx.productos.findUnique({ where: { idProducto: dto.idMatPrima } });
     if (!mp || mp.tipoProducto !== 'MATERIA_PRIMA') {
       throw new BadRequestException('El ingrediente debe ser una MATERIA_PRIMA (Manual 1.3: insumo empaque grande / consumo fracción)');
     }
-    return this.prisma.recetasDosificados.upsert({
+    const linea = await tx.recetasDosificados.upsert({
       where: {
         idProdTerm_idMatPrima: { idProdTerm: idProducto, idMatPrima: dto.idMatPrima },
       },
@@ -165,20 +195,26 @@ export class ProductsService {
         unidadDosis: dto.unidadDosis,
       },
     });
+    await recalcularReceta(tx, idProducto);
+    return tx.recetasDosificados.findUniqueOrThrow({ where: { idReceta: linea.idReceta } });
+    });
   }
 
   async syncReceta(
     idProducto: number,
     items: Array<{ idMatPrima: number; cantidadDosis: number; unidadDosis?: string }>,
   ) {
-    const producto = await this.findOne(idProducto);
+    return this.prisma.$transaction(async tx => {
+    await bloquearCostos(tx);
+    const producto = await tx.productos.findUnique({ where: { idProducto } });
+    if (!producto) throw new NotFoundException('Producto no encontrado');
     if (producto.tipoProducto !== 'DOSIFICADO') {
       throw new BadRequestException('Solo los productos DOSIFICADOS pueden tener recetas');
     }
     // validar que todos los ingredientes sean Materia Prima
     const idsMatPrima = items.map((i) => i.idMatPrima);
     const mps = idsMatPrima.length
-      ? await this.prisma.productos.findMany({
+      ? await tx.productos.findMany({
           where: { idProducto: { in: idsMatPrima } },
           select: { idProducto: true, tipoProducto: true },
         })
@@ -190,7 +226,7 @@ export class ProductsService {
       }
     }
     // eliminar recetas del producto que ya no están en la lista enviada
-    await this.prisma.recetasDosificados.deleteMany({
+    await tx.recetasDosificados.deleteMany({
       where: {
         idProdTerm: idProducto,
         idMatPrima: { notIn: idsMatPrima.length ? idsMatPrima : [-1] },
@@ -200,7 +236,7 @@ export class ProductsService {
     const results: any[] = [];
     for (const item of items) {
       results.push(
-        await this.prisma.recetasDosificados.upsert({
+        await tx.recetasDosificados.upsert({
           where: {
             idProdTerm_idMatPrima: { idProdTerm: idProducto, idMatPrima: item.idMatPrima },
           },
@@ -217,15 +253,22 @@ export class ProductsService {
         }),
       );
     }
-    return { ok: true, guardados: results.length, items: results };
+    await recalcularReceta(tx, idProducto);
+    return { ok: true, guardados: results.length, items: await tx.recetasDosificados.findMany({ where: { idProdTerm: idProducto } }) };
+    });
   }
 
   async removeReceta(idProducto: number, idReceta: number) {
-    const receta = await this.prisma.recetasDosificados.findUnique({ where: { idReceta } });
+    return this.prisma.$transaction(async tx => {
+    await bloquearCostos(tx);
+    const receta = await tx.recetasDosificados.findUnique({ where: { idReceta } });
     if (!receta || receta.idProdTerm !== idProducto) {
       throw new NotFoundException('Receta no encontrada');
     }
-    return this.prisma.recetasDosificados.delete({ where: { idReceta } });
+    const eliminada = await tx.recetasDosificados.delete({ where: { idReceta } });
+    await recalcularReceta(tx, idProducto);
+    return eliminada;
+    });
   }
 }
 

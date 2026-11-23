@@ -3,53 +3,29 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEfectivoNrDto, CompletarEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
 import { Prisma } from '@prisma/client';
 import { umbralDiferenciaVenta } from '../common/contadores';
+import { rangoColombia } from '../common/fecha-colombia';
 
 @Injectable()
 export class TreasuryService {
   constructor(private prisma: PrismaService) {}
 
   async createEfectivoNr(dto: CreateEfectivoNrDto) {
-    const maq = await this.prisma.maquinasYTiendas.findUnique({ where: { idMaquina: dto.idMaquina } });
-    if (!maq) throw new NotFoundException('Máquina no encontrada');
-    const op = await this.prisma.operadores.findUnique({ where: { idOperador: dto.idOperador } });
-    if (!op) throw new NotFoundException('Operador no encontrado');
-
-    // Evitar recaudo duplicado para la misma visita (idGrupo)
-    if (dto.idGrupo != null) {
-      const ya = await this.prisma.tesoreriaEfectivoNr.findFirst({ where: { idGrupo: dto.idGrupo } });
-      if (ya) throw new BadRequestException(`La visita ${dto.idGrupo} ya tiene un recaudo (#${ya.idRecaudo})`);
+    return this.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "ID_Visita" FROM "VISITAS" WHERE "ID_Visita" = ${dto.idGrupo} FOR UPDATE`;
+    const visita = await tx.visitas.findUnique({ where: { idVisita: dto.idGrupo }, include: { recaudo: true } });
+    if (!visita) throw new NotFoundException('Visita no encontrada');
+    if (visita.recaudo) throw new BadRequestException(`La visita ${dto.idGrupo} ya tiene un recaudo (#${visita.recaudo.idRecaudo})`);
+    if (visita.idMaquina !== dto.idMaquina || visita.idOperador !== dto.idOperador ||
+        visita.estado === 'ANULADA' || visita.nrEfectivoActual == null || visita.ventaNr == null) {
+      throw new BadRequestException('La visita no coincide con la máquina y el operador o no tiene una venta válida');
     }
-
-    // NR anterior: se toma el enviado por el frontend (último NR digitado por el operador
-    // en la visita previa) o, en su defecto, el último recaudo cerrado de la máquina.
-    let nrAnterior = dto.nrAnterior;
-    if (nrAnterior === undefined || nrAnterior === null) {
-      const ultimoCerrado = await this.prisma.tesoreriaEfectivoNr.findFirst({
-        where: { idMaquina: dto.idMaquina, estado: 'CERRADO' },
-        orderBy: { fechaHora: 'desc' },
-      });
-      nrAnterior = ultimoCerrado ? Number(ultimoCerrado.nrActual) : (maq.ultimoContadorNR ? Number(maq.ultimoContadorNR) : 0);
-    }
-    nrAnterior = Math.max(0, Number(nrAnterior));
-    const nrActual = Math.max(0, Number(dto.nrActual));
-    const diferenciaNr = Math.max(0, nrActual - nrAnterior);
-    const tarifaDefault = Number(process.env.TARIFA_PROMEDIO_DEFAULT || 3500);
-    const tarifa = maq.tarifaPromedioOverride !== null && maq.tarifaPromedioOverride !== undefined
-      ? Number(maq.tarifaPromedioOverride)
-      : tarifaDefault;
-    // El NR es un contador ACUMULATIVO de valor en pesos (todo lo vendido por la máquina
-    // desde que se configuró). Por lo tanto la diferencia NR ya ES la venta del periodo
-    // en dinero (efectivo + tarjetas + veos + datafono + cupos), SIN multiplicar por tarifa.
-    // El nr actual siempre debe ser >= nr anterior (no tiene lógica vender en negativo).
-    if (dto.nrActual !== undefined && dto.nrActual !== null && Number(dto.nrActual) < nrAnterior) {
-      throw new BadRequestException(`El NR actual (${nrActual}) no puede ser menor al NR anterior acumulado (${nrAnterior})`);
-    }
-    const totalVendido = diferenciaNr; // valor en pesos vendidos en el periodo
+    const totalVendido = new Prisma.Decimal(visita.ventaNr.toString());
     const veos = Math.max(0, Number(dto.veosRecog ?? 0));
     const datafono = Math.max(0, Number(dto.datafonoRecog ?? 0));
     const cupos = Math.max(0, Number(dto.cuposRecog ?? 0));
-    const mediosNoEfectivo = veos + datafono + cupos;
-    const efectivoEsperado = Math.max(0, totalVendido - mediosNoEfectivo);
+    const nequi = dto.nequiRecog ?? 0;
+    const mediosNoEfectivo = new Prisma.Decimal(veos).plus(datafono).plus(cupos).plus(nequi);
+    const efectivoEsperado = Prisma.Decimal.max(0, totalVendido.minus(mediosNoEfectivo));
     // Si se digitó el efectivo que trae el operador, el recaudo queda cerrado;
     // de lo contrario queda PENDIENTE hasta completarse.
     const tieneEfectivo = dto.efectivoRecog !== undefined && dto.efectivoRecog !== null;
@@ -76,23 +52,23 @@ export class TreasuryService {
       efectivoBilletes = efectivoRecog;
     }
     const estado = tieneEfectivo ? 'CERRADO' : 'PENDIENTE';
-    const diferenciaRec = efectivoRecog - efectivoEsperado;
+    const diferenciaRec = new Prisma.Decimal(efectivoRecog).minus(efectivoEsperado);
 
-    return this.prisma.tesoreriaEfectivoNr.create({
+    const recaudo = await tx.tesoreriaEfectivoNr.create({
       data: {
         idGrupo: dto.idGrupo ?? null,
         idMaquina: dto.idMaquina,
         idOperador: dto.idOperador,
         idUsuario: dto.idUsuario,
         fechaHora: dto.fechaHora ? new Date(dto.fechaHora) : new Date(),
-        nrAnterior: BigInt(nrAnterior),
-        nrActual: BigInt(nrActual),
-        diferenciaNr: BigInt(diferenciaNr),
-        tarifaAplicada: new Prisma.Decimal(tarifa),
-        efectivoTeorico: new Prisma.Decimal(totalVendido),
-        totalVendido: new Prisma.Decimal(totalVendido),
+        nrAnterior: visita.nrEfectivoAnterior ?? 0n,
+        nrActual: visita.nrEfectivoActual,
+        diferenciaNr: visita.ventaNr,
+        efectivoTeorico: totalVendido,
+        totalVendido,
         veosRecog: new Prisma.Decimal(veos),
         datafonoRecog: new Prisma.Decimal(datafono),
+        nequiRecog: new Prisma.Decimal(nequi),
         cuposRecog: new Prisma.Decimal(cupos),
         mediosNoEfectivo: new Prisma.Decimal(mediosNoEfectivo),
         efectivoEsperado: new Prisma.Decimal(efectivoEsperado),
@@ -103,6 +79,11 @@ export class TreasuryService {
         estado,
       },
     });
+    if (estado === 'CERRADO') {
+      await tx.visitas.update({ where: { idVisita: visita.idVisita }, data: { estado: 'RECAUDADA' } });
+    }
+    return recaudo;
+    });
   }
 
   // Lista las visitas/pedidos (grupos) del operador con su NR, para cerrar el recaudo por visita
@@ -111,46 +92,29 @@ export class TreasuryService {
     const idMaquina = query?.idMaquina ? Number(query.idMaquina) : undefined;
     const soloPendientes = query?.soloPendientes === 'true' || query?.soloPendientes === true;
 
-    // 1) Todos los pedidos con NR, ordenados por fecha
-    const pedidos = await this.prisma.pedidosOperador.findMany({
-      where: {
-        nrActualMedido: { not: null },
-        ...(idOperador ? { idOperador } : {}),
-        ...(idMaquina ? { idMaquina } : {}),
-      },
-      select: { idGrupo: true, idMaquina: true, idOperador: true, fechaHora: true, nrActualMedido: true },
-      orderBy: { fechaHora: 'asc' },
-    });
-
-    // 2) Agrupar por idGrupo (visita)
-    type Visita = { idGrupo: number; idMaquina: number; idOperador: number; fechaVisita: Date; nrActual: number; nrAnterior: number };
-    const mapa = new Map<number, Visita>();
-    for (const p of pedidos) {
-      if (p.idGrupo == null) continue;
-      const act = mapa.get(p.idGrupo);
-      const nr = Number(p.nrActualMedido) || 0;
-      if (!act) {
-        mapa.set(p.idGrupo, { idGrupo: p.idGrupo, idMaquina: p.idMaquina, idOperador: p.idOperador, fechaVisita: p.fechaHora, nrActual: nr, nrAnterior: 0 });
-      } else {
-        if (p.fechaHora < act.fechaVisita) act.fechaVisita = p.fechaHora;
-        if (nr > act.nrActual) act.nrActual = nr;
-      }
+    const pagina = Number(query?.pagina ?? 1);
+    const limite = Number(query?.limite ?? 25);
+    if (!Number.isSafeInteger(pagina) || pagina < 1 || pagina > 100000 ||
+        !Number.isInteger(limite) || limite < 1 || limite > 100) {
+      throw new BadRequestException('Paginación inválida');
     }
-
-    // 3) NR anterior por máquina: máximo NR de pedidos anteriores a la fecha de la visita
-    const visitas = [...mapa.values()].sort((a, b) => a.fechaVisita.getTime() - b.fechaVisita.getTime());
-    const nrAnteriorPorMaquina = new Map<number, number>();
-    for (const v of visitas) {
-      v.nrAnterior = nrAnteriorPorMaquina.get(v.idMaquina) ?? 0;
-      nrAnteriorPorMaquina.set(v.idMaquina, v.nrActual);
-    }
-
-    // 4) Recaudos ya existentes por visita (CERRADO o PENDIENTE)
-    const gruposRecaudados = await this.prisma.tesoreriaEfectivoNr.findMany({
-      where: { idGrupo: { in: visitas.map((v) => v.idGrupo) } },
-      select: { idGrupo: true, idRecaudo: true, estado: true, efectivoEsperado: true, efectivoRecog: true, efectivoBilletes: true, efectivoMonedas: true, veosRecog: true, datafonoRecog: true, cuposRecog: true },
-    });
-    const recAudados = new Map(gruposRecaudados.map((r) => [r.idGrupo, r]));
+    const { desde, hasta } = rangoColombia(query?.fechaInicio, query?.fechaFin);
+    const where: Prisma.VisitasWhereInput = {
+      idOperador, idMaquina, estado: { not: 'ANULADA' }, ventaNr: { not: null },
+      fechaVisita: { gte: desde, lt: hasta },
+      ...(soloPendientes ? { OR: [{ recaudo: null }, { recaudo: { estado: 'PENDIENTE' } }] } : {}),
+    };
+    const [total, cabeceras] = await this.prisma.$transaction([
+      this.prisma.visitas.count({ where }),
+      this.prisma.visitas.findMany({
+        where, include: { recaudo: true }, orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
+        skip: (pagina - 1) * limite, take: limite,
+      }),
+    ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    const visitas = cabeceras.map(v => ({
+      ...v, idGrupo: v.idVisita, nrActual: Number(v.nrEfectivoActual ?? 0n),
+      nrAnterior: Number(v.nrEfectivoAnterior ?? 0n),
+    }));
 
     // 5) Adjuntar máquina y operador
     const idsMaq = [...new Set(visitas.map((v) => v.idMaquina))];
@@ -174,7 +138,7 @@ export class TreasuryService {
       : [];
     // Cliente al que pertenece cada máquina de las visitas
     const clientesDeVisita = new Map<number, number | null>();
-    for (const v of visitas) clientesDeVisita.set(v.idGrupo, maqMap.get(v.idMaquina)?.idCliente ?? null);
+    for (const v of visitas) clientesDeVisita.set(v.idGrupo, v.idCliente);
     // Precios por (cliente, producto) que abarquen todos los clientes/productos de las visitas
     const productosVisita = [...new Set(pedidosVisita.map((p) => p.idProducto))];
     const clientesVisita = [...new Set([...clientesDeVisita.values()].filter((c): c is number => c != null))];
@@ -213,8 +177,8 @@ export class TreasuryService {
 
     const lista = visitas
       .map((v) => {
-        const recaudo = recAudados.get(v.idGrupo);
-        const diferenciaNR = Math.max(0, v.nrActual - v.nrAnterior);
+        const recaudo = v.recaudo;
+        const diferenciaNR = Number(v.ventaNr);
         const est = { ...recaudo, mediosPago: maqMap.get(v.idMaquina)?.mediosPago ?? null };
         return {
           idGrupo: v.idGrupo,
@@ -240,23 +204,21 @@ export class TreasuryService {
                 efectivoMonedas: Number(est.efectivoMonedas || 0),
                 veosRecog: Number(est.veosRecog || 0),
                 datafonoRecog: Number(est.datafonoRecog || 0),
+                nequiRecog: Number(est.nequiRecog || 0),
                 cuposRecog: Number(est.cuposRecog || 0),
               }
             : null,
         };
-      })
-      .filter((v) => !soloPendientes || v.estado === 'PENDIENTE')
-      .sort((a, b) => b.fechaVisita.getTime() - a.fechaVisita.getTime());
+      });
 
-    return { total: lista.length, visitas: lista };
+    return { total, pagina, limite, visitas: lista };
   }
 
   // "Vendido por Visita": mapea las ventas de cada máquina en cada visita del operador,
   // mostrando el total despachado (= Σ cantidad sugerida x precio del cliente) junto al
   // total vendido (diferencia NR). FiltrA por fecha, máquina y/o cliente.
   async vendidoPorVisita(query: any) {
-    const fechaInicio = query?.fechaInicio ? new Date(query.fechaInicio + 'T00:00:00') : null;
-    const fechaFin = query?.fechaFin ? new Date(query.fechaFin + 'T23:59:59') : null;
+    const { desde, hasta } = rangoColombia(query?.fechaInicio, query?.fechaFin);
     const idMaquina = query?.idMaquina ? Number(query.idMaquina) : undefined;
     const idCliente = query?.idCliente ? Number(query.idCliente) : undefined;
 
@@ -266,7 +228,7 @@ export class TreasuryService {
         idMaquina,
         idCliente,
         nrEfectivoActual: { not: null },
-        fechaVisita: { gte: fechaInicio ?? undefined, lte: fechaFin ?? undefined },
+        fechaVisita: { gte: desde, lt: hasta },
       },
       orderBy: [{ fechaVisita: 'asc' }, { idVisita: 'asc' }],
     });
@@ -463,7 +425,9 @@ export class TreasuryService {
   }
 
   async updateEfectivoNr(id: number, dto: CompletarEfectivoNrDto) {
-    const r = await this.prisma.tesoreriaEfectivoNr.findUnique({ where: { idRecaudo: id } });
+    return this.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "ID_Recaudo" FROM "TESORERIA_EFECTIVO_NR" WHERE "ID_Recaudo" = ${id} FOR UPDATE`;
+    const r = await tx.tesoreriaEfectivoNr.findUnique({ where: { idRecaudo: id } });
     if (!r) throw new NotFoundException('Registro no encontrado');
     if (r.estado === 'CERRADO') {
       throw new MethodNotAllowedException('No se permite modificar registros CERRADOS');
@@ -492,9 +456,8 @@ export class TreasuryService {
       efectivoBilletes = efectivoRecog;
       efectivoMonedas = 0;
     }
-    const efectivoEsperado = Number(r.efectivoEsperado || 0);
-    const diferenciaRec = efectivoRecog - efectivoEsperado;
-    return this.prisma.tesoreriaEfectivoNr.update({
+    const diferenciaRec = new Prisma.Decimal(efectivoRecog).minus(r.efectivoEsperado);
+    const recaudo = await tx.tesoreriaEfectivoNr.update({
       where: { idRecaudo: id },
       data: {
         efectivoRecog: new Prisma.Decimal(efectivoRecog),
@@ -504,6 +467,11 @@ export class TreasuryService {
         estado: 'CERRADO',
       },
     });
+    if (r.idGrupo != null) {
+      await tx.visitas.update({ where: { idVisita: r.idGrupo }, data: { estado: 'RECAUDADA' } });
+    }
+    return recaudo;
+    });
   }
 
   async removeEfectivoNr(_id: number) {
@@ -512,13 +480,19 @@ export class TreasuryService {
 
   async findAllSaldos() {
     return this.prisma.saldosDigitales.findMany({
-      include: { maquina: true, usuario: true },
+      include: {
+        maquina: { select: { serial: true, ubicacionEsp: true } },
+        usuario: { select: { idUsuario: true } },
+        visita: { select: { idVisita: true, fechaVisita: true, recaudo: { select: { idRecaudo: true, estado: true } } } },
+      },
       orderBy: { fechaTransaccion: 'desc' },
     });
   }
 
   async createSaldo(dto: CreateSaldoDigitalDto) {
-    return this.prisma.saldosDigitales.create({
+    return this.prisma.$transaction(async tx => {
+    await this.validarVisitaSaldo(tx, dto.idMaquina, dto.idVisita);
+    return tx.saldosDigitales.create({
       data: {
         idMaquina: dto.idMaquina,
         plataforma: dto.plataforma,
@@ -526,16 +500,28 @@ export class TreasuryService {
         fechaTransaccion: dto.fechaTransaccion ? new Date(dto.fechaTransaccion) : new Date(),
         referencia: dto.referencia ?? null,
         idUsuario: dto.idUsuario,
+        idVisita: dto.idVisita,
       },
+    });
     });
   }
 
   async updateSaldo(id: number, dto: UpdateSaldoDigitalDto) {
-    const s = await this.prisma.saldosDigitales.findUnique({ where: { idSaldo: id } });
+    return this.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "ID_Saldo" FROM "SALDOS_DIGITALES" WHERE "ID_Saldo" = ${id} FOR UPDATE`;
+    const s = await tx.saldosDigitales.findUnique({ where: { idSaldo: id } });
     if (!s) throw new NotFoundException('Saldo no encontrado');
-    const data: any = { ...dto };
+    await this.validarVisitaSaldo(tx, dto.idMaquina ?? s.idMaquina, dto.idVisita === undefined ? s.idVisita : dto.idVisita);
+    const data: Prisma.SaldosDigitalesUncheckedUpdateInput = { ...dto };
     if (dto.montoTransaccion !== undefined) data.montoTransaccion = new Prisma.Decimal(dto.montoTransaccion);
-    return this.prisma.saldosDigitales.update({ where: { idSaldo: id }, data });
+    return tx.saldosDigitales.update({ where: { idSaldo: id }, data });
+    });
+  }
+
+  private async validarVisitaSaldo(tx: Prisma.TransactionClient, idMaquina: number, idVisita?: number | null) {
+    if (idVisita == null) return;
+    const visita = await tx.visitas.findFirst({ where: { idVisita, idMaquina, estado: { not: 'ANULADA' } } });
+    if (!visita) throw new BadRequestException('La visita debe estar vigente y pertenecer a la máquina del saldo');
   }
 
   async removeSaldo(id: number) {
@@ -545,63 +531,75 @@ export class TreasuryService {
   }
 
   async facturacionNrq(query: QueryFacturacionNrqDto) {
-    const fechaInicio = new Date(query.fechaInicio);
-    const fechaFin = new Date(query.fechaFin);
-    const where: any = {
-      fechaHora: { gte: fechaInicio, lte: fechaFin },
-    };
-    const result = await this.prisma.$queryRaw<any[]>`
-      SELECT
-        m."ID_Maquina",
-        m."Serial",
-        c."ID_Cliente",
-        c."Razon_Social",
-        p."ID_Producto",
-        p."Nombre_Producto",
-        COALESCE(MAX(CASE WHEN tg = 'inicial' THEN nrq END), 0) as "NRQ_Inicial",
-        COALESCE(MAX(CASE WHEN tg = 'final' THEN nrq END), 0) as "NRQ_Final",
-        COALESCE(MAX(CASE WHEN tg = 'final' THEN nrq END), 0) - COALESCE(MAX(CASE WHEN tg = 'inicial' THEN nrq END), 0) as "NRQ_Diferencia",
-        COALESCE(AVG(pc."Precio_Venta"), 0) as "Precio_Promedio"
-      FROM (
-        SELECT
-          po."ID_Maquina",
-          po."ID_Producto",
-          po."ID_Operador",
-          MIN(po."NRQ_Actual_Lectura") as nrq,
-          'inicial'::text as tg,
-          MIN(po."Fecha_Hora") as fh
-        FROM public."PEDIDOS_OPERADOR" po
-        WHERE po."NRQ_Actual_Lectura" IS NOT NULL
-          AND po."Fecha_Hora" >= ${fechaInicio}
-          AND po."Fecha_Hora" <= ${fechaFin}
-        GROUP BY po."ID_Maquina", po."ID_Producto", po."ID_Operador", DATE(po."Fecha_Hora")
-        UNION ALL
-        SELECT
-          po."ID_Maquina",
-          po."ID_Producto",
-          po."ID_Operador",
-          MAX(po."NRQ_Actual_Lectura") as nrq,
-          'final'::text as tg,
-          MAX(po."Fecha_Hora") as fh
-        FROM public."PEDIDOS_OPERADOR" po
-        WHERE po."NRQ_Actual_Lectura" IS NOT NULL
-          AND po."Fecha_Hora" >= ${fechaInicio}
-          AND po."Fecha_Hora" <= ${fechaFin}
-        GROUP BY po."ID_Maquina", po."ID_Producto", po."ID_Operador", DATE(po."Fecha_Hora")
-      ) x
-      JOIN public."MAQUINAS_Y_TIENDAS" m ON x."ID_Maquina" = m."ID_Maquina"
-      LEFT JOIN public."CLIENTES" c ON m."ID_Cliente" = c."ID_Cliente"
-      JOIN public."PRODUCTOS" p ON x."ID_Producto" = p."ID_Producto"
-      LEFT JOIN public."PRECIOS_CLIENTE" pc ON p."ID_Producto" = pc."ID_Producto" AND c."ID_Cliente" = pc."ID_Cliente"
-      WHERE (${query.idCliente === undefined} OR c."ID_Cliente" = ${query.idCliente ? parseInt(query.idCliente) : null})
-        AND (${query.idProducto === undefined} OR p."ID_Producto" = ${query.idProducto ? parseInt(query.idProducto) : null})
-      GROUP BY m."ID_Maquina", m."Serial", c."ID_Cliente", c."Razon_Social", p."ID_Producto", p."Nombre_Producto"
-      ORDER BY c."Razon_Social", m."Serial", p."Nombre_Producto"
-    `;
+    const result = await this.lecturasFacturables(this.prisma, query);
     return {
       registros: result,
-      totalDiferenciaNrq: result.reduce((acc, r) => acc + Number(r['NRQ_Diferencia'] || 0), 0),
-      totalFacturarEstimado: result.reduce((acc, r) => acc + (Number(r['NRQ_Diferencia'] || 0) * Number(r['Precio_Promedio'] || 0)), 0),
+      totalDiferenciaNrq: result.reduce((acc, r) => acc + r.NRQ_Diferencia, 0n),
+      totalFacturarEstimado: result.reduce((acc, r) => acc.plus(r.total), new Prisma.Decimal(0)),
     };
+  }
+
+  private async lecturasFacturables(tx: Prisma.TransactionClient, query: QueryFacturacionNrqDto) {
+    const { desde, hasta } = rangoColombia(query.fechaInicio, query.fechaFin);
+    if (!desde || !hasta) throw new BadRequestException('Indica el período de facturación');
+    return tx.$queryRaw<{
+      ID_Maquina: number; ID_Cliente: number | null; ID_Producto: number; Serial: string;
+      Razon_Social: string | null; Nombre_Producto: string; incompleta: boolean;
+      NRQ_Inicial: bigint; NRQ_Final: bigint; NRQ_Diferencia: bigint;
+      Precio_Promedio: Prisma.Decimal; total: Prisma.Decimal;
+    }[]>`
+      WITH por_boton AS (
+        SELECT v."ID_Maquina", v."ID_Cliente", l."ID_Prod_Term",
+          (array_agg(l."Lectura_Anterior" ORDER BY v."Fecha_Visita", v."ID_Visita"))[1] AS inicial,
+          (array_agg(l."Lectura_Actual" ORDER BY v."Fecha_Visita" DESC, v."ID_Visita" DESC))[1] AS final,
+          SUM(l."Unidades") AS unidades, COALESCE(SUM(l."Subtotal"), 0) AS subtotal,
+          bool_or(l."Unidades" > 0 AND l."Subtotal" IS NULL) AS incompleta
+        FROM "LECTURAS_NRQ" l
+        JOIN "VISITAS" v ON v."ID_Visita" = l."ID_Visita"
+        WHERE v."Fecha_Visita" >= ${desde.toISOString()}::timestamp
+          AND v."Fecha_Visita" < ${hasta.toISOString()}::timestamp
+          AND v."Estado" <> 'ANULADA'
+          AND (${query.idCliente ?? null}::int IS NULL OR v."ID_Cliente" = ${query.idCliente ?? null}::int)
+          AND (${query.idProducto ?? null}::int IS NULL OR l."ID_Prod_Term" = ${query.idProducto ?? null}::int)
+        GROUP BY v."ID_Maquina", v."ID_Cliente", l."ID_Prod_Term", l."ID_Mapa_NRQ", l."Opcion_Boton"
+      )
+      SELECT m."ID_Maquina", m."Serial", b."ID_Cliente", c."Razon_Social", p."ID_Producto", p."Nombre_Producto",
+        SUM(b.inicial)::bigint AS "NRQ_Inicial", SUM(b.final)::bigint AS "NRQ_Final",
+        SUM(b.unidades)::bigint AS "NRQ_Diferencia", SUM(b.subtotal) AS total,
+        COALESCE(SUM(b.subtotal) / NULLIF(SUM(b.unidades), 0), 0) AS "Precio_Promedio",
+        bool_or(b.incompleta OR b."ID_Cliente" IS NULL) AS incompleta
+      FROM por_boton b
+      JOIN "MAQUINAS_Y_TIENDAS" m ON m."ID_Maquina" = b."ID_Maquina"
+      JOIN "PRODUCTOS" p ON p."ID_Producto" = b."ID_Prod_Term"
+      LEFT JOIN "CLIENTES" c ON c."ID_Cliente" = b."ID_Cliente"
+      GROUP BY m."ID_Maquina", m."Serial", b."ID_Cliente", c."Razon_Social", p."ID_Producto", p."Nombre_Producto"
+      ORDER BY c."Razon_Social", m."Serial", p."Nombre_Producto"`;
+  }
+
+  async generarFacturacionNrq(query: QueryFacturacionNrqDto, idUsuario: number) {
+    const { fechaInicio, fechaFin } = rangoColombia(query.fechaInicio, query.fechaFin);
+    if (!fechaInicio || !fechaFin) throw new BadRequestException('Indica el período de facturación');
+    return this.prisma.$transaction(async tx => {
+      // Los generadores concurrentes verifican solapamientos de forma serializada.
+      await tx.$executeRaw`LOCK TABLE "TESORERIA_FACTURACION_NRQ" IN SHARE ROW EXCLUSIVE MODE`;
+      const filas = (await this.lecturasFacturables(tx, query)).filter(f => f.NRQ_Diferencia > 0n);
+      if (!filas.length) throw new BadRequestException('No hay unidades NRQ facturables en este período');
+      if (filas.some(f => f.incompleta)) throw new BadRequestException('Hay lecturas sin cliente o sin precio guardado');
+      const pares = filas.map(f => ({ idMaquina: f.ID_Maquina, idProdTerm: f.ID_Producto }));
+      if (new Set(pares.map(p => `${p.idMaquina}:${p.idProdTerm}`)).size !== pares.length) {
+        throw new BadRequestException('Una máquina cambió de cliente durante el período. Divide el rango antes de facturar.');
+      }
+      const existente = await tx.tesoreriaFacturacionNrq.findFirst({
+        where: { fechaInicio: { lte: fechaFin }, fechaFin: { gte: fechaInicio }, OR: pares },
+      });
+      if (existente) throw new BadRequestException('Ya existe una factura NRQ para un período que se cruza con el solicitado');
+      return tx.tesoreriaFacturacionNrq.createMany({
+        data: filas.map(f => ({
+          idMaquina: f.ID_Maquina, idProdTerm: f.ID_Producto, idCliente: f.ID_Cliente!,
+          fechaInicio, fechaFin, idUsuario, nrqInicial: f.NRQ_Inicial, nrqFinal: f.NRQ_Final,
+          nrqDiferencia: f.NRQ_Diferencia, precioUnitarioVenta: f.Precio_Promedio, totalFacturar: f.total,
+        })),
+      });
+    });
   }
 }

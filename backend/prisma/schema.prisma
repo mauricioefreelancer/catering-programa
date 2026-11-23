@@ -310,6 +310,7 @@ model Visitas {
   ventas   VentasPorVisita?
   recaudo  TesoreriaEfectivoNr?
   lecturasNrq LecturasNrq[]
+  saldosDigitales SaldosDigitales[]
 
   @@index([idMaquina, fechaVisita])
   @@map("VISITAS")
@@ -440,6 +441,7 @@ model TesoreriaEfectivoNr {
   diferenciaRec Decimal                   @default(0) @map("Diferencia_Rec") @db.Decimal(18, 2)
   veosRecog     Decimal                   @default(0) @map("Veos_Recog") @db.Decimal(18, 2)
   datafonoRecog Decimal                   @default(0) @map("Datafono_Recog") @db.Decimal(18, 2)
+  nequiRecog    Decimal                   @default(0) @map("Nequi_Recog") @db.Decimal(18, 2)
   cuposRecog    Decimal                   @default(0) @map("Cupos_Recog") @db.Decimal(18, 2)
   mediosNoEfectivo Decimal               @default(0) @map("Medios_No_Efectivo") @db.Decimal(18, 2)
   efectivoEsperado Decimal               @default(0) @map("Efectivo_Esperado") @db.Decimal(18, 2)
@@ -475,6 +477,7 @@ model TesoreriaFacturacionNrq {
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
 
+  @@unique([idMaquina, idProdTerm, fechaInicio, fechaFin], map: "uq_facturacion_nrq_periodo")
   @@map("TESORERIA_FACTURACION_NRQ")
 }
 
@@ -486,10 +489,13 @@ model SaldosDigitales {
   fechaTransaccion DateTime                  @default(now()) @map("Fecha_Transaccion")
   referencia       String?                   @map("Referencia") @db.VarChar(200)
   idUsuario         Int                       @map("ID_Usuario")
+  idVisita          Int?                      @map("ID_Visita")
 
+  visita   Visitas? @relation(fields: [idVisita], references: [idVisita], onDelete: SetNull)
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
 
+  @@index([idVisita])
   @@map("SALDOS_DIGITALES")
 }
 

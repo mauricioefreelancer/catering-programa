@@ -1,17 +1,19 @@
-import { IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateEfectivoNrDto {
-  @IsOptional() @IsInt() idGrupo?: number;
+  @IsInt() @Min(1) idGrupo: number;
   @IsInt() @IsNotEmpty() idMaquina: number;
   @IsInt() @IsNotEmpty() idOperador: number;
   @IsInt() @IsNotEmpty() idUsuario: number;
-  @IsNumber() @IsNotEmpty() nrActual: number;
+  @IsOptional() @IsNumber() nrActual?: number;
   @IsOptional() @IsNumber() nrAnterior?: number;
   @IsOptional() @IsNumber() efectivoRecog?: number;
   @IsOptional() @IsNumber() efectivoBilletes?: number;
   @IsOptional() @IsNumber() efectivoMonedas?: number;
   @IsOptional() @IsNumber() veosRecog?: number;
   @IsOptional() @IsNumber() datafonoRecog?: number;
+  @IsOptional() @IsNumber() @Min(0) nequiRecog?: number;
   @IsOptional() @IsNumber() cuposRecog?: number;
   @IsOptional() @IsDateString() fechaHora?: string;
 }
@@ -25,6 +27,7 @@ export class CompletarEfectivoNrDto {
 
 export class CreateSaldoDigitalDto {
   @IsInt() @IsNotEmpty() idMaquina: number;
+  @IsOptional() @IsInt() @Min(1) idVisita?: number | null;
   @IsString() @IsNotEmpty() plataforma: string;
   @IsNumber() @IsNotEmpty() montoTransaccion: number;
   @IsOptional() @IsDateString() fechaTransaccion?: string;
@@ -34,6 +37,7 @@ export class CreateSaldoDigitalDto {
 
 export class UpdateSaldoDigitalDto {
   @IsOptional() @IsInt() idMaquina?: number;
+  @IsOptional() @IsInt() @Min(1) idVisita?: number | null;
   @IsOptional() @IsString() plataforma?: string;
   @IsOptional() @IsNumber() montoTransaccion?: number;
   @IsOptional() @IsString() referencia?: string;
@@ -42,8 +46,8 @@ export class UpdateSaldoDigitalDto {
 export class QueryFacturacionNrqDto {
   @IsDateString() @IsNotEmpty() fechaInicio: string;
   @IsDateString() @IsNotEmpty() fechaFin: string;
-  @IsOptional() @IsInt() idCliente?: string;
-  @IsOptional() @IsInt() idProducto?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) idCliente?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) idProducto?: number;
 }
 
 // Query para "Vendido por Visita": mapea las ventas/despachos de cada máquina por visita.

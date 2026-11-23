@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import { TreasuryService } from './treasury.service';
 import { CreateEfectivoNrDto, CompletarEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
 import { AuthGuard } from '@nestjs/passport';
@@ -44,6 +44,14 @@ export class TreasuryController {
   @Get('facturacion-nrq')
   @Permissions('tesoreria', 'ver')
   facturacionNrq(@Query() q: QueryFacturacionNrqDto) { return this.srv.facturacionNrq(q); }
+
+  @Post('facturacion-nrq/generar')
+  @Permissions('tesoreria', 'crear')
+  generarFacturacionNrq(@Body() dto: QueryFacturacionNrqDto, @Req() req: { user?: { sub?: number } }) {
+    const idUsuario = req.user?.sub;
+    if (typeof idUsuario !== 'number') throw new UnauthorizedException();
+    return this.srv.generarFacturacionNrq(dto, idUsuario);
+  }
 
   @Get('vendido-por-visita')
   @Permissions('tesoreria', 'ver')

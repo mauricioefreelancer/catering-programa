@@ -112,6 +112,8 @@ Módulo operador móvil PWA: `http://localhost:5173/mobile`
 
 En una base de desarrollo, ejecutar `npx prisma migrate dev --create-only --name <nombre>` desde `backend`. Revisar el SQL, añadir el backfill cuando corresponda y probar `migrate deploy` en una base vacía antes de publicar.
 
+La migración de Tesorería añade Nequi, vincula saldos con visitas y protege la facturación NRQ por período. Antes de desplegar, ensayarla sobre una restauración del respaldo: si existen filas duplicadas de facturación para la misma máquina, producto y período, la migración se detiene sin borrar datos. `STOCK_PROVEEDOR` permanece intacta; su retiro requiere acordar la exportación del histórico.
+
 ---
 
 ## Módulos Funcionales
