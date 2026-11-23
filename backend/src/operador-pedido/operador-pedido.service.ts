@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePedidoOperadorDto } from './dto/operador-pedido.dto';
@@ -11,7 +11,6 @@ import { calcularVentaTeorica, LineaVenta } from '../common/venta-teorica';
 
 @Injectable()
 export class OperadorPedidoService {
-  private readonly logger = new Logger(OperadorPedidoService.name);
   constructor(private prisma: PrismaService, private parametros: ParametrosService) {}
 
   async findAll(params?: { idOperador?: number; idMaquina?: number; estado?: string }) {
@@ -39,16 +38,14 @@ export class OperadorPedidoService {
     return this.prisma.$transaction(
       async (tx) => {
     await tx.$queryRaw`SELECT "ID_Maquina" FROM "MAQUINAS_Y_TIENDAS" WHERE "ID_Maquina" = ${dto.idMaquina} FOR UPDATE`;
-    if (dto.idOffline) {
-      const anterior = await tx.visitas.findUnique({
-        where: { idOffline: dto.idOffline }, include: { pedidos: true },
-      });
-      if (anterior) {
-        if (anterior.idMaquina !== dto.idMaquina || anterior.idOperador !== dto.idOperador) {
-          throw new ConflictException('El identificador offline pertenece a otra visita');
-        }
-        return { idGrupo: anterior.idVisita, visita: anterior, totalCreados: anterior.pedidos.length, pedidos: anterior.pedidos };
+    const anterior = await tx.visitas.findUnique({
+      where: { idEnvio: dto.idEnvio }, include: { pedidos: true },
+    });
+    if (anterior) {
+      if (anterior.idMaquina !== dto.idMaquina || anterior.idOperador !== dto.idOperador) {
+        throw new ConflictException('El identificador de envío pertenece a otra visita');
       }
+      return { idGrupo: anterior.idVisita, visita: anterior, totalCreados: anterior.pedidos.length, pedidos: anterior.pedidos };
     }
     const maquina = await tx.maquinasYTiendas.findUnique({
       where: { idMaquina: dto.idMaquina },
@@ -71,9 +68,6 @@ export class OperadorPedidoService {
           throw new ConflictException('Ya hay otra visita registrada. Recarga las lecturas antes de confirmar.');
         }
         const fechaVisita = new Date(Math.max(Date.now(), (lecturas.visita?.fechaVisita.getTime() ?? 0) + 1));
-        const efectivo = dto.nrEfectivoActual ?? dto.nrActual;
-        if (efectivo == null) throw new BadRequestException('La lectura NR efectivo es obligatoria');
-        if (dto.nrEfectivoActual == null || dto.nrqItems?.length) this.logger.warn('Registro con contadores del formato móvil anterior');
         const calcular = (nombre: string, anterior: bigint, actual: bigint) => {
           try {
             return diferenciaContador(anterior, actual, dto.reinicioContador === true);
@@ -82,12 +76,12 @@ export class OperadorPedidoService {
             throw error;
           }
         };
-        const nrActual = BigInt(efectivo);
+        const nrActual = BigInt(dto.nrEfectivoActual);
         const ventaNr = calcular('NR efectivo', lecturas.nrEfectivo, nrActual);
         const visita = await tx.visitas.create({
           data: {
             idMaquina: dto.idMaquina, idOperador: dto.idOperador, idCliente: maquina.idCliente,
-            fechaVisita, idOffline: dto.idOffline, idUsuarioRegistro: userId ?? null,
+            fechaVisita, idEnvio: dto.idEnvio, idUsuarioRegistro: userId ?? null,
             nrEfectivoAnterior: lecturas.nrEfectivo, nrEfectivoActual: nrActual,
             ventaNr, reinicioContador: dto.reinicioContador ?? false, esCorteMes: dto.esCorteMes ?? false,
           },
@@ -193,8 +187,7 @@ export class OperadorPedidoService {
           throw new BadRequestException('Registra el físico de todas las tolvas configuradas');
         }
         const anteriorNrq = new Map(lecturas.botones.map(b => [b.idMapaNrq, b.lectura]));
-        const nrqEntradas = dto.nrqLecturas?.map(b => ({ idMapaNRQ: b.idMapaNRQ, idMapaMP: b.idMapaMP, lectura: BigInt(b.lecturaActual) }))
-          ?? dto.nrqItems?.map(b => ({ idMapaNRQ: b.idMapaNRQ, idMapaMP: undefined, lectura: (anteriorNrq.get(b.idMapaNRQ) ?? 0n) + BigInt(b.valor) })) ?? [];
+        const nrqEntradas = dto.nrqLecturas?.map(b => ({ idMapaNRQ: b.idMapaNRQ, idMapaMP: b.idMapaMP, lectura: BigInt(b.lecturaActual) })) ?? [];
         const exigeEspirales = maquina.tipoNegociacion === 'ESPECIAL'
           && (maquina.lecturaNrqEspiral === 'CADA_VISITA' || dto.esCorteMes === true);
         const previosEspiral = new Map(lecturas.nrqEspirales.map(l => [l.idMapaMp, l]));
@@ -251,7 +244,7 @@ export class OperadorPedidoService {
           } });
         }
 
-        if (dto.nrEfectivoActual != null && botonesProcesados.size !== mapaNrqById.size) {
+        if (botonesProcesados.size !== mapaNrqById.size) {
           throw new BadRequestException('Registra la lectura de cada botón configurado');
         }
         if (exigeEspirales && nrqPorEspiral.size !== previosEspiral.size) {
@@ -384,7 +377,7 @@ const controlesMP: Prisma.InputJsonObject[] = [];
           visita,
           totalCreados: pedidosCreados.length,
           pedidos: pedidosCreados,
-          nrqItemsProcesados: botonesProcesados.size,
+          lecturasNrqProcesadas: botonesProcesados.size + nrqPorEspiral.size,
         };
       },
       { timeout: 60000, maxWait: 30000 },

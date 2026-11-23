@@ -361,7 +361,7 @@ const AdminDataPanel = () => {
         setSel(defaultTable)
       }
     } catch (e: any) {
-      message.warning('API /admin/tables no responde (backend offline). Usando MODO FUERZA local (catalogo completo de tablas mock)')
+      message.warning('API /admin/tables no responde. Se muestran datos de demostración; los cambios no se guardan en el servidor.')
       setMeta(null)
       setUsingFallback(true)
       const fm = effectiveMeta()

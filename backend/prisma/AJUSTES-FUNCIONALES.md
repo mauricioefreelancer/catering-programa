@@ -36,3 +36,9 @@ El nuevo endpoint es `/api/tesoreria/facturacion-cliente/generar`; el anterior q
 Aplicar `20261124180000_parametros_tolerancia` antes de publicar el backend. La migración crea los dos parámetros en $10.000 COP y conserva sin evaluación las alertas anteriores. Administración → Parámetros permite cambiar los valores para próximas visitas sin reiniciar el servicio.
 
 Una visita registrada pasa a `DESPACHADA` cuando todos sus pedidos quedan aprobados, no repuestos o reemplazados. Una visita ya `RECAUDADA` conserva ese estado.
+
+## A9–A10: contrato en línea y archivo histórico
+
+Publicar juntos el backend y el móvil: el registro requiere `idEnvio` y `nrEfectivoActual`; usa `nrqLecturas` en lugar de `nrqItems`. `idEnvio` sigue usando la columna física `Id_Offline`, con la misma clave única. No requiere migración.
+
+Se exportaron las 35 filas y las siete columnas de `STOCK_PROVEEDOR` en una transacción de solo lectura. El CSV con datos de producción queda fuera de Git. No se encontraron dependencias en servicios ni pantallas, ni vistas o claves foráneas entrantes en PostgreSQL. Este PR no elimina la tabla: la migración de retiro queda pendiente hasta la confirmación del usuario.
