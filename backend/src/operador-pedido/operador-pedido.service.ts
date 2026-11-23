@@ -5,13 +5,14 @@ import { CreatePedidoOperadorDto } from './dto/operador-pedido.dto';
 import { EstadoPedido, PEDIDOS_ABIERTOS, pendientePedido, sugeridoPorEspiral } from '../common/reposicion';
 import { diferenciaContador, vendidasPorEspiral } from '../common/contadores';
 import { calcularConsumoMateriaPrima } from '../common/consumo-materia-prima';
+import { evaluarTolerancia, ParametrosService } from '../admin/parametros.service';
 import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
 import { calcularVentaTeorica, LineaVenta } from '../common/venta-teorica';
 
 @Injectable()
 export class OperadorPedidoService {
   private readonly logger = new Logger(OperadorPedidoService.name);
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private parametros: ParametrosService) {}
 
   async findAll(params?: { idOperador?: number; idMaquina?: number; estado?: string }) {
     const where: any = {};
@@ -23,6 +24,7 @@ export class OperadorPedidoService {
       include: {
         maquina: { include: { cliente: true } },
         operador: true,
+        visita: { select: { estado: true } },
         producto: true,
         mapaMp: true,
         despachosBodega: { orderBy: { fechaHora: 'desc' } },
@@ -33,6 +35,7 @@ export class OperadorPedidoService {
   }
 
   async create(dto: CreatePedidoOperadorDto, userId?: number | null) {
+    const tolerancias = await this.parametros.tolerancias();
     return this.prisma.$transaction(
       async (tx) => {
     await tx.$queryRaw`SELECT "ID_Maquina" FROM "MAQUINAS_Y_TIENDAS" WHERE "ID_Maquina" = ${dto.idMaquina} FOR UPDATE`;
@@ -359,6 +362,10 @@ const controlesMP: Prisma.InputJsonObject[] = [];
             diferenciaVenta,
             diferenciaUnidades,
             diferenciaMpValor,
+            toleranciaAplicada: tolerancias.venta,
+            toleranciaMpAplicada: tolerancias.mp,
+            alertaDiferencia: evaluarTolerancia(diferenciaVenta?.toDecimalPlaces(2) ?? null, tolerancias.venta),
+            alertaMp: evaluarTolerancia(diferenciaMpValor, tolerancias.mp),
             valorFacturarCliente: detalleControles.length ? valorFacturarCliente : null,
             unidadesSugeridas: unidadesSugeridasVisita,
             detalle: { reposicion: detalleVisita, controlesMP, controles: detalleControles.map((linea, i) => ({

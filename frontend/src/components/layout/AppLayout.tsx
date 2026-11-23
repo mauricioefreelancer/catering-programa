@@ -141,6 +141,9 @@ const AppLayout = () => {
     }
 
     const adminChildren: MenuItem[] = []
+    if (hasPermission('admin', 'editar')) {
+      adminChildren.push({ key: '/admin/parametros', icon: <SettingOutlined />, label: <Link to="/admin/parametros">Parámetros</Link> })
+    }
     if (hasPermission('admin')) {
       adminChildren.push({ key: '/admin/roles', icon: <SettingOutlined />, label: <Link to="/admin/roles">Roles y Permisos</Link> })
       adminChildren.push({ key: '/admin/usuarios', icon: <UserSwitchOutlined />, label: <Link to="/admin/usuarios">Usuarios</Link> })

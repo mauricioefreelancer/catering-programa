@@ -42,8 +42,21 @@ model UsuariosSistema {
   auditoriaLog   AuditoriaLog[]
   historialMediosPago HistorialMediosPago[]
   visitasRegistradas Visitas[]
+  parametrosActualizados ParametrosSistema[]
 
   @@map("USUARIOS_SISTEMA")
+}
+
+model ParametrosSistema {
+  clave String @id @map("Clave") @db.VarChar(60)
+  valor Decimal @map("Valor") @db.Decimal(18, 2)
+  tipo String @map("Tipo") @db.VarChar(20)
+  descripcion String @map("Descripcion") @db.VarChar(200)
+  fechaActualizacion DateTime @default(now()) @updatedAt @map("Fecha_Actualizacion")
+  idUsuarioActualiza Int? @map("ID_Usuario_Actualiza")
+  usuario UsuariosSistema? @relation(fields: [idUsuarioActualiza], references: [idUsuario], onDelete: SetNull)
+
+  @@map("PARAMETROS_SISTEMA")
 }
 
 model Clientes {
@@ -423,6 +436,10 @@ model VentasPorVisita {
   ventaTeoricaProductos Decimal? @map("Venta_Teorica_Productos") @db.Decimal(18, 2)
   diferenciaVenta Decimal? @map("Diferencia_Venta") @db.Decimal(18, 2)
   diferenciaMpValor Decimal? @map("Diferencia_MP_Valor") @db.Decimal(18, 2)
+  toleranciaAplicada Decimal? @map("Tolerancia_Aplicada") @db.Decimal(18, 2)
+  toleranciaMpAplicada Decimal? @map("Tolerancia_MP_Aplicada") @db.Decimal(18, 2)
+  alertaDiferencia Boolean? @map("Alerta_Diferencia")
+  alertaMp Boolean? @map("Alerta_MP")
   diferenciaUnidades BigInt? @map("Diferencia_Unidades")
   valorFacturarCliente Decimal? @map("Valor_Facturar_Cliente") @db.Decimal(18, 2)
   unidadesSugeridas Int                    @default(0) @map("Unidades_Sugeridas")

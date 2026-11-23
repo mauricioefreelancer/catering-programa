@@ -1,13 +1,26 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, ParseArrayPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { CreateRolDto, UpdateRolDto, CreateUsuarioDto, UpdateUsuarioDto, QueryAdminDto } from './dto/admin.dto';
 import { AuthGuard } from '@nestjs/passport';
-import { Permissions } from '../auth/permissions.guard';
+import { JwtPayload, Permissions } from '../auth/permissions.guard';
+import { ParametrosService } from './parametros.service';
 
 @Controller('admin')
 @UseGuards(AuthGuard('jwt'))
 export class AdminController {
-  constructor(private readonly srv: AdminService) {}
+  constructor(private readonly srv: AdminService, private readonly parametros: ParametrosService) {}
+
+  @Get('parametros') @Permissions('admin', 'editar')
+  listarParametros(@Req() req: { user: JwtPayload }) {
+    if (!req.user.permisos.admin?.editar) throw new ForbiddenException();
+    return this.parametros.listar();
+  }
+
+  @Patch('parametros/:clave') @Permissions('admin', 'editar')
+  editarParametro(@Req() req: { user: JwtPayload }, @Param('clave') clave: string, @Body('valor') valor: number) {
+    if (!req.user.permisos.admin?.editar) throw new ForbiddenException();
+    return this.parametros.editar(clave, valor, req.user.sub);
+  }
 
   @Get('roles') @Permissions('admin', 'ver') findAllRoles(@Query() q: QueryAdminDto) { return this.srv.findAllRoles(q); }
   @Get('roles/:id') @Permissions('admin', 'ver') findOneRol(@Param('id') id: string) { return this.srv.findOneRol(+id); }

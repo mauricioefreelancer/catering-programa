@@ -6,6 +6,23 @@ import { mesColombia, rangoColombia } from '../common/fecha-colombia';
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
+  alertasVisitas(query: { fechaInicio?: string; fechaFin?: string; soloConAlerta?: string }) {
+    const { desde, hasta } = rangoColombia(query.fechaInicio, query.fechaFin);
+    const mes = mesColombia();
+    return this.prisma.ventasPorVisita.findMany({
+      where: {
+        fechaVisita: { gte: desde ?? mes.inicio, lt: hasta ?? mes.fin },
+        visita: { is: { estado: { not: 'ANULADA' } } },
+        ...(query.soloConAlerta === 'true' ? { OR: [{ alertaDiferencia: true }, { alertaMp: true }] } : {}),
+      },
+      select: {
+        idGrupo: true, fechaVisita: true, diferenciaVenta: true, diferenciaMpValor: true, alertaDiferencia: true, alertaMp: true,
+        maquina: { select: { serial: true } },
+      },
+      orderBy: [{ fechaVisita: 'desc' }, { idGrupo: 'desc' }], take: 100,
+    });
+  }
+
   async gerencia() {
     const { inicio: inicioMes, fin: finMes } = mesColombia();
 

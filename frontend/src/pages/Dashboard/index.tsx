@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input, Space } from 'antd'
+import { Card, Row, Col, Statistic, DatePicker, Typography, Tabs, Spin, Button, Alert, message, Empty, Tag, Table, Select, Input, Space, Checkbox } from 'antd'
 import {
   ArrowUpOutlined,
   ArrowDownOutlined,
@@ -772,6 +772,40 @@ const PanelIngresosBodega = () => {
   )
 }
 
+type AlertaVisita = {
+  idGrupo: number; fechaVisita: string; maquina: { serial: string };
+  diferenciaVenta: string | null; diferenciaMpValor: string | null; alertaDiferencia: boolean | null; alertaMp: boolean | null;
+}
+
+function PanelAlertasVisitas({ desde, hasta }: { desde?: string; hasta?: string }) {
+  const [soloConAlerta, setSoloConAlerta] = useState(true)
+  const [filas, setFilas] = useState<AlertaVisita[]>([])
+  const [error, setError] = useState(false)
+  const [cargando, setCargando] = useState(true)
+  useEffect(() => {
+    let activo = true
+    setCargando(true)
+    setError(false)
+    apiService.get<AlertaVisita[]>('/dashboard/alertas-visitas', { fechaInicio: desde, fechaFin: hasta, soloConAlerta })
+      .then(datos => { if (activo) setFilas(datos) })
+      .catch(() => { if (activo) { setFilas([]); setError(true) } })
+      .finally(() => { if (activo) setCargando(false) })
+    return () => { activo = false }
+  }, [desde, hasta, soloConAlerta])
+  const importe = (valor: string | null, alerta: boolean | null) =>
+    valor == null ? '—' : <Tag color={alerta ? 'red' : 'default'}>${Number(valor).toLocaleString('es-CO')}</Tag>
+  return <Card title="Control de visitas" extra={<Checkbox checked={soloConAlerta}
+    onChange={(event: { target: { checked: boolean } }) => setSoloConAlerta(event.target.checked)}>Solo con alerta</Checkbox>}>
+    {error && <Alert type="error" showIcon message="No se pudieron cargar las visitas" />}
+    <Table rowKey="idGrupo" loading={cargando} dataSource={filas} size="small" columns={[
+      { title: 'Visita', dataIndex: 'idGrupo' },
+      { title: 'Máquina', key: 'maquina', render: (_: unknown, fila: AlertaVisita) => fila.maquina.serial },
+      { title: 'Diferencia de venta', key: 'venta', render: (_: unknown, fila: AlertaVisita) => importe(fila.diferenciaVenta, fila.alertaDiferencia) },
+      { title: 'Diferencia de MP', key: 'mp', render: (_: unknown, fila: AlertaVisita) => importe(fila.diferenciaMpValor, fila.alertaMp) },
+    ]} />
+  </Card>
+}
+
 const Dashboard = () => {
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([dayjs().startOf('month'), dayjs().endOf('month')])
   const { hasPermission, usuario } = useAuth()
@@ -928,6 +962,8 @@ const Dashboard = () => {
       ) : (
         tabItems[0].children
       )}
+      {(perfilActivo === 'gerencia' || perfilActivo === 'tesoreria') &&
+        <PanelAlertasVisitas desde={range?.[0]?.format('YYYY-MM-DD')} hasta={range?.[1]?.format('YYYY-MM-DD')} />}
     </div>
   )
 }
