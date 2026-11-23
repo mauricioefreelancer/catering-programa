@@ -214,6 +214,8 @@ model MaquinasYTiendas {
   ultimoContadorNRProducto BigInt?                @map("Ultimo_Contador_NR_Producto")
   fechaUltimaVisita     DateTime?                 @map("Fecha_Ultima_Visita")
   fechaInstalacion      DateTime?                 @map("Fecha_Instalacion") @db.Date
+  /// Primer día facturable al cliente cuando la máquina aún no tiene un corte anterior.
+  fechaInicioFacturacion DateTime?                @map("Fecha_Inicio_Facturacion") @db.Date
   estado                Boolean                   @default(true) @map("Estado")
   fechaCreacion         DateTime                  @default(now()) @map("Fecha_Creacion")
 

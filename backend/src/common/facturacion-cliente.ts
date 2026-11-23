@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { tipoLectura } from './periodo-facturacion';
 
 type Lectura = {
   idMapaMp: number | null; idMapaNrq: number | null; idProdTerm: number;
@@ -18,7 +19,7 @@ export function agruparFacturacionCliente(idMaquina: number, serial: string, lec
   }>();
   for (const l of lecturas) {
     if (!l.porcentajeCliente?.gt(0) || l.unidades <= 0n || (l.idMapaMp == null && l.idMapaNrq == null)) continue;
-    const tipo = l.idMapaMp == null ? 'NRQ_CAFE' : l.porcentajeCliente.eq(100) ? 'SUBSIDIO_TOTAL' : 'SUBSIDIO_PARCIAL';
+    const tipo = tipoLectura(l);
     const llave = `${l.visita.idCliente}:${l.idProdTerm}:${tipo}`;
     const fila = filas.get(llave) ?? {
       ID_Maquina: idMaquina, Serial: serial, ID_Cliente: l.visita.idCliente, Razon_Social: l.visita.cliente?.razonSocial ?? null,

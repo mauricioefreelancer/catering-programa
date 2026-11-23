@@ -12,6 +12,7 @@ export class CreateMaquinaDto {
   @IsOptional() @IsObject() mediosPago?: any;
   @IsOptional() @IsNumber() tarifaPromedioOverride?: number;
   @IsOptional() @IsDateString() fechaInstalacion?: string;
+  @IsOptional() @IsDateString() fechaInicioFacturacion?: string | null;
   @IsOptional() @IsBoolean() estado?: boolean;
   @IsOptional() @IsNumber() base?: number;
 }
@@ -28,6 +29,7 @@ export class UpdateMaquinaDto {
   @IsOptional() @IsObject() mediosPago?: any;
   @IsOptional() @IsNumber() tarifaPromedioOverride?: number;
   @IsOptional() @IsDateString() fechaInstalacion?: string;
+  @IsOptional() @IsDateString() fechaInicioFacturacion?: string | null;
   @IsOptional() @IsBoolean() estado?: boolean;
   @IsOptional() @IsNumber() base?: number;
 }
