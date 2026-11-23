@@ -125,7 +125,7 @@ export default function InventarioMobile() {
     setError('')
     try {
       await apiService.post('/pedidos-operador', {
-        idMaquina: id, idOperador, idOffline: idRegistro, ultimaVisitaId: lecturas.ultimaVisitaId,
+        idMaquina: id, idOperador, idEnvio: idRegistro, ultimaVisitaId: lecturas.ultimaVisitaId,
         nrEfectivoActual: contadores.nr, reinicioContador: reinicio, esCorteMes,
         items: espirales.map(e => ({ idProducto: e.idProducto, idMapaMP: e.idMapaMp, fisicoDigitado: fisicos[e.idMapaMp] })),
         nrqLecturas: [

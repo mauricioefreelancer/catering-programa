@@ -7,11 +7,6 @@ export class PedidoItemDto {
   @IsInt() @Min(0) fisicoDigitado: number;
 }
 
-export class NrqItemDto {
-  @IsInt() @IsNotEmpty() idMapaNRQ: number;
-  @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) valor: number;
-}
-
 export class LecturaNrqDto {
   @IsOptional() @IsInt() @Min(1) idMapaNRQ?: number;
   @IsOptional() @IsInt() @Min(1) idMapaMP?: number;
@@ -21,13 +16,11 @@ export class LecturaNrqDto {
 export class CreatePedidoOperadorDto {
   @IsInt() @IsNotEmpty() idMaquina: number;
   @IsInt() @IsNotEmpty() idOperador: number;
-  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) nrActual?: number;
-  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) nrEfectivoActual?: number;
+  @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) nrEfectivoActual: number;
   @IsOptional() @IsBoolean() reinicioContador?: boolean;
   @IsOptional() @IsBoolean() esCorteMes?: boolean;
   @IsOptional() @IsInt() @Min(0) ultimaVisitaId?: number;
-  @IsOptional() @IsUUID() idOffline?: string;
+  @IsUUID() idEnvio: string;
   @IsArray() @ValidateNested({ each: true }) @Type(() => PedidoItemDto) items: PedidoItemDto[];
-  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => NrqItemDto) nrqItems?: NrqItemDto[];
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => LecturaNrqDto) nrqLecturas?: LecturaNrqDto[];
 }

@@ -321,7 +321,7 @@ model Visitas {
   reinicioContador   Boolean @default(false) @map("Reinicio_Contador")
   esCorteMes         Boolean @default(false) @map("Es_Corte_Mes")
   ventaNr            BigInt? @map("Venta_NR")
-  idOffline         String?  @unique @map("Id_Offline") @db.VarChar(64)
+  idEnvio           String?  @unique @map("Id_Offline") @db.VarChar(64)
   observaciones     String?  @map("Observaciones") @db.Text
   fechaCreacion     DateTime @default(now()) @map("Fecha_Creacion")
   idUsuarioRegistro Int?     @map("ID_Usuario_Registro")
