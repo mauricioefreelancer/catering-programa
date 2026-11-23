@@ -71,6 +71,7 @@ interface Maquina {
   tipo: 'SNACK' | 'BEBIDA' | 'CAFE' | 'COMBINADA'
   tipoNegociacion: 'NORMAL' | 'ESPECIAL'
   lecturaNrqEspiral: 'CORTE_MES' | 'CADA_VISITA'
+  fechaInicioFacturacion?: string | null
   clienteId: number
   clienteNombre: string
   operadorId: number
@@ -250,6 +251,7 @@ const Maquinas = () => {
         tipo: normalizarTipo(m.tipo ?? m.Tipo_Maquina),
         tipoNegociacion: m.tipoNegociacion ?? 'NORMAL',
         lecturaNrqEspiral: m.lecturaNrqEspiral ?? 'CORTE_MES',
+        fechaInicioFacturacion: m.fechaInicioFacturacion ? String(m.fechaInicioFacturacion).slice(0, 10) : null,
         clienteId: m.idCliente ?? m.clienteId,
         clienteNombre: m.cliente?.razonSocial ?? m.clienteNombre ?? '',
         operadorId: m.idOperador ?? m.operadorId,
@@ -385,6 +387,7 @@ const Maquinas = () => {
         tipo: values.tipo,
         tipoNegociacion: values.tipoNegociacion,
         lecturaNrqEspiral: values.lecturaNrqEspiral,
+        fechaInicioFacturacion: values.fechaInicioFacturacion || null,
         idCliente: values.clienteId ?? null,
         idOperador: values.operadorId ?? null,
         ubicacionEsp: values.zona,
@@ -907,6 +910,10 @@ const Maquinas = () => {
                   <Form.Item name="zona" label="Ubicación / Zona" rules={[{ required: true }]}><Input placeholder="Ej: Piso 3 - Cafetería" /></Form.Item>
                   <Form.Item name="base" label="Base en Dinero ($)" extra="Monto base que maneja esta máquina">
                     <InputNumber prefix="$" min={0} precision={2} style={{ width: '100%' }} placeholder="0" />
+                  </Form.Item>
+                  <Form.Item name="fechaInicioFacturacion" label="Inicio de facturación al cliente"
+                    extra="Primer día que se factura al cliente cuando la máquina aún no tiene un corte de mes anterior.">
+                    <Input type="date" allowClear style={{ width: '100%' }} />
                   </Form.Item>
                 </>
               ),

@@ -53,6 +53,7 @@ interface RegistroNRQ {
   clienteNombre: string
   productoNombre: string
   tipo: string
+  periodo: string
   precio: number
   nrq_inicial: number
   nrq_final: number
@@ -61,7 +62,7 @@ interface RegistroNRQ {
 }
 
 const toCSV = (rows: RegistroNRQ[]) => {
-  const header = ['Máquina', 'Zona', 'Cliente', 'Producto', 'Tipo', 'Precio', 'NRQ Inicial', 'NRQ Final', 'Diferencia', 'Total $']
+  const header = ['Máquina', 'Zona', 'Cliente', 'Producto', 'Tipo', 'Período', 'Precio', 'NRQ Inicial', 'NRQ Final', 'Diferencia', 'Total $']
   const lines = [header.join(',')]
   rows.forEach((r) => {
     lines.push([
@@ -70,6 +71,7 @@ const toCSV = (rows: RegistroNRQ[]) => {
       r.clienteNombre,
       r.productoNombre,
       r.tipo,
+      r.periodo,
       r.precio,
       r.nrq_inicial,
       r.nrq_final,
@@ -79,6 +81,18 @@ const toCSV = (rows: RegistroNRQ[]) => {
   })
   return lines.join('\n')
 }
+
+type AvisoFacturacion = { idMaquina?: number; serial: string; motivo: string; fechaInicio?: string }
+
+// Las fechas del período son fechas calendario (sin hora): no se convierten de zona.
+const fechaCorta = (iso: string) => dayjs(String(iso).slice(0, 10)).format('DD/MM/YYYY')
+
+const textoAviso = ({ motivo, fechaInicio }: AvisoFacturacion) => ({
+  SIN_CORTE_DEL_MES: 'omitida: falta el corte del mes consultado',
+  SIN_CORTE_ANTERIOR: 'omitida: no tiene corte anterior ni fecha de inicio de facturación (configúrela en Máquinas)',
+  INICIO_POSTERIOR_AL_CORTE: 'omitida: la fecha de inicio de facturación es posterior al corte del mes',
+  PERIODO_EXTENDIDO: `período extendido: se factura desde ${fechaInicio ? fechaCorta(fechaInicio) : 'el último corte'} porque hubo meses sin corte`,
+} as Record<string, string>)[motivo] ?? motivo
 
 const descargarArchivo = (contenido: string, nombre: string, tipo: string) => {
   const blob = new Blob([contenido], { type: tipo })
@@ -94,7 +108,7 @@ const descargarArchivo = (contenido: string, nombre: string, tipo: string) => {
 const FacturacionNRQ = () => {
   const [form] = Form.useForm()
   const [resultados, setResultados] = useState<RegistroNRQ[]>([])
-  const [avisos, setAvisos] = useState<{ serial: string; motivo: string }[]>([])
+  const [avisos, setAvisos] = useState<AvisoFacturacion[]>([])
   const [consultado, setConsultado] = useState(false)
   const [loading, setLoading] = useState(false)
   const [generando, setGenerando] = useState(false)
@@ -192,6 +206,7 @@ const FacturacionNRQ = () => {
         clienteNombre: r.Razon_Social ?? r.cliente?.razonSocial ?? r.clienteNombre ?? cliente?.nombre ?? '',
         productoNombre: r.Nombre_Producto ?? r.producto?.nombre ?? r.productoNombre ?? producto?.nombre ?? '',
         tipo: ({ NRQ_CAFE: 'Café NRQ', SUBSIDIO_TOTAL: 'Subsidio total', SUBSIDIO_PARCIAL: 'Subsidio parcial' } as Record<string, string>)[r.tipo] ?? '',
+        periodo: r.Fecha_Inicio && r.Fecha_Fin ? `${fechaCorta(r.Fecha_Inicio)} – ${fechaCorta(r.Fecha_Fin)}` : '',
         precio,
         nrq_inicial: ni,
         nrq_final: nf,
@@ -218,7 +233,7 @@ const FacturacionNRQ = () => {
       if (values.clienteId) params.idCliente = values.clienteId
       if (values.productoId) params.idProducto = values.productoId
 
-      const res = await apiService.get<{ registros: any[]; avisos?: { serial: string; motivo: string }[] }>('/tesoreria/facturacion-cliente', params)
+      const res = await apiService.get<{ registros: any[]; avisos?: AvisoFacturacion[] }>('/tesoreria/facturacion-cliente', params)
       const filas = res.registros ?? []
       setResultados(mapearResultados(filas))
       setConsultado(true)
@@ -267,6 +282,7 @@ const FacturacionNRQ = () => {
     { title: 'Cliente', dataIndex: 'clienteNombre', key: 'c', render: (v) => <Tag color="blue">{v}</Tag> },
 { title: 'Producto', dataIndex: 'productoNombre', key: 'p', render: (v: string) => <strong>{v}</strong> },
     { title: 'Tipo', dataIndex: 'tipo', key: 'tipo' },
+    { title: 'Período', dataIndex: 'periodo', key: 'periodo' },
     { title: 'Precio Und', dataIndex: 'precio', key: 'pr', render: (v: number) => `$ ${v.toLocaleString('es-CO')}` },
     { title: 'NRQ Inicial', dataIndex: 'nrq_inicial', key: 'ni', align: 'right' as const },
     { title: 'NRQ Final', dataIndex: 'nrq_final', key: 'nf', align: 'right' as const },
@@ -299,9 +315,9 @@ const FacturacionNRQ = () => {
         <FileTextOutlined /> Facturación al cliente
       </Title>
       {avisos.length > 0 && <Alert style={{ marginBottom: 16 }} showIcon type="warning"
-        message="Máquinas omitidas por falta de corte"
-        description={<ul>{avisos.map(({ serial, motivo }) => <li key={serial}>
-          {serial}: {motivo === 'SIN_CORTE_DEL_MES' ? 'falta el corte del mes' : 'falta el corte del mes anterior'}
+        message="Avisos de facturación"
+        description={<ul>{avisos.map((a) => <li key={`${a.serial}-${a.motivo}`}>
+          {a.serial}: {textoAviso(a)}
         </li>)}</ul>} />}
 
       <Spin spinning={initialLoading} tip="Cargando catálogos...">

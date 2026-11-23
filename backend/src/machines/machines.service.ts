@@ -100,6 +100,9 @@ export class MachinesService {
     const data: any = { ...dto };
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
+    if (dto.fechaInicioFacturacion !== undefined) {
+      data.fechaInicioFacturacion = dto.fechaInicioFacturacion ? new Date(`${dto.fechaInicioFacturacion.slice(0, 10)}T00:00:00.000Z`) : null;
+    }
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
     if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
     const creada = await this.prisma.$transaction(async (tx) => {
@@ -120,6 +123,9 @@ export class MachinesService {
     const data: any = { ...dto };
     if (dto.tipo) data.tipo = tipoCanonico(dto.tipo);
     if (dto.fechaInstalacion) data.fechaInstalacion = new Date(dto.fechaInstalacion);
+    if (dto.fechaInicioFacturacion !== undefined) {
+      data.fechaInicioFacturacion = dto.fechaInicioFacturacion ? new Date(`${dto.fechaInicioFacturacion.slice(0, 10)}T00:00:00.000Z`) : null;
+    }
     if (dto.tarifaPromedioOverride !== undefined) data.tarifaPromedioOverride = new Prisma.Decimal(dto.tarifaPromedioOverride);
     if (dto.base !== undefined) data.base = new Prisma.Decimal(dto.base);
     const actualizada = await this.prisma.$transaction(async (tx) => {
