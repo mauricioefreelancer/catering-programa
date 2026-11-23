@@ -42,6 +42,11 @@ const { Option } = Select
 
 type EstadoPedido = 'PENDIENTE' | 'PARCIAL' | 'APROBADO' | 'RECHAZADO'
 
+type PendienteAgrupado = {
+  idMaquina: number; serial: string; idProducto: number; producto: string;
+  idOperador: number; operador: string; pendiente: number; diasAntiguedad: number;
+}
+
 interface FilaPedido {
   idPedido: number
   idMaquina: number
@@ -222,16 +227,19 @@ const Despachos = () => {
   const [grupos, setGrupos] = useState<PedidoAgrupado[]>([])
   const [procesandoMaq, setProcesandoMaq] = useState<Record<number, boolean>>({})
   const [openReport, setOpenReport] = useState(false)
+  const [pendientesAgrupados, setPendientesAgrupados] = useState<PendienteAgrupado[]>([])
   const [filtroBuscar, setFiltroBuscar] = useState('')
   const [filtroOperador, setFiltroOperador] = useState<number | undefined>()
 
   const cargar = async (silent = false) => {
     try {
       if (!silent) setCargando(true)
-      const [pendientesRes, productosRes] = await Promise.all([
+      const [pendientesRes, productosRes, agrupados] = await Promise.all([
         apiService.get<any[]>('/despachos/pendientes'),
-        apiService.get<any[]>('/productos?limit=1000').catch(() => [] as any[]),
+        apiService.get<any[] | { data: any[] }>('/productos?limit=1000').catch(() => [] as any[]),
+        apiService.get<PendienteAgrupado[]>('/despachos/pendientes-por-despachar'),
       ])
+      setPendientesAgrupados(agrupados)
       const normalizadas = Array.isArray(pendientesRes)
         ? pendientesRes.map(normalizarFila).filter((p) => p.idPedido > 0)
         : []
@@ -377,8 +385,7 @@ const Despachos = () => {
       return
     }
     const aDespachar = grupo.items.filter((i) => i.cantDespachada > 0)
-    const aCero = grupo.items.filter((i) => i.cantDespachada === 0)
-    if (aDespachar.length === 0 && aCero.length === 0 && !grupo.items.some((i) => i.noReponer)) {
+    if (grupo.items.length === 0) {
       message.warning('No hay líneas de producto para procesar en esta máquina.')
       return
     }
@@ -401,15 +408,10 @@ const Despachos = () => {
           observaciones: `Despacho ${grupo.serial} - ${i.nombreProducto}`,
         })),
       }
-      const res = await apiService.post('/despachos', body)
-      const creados = res?.total ?? Array.isArray(res?.despachos) ? res.despachos.length : 0
-      const cerrados = aCero.length
-      const msgBase = `✅ ${creados} línea(s) despachada(s). Stock descontado automáticamente.`
-      const msgFinal =
-        cerrados > 0
-          ? `✅ ${creados} línea(s) despachada(s). ${cerrados} pedido(s) cerrado(s) sin despacho (0 uds).`
-          : msgBase
-      message.success(msgFinal)
+      const res = await apiService.post<{ despachos: { cantDespachada: number }[] }>('/despachos', body)
+      const unidades = res.despachos.reduce((total, d) => total + d.cantDespachada, 0)
+      const noRepuestos = grupo.items.filter((i) => i.noReponer).length
+      message.success(`${unidades} unidades despachadas; ${noRepuestos} pedidos cerrados como No reponer.`)
       await cargar(true)
     } catch (e: any) {
       console.error('[Despachos] confirmar error:', e)
@@ -817,6 +819,22 @@ const Despachos = () => {
         footer={null}
         width={1200}
       >
+        <Table
+          rowKey={(r: PendienteAgrupado) => `${r.idMaquina}-${r.idProducto}-${r.idOperador}`}
+          dataSource={pendientesAgrupados.filter((r) =>
+            (!filtroOperador || r.idOperador === filtroOperador) &&
+            `${r.serial} ${r.producto} ${r.operador}`.toLowerCase().includes(filtroBuscar.trim().toLowerCase())
+          )}
+          size="small"
+          pagination={{ pageSize: 10 }}
+          columns={[
+            { title: 'Máquina', dataIndex: 'serial' },
+            { title: 'Producto', dataIndex: 'producto' },
+            { title: 'Operador', dataIndex: 'operador' },
+            { title: 'Unidades pendientes', dataIndex: 'pendiente' },
+            { title: 'Antigüedad (días)', dataIndex: 'diasAntiguedad' },
+          ]}
+        />
         <Space wrap style={{ marginBottom: 12 }}>
           <Input
             allowClear
