@@ -18,7 +18,7 @@ import {
   Spin,
 } from 'antd'
 import { SearchOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons'
-import dayjs, { Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
 import { apiService } from '../../../api/services/api'
 import { usePermissions } from '../../../hooks/usePermissions'
 
@@ -52,6 +52,7 @@ interface RegistroNRQ {
   zona: string
   clienteNombre: string
   productoNombre: string
+  tipo: string
   precio: number
   nrq_inicial: number
   nrq_final: number
@@ -60,7 +61,7 @@ interface RegistroNRQ {
 }
 
 const toCSV = (rows: RegistroNRQ[]) => {
-  const header = ['Máquina', 'Zona', 'Cliente', 'Producto', 'Precio', 'NRQ Inicial', 'NRQ Final', 'Diferencia', 'Total $']
+  const header = ['Máquina', 'Zona', 'Cliente', 'Producto', 'Tipo', 'Precio', 'NRQ Inicial', 'NRQ Final', 'Diferencia', 'Total $']
   const lines = [header.join(',')]
   rows.forEach((r) => {
     lines.push([
@@ -68,6 +69,7 @@ const toCSV = (rows: RegistroNRQ[]) => {
       r.zona,
       r.clienteNombre,
       r.productoNombre,
+      r.tipo,
       r.precio,
       r.nrq_inicial,
       r.nrq_final,
@@ -92,6 +94,7 @@ const descargarArchivo = (contenido: string, nombre: string, tipo: string) => {
 const FacturacionNRQ = () => {
   const [form] = Form.useForm()
   const [resultados, setResultados] = useState<RegistroNRQ[]>([])
+  const [avisos, setAvisos] = useState<{ serial: string; motivo: string }[]>([])
   const [consultado, setConsultado] = useState(false)
   const [loading, setLoading] = useState(false)
   const [generando, setGenerando] = useState(false)
@@ -126,7 +129,7 @@ const FacturacionNRQ = () => {
       const productosMapeados: ProductoDosificado[] = productosList
         .filter((p: any) => {
           const tipo = String(p.Tipo_Producto ?? p.tipoProducto ?? p.tipo ?? '').toUpperCase()
-          return tipo === 'DOSIFICADO' || tipo === 'DOSIFICADA' || tipo === 'DOSIFICADOS'
+          return tipo === 'ESTANDAR' || tipo.startsWith('DOSIF')
         })
         .map((p: any) => ({
           id: p.idProducto ?? p.id,
@@ -135,12 +138,7 @@ const FacturacionNRQ = () => {
           tipoProducto: p.Tipo_Producto ?? p.tipoProducto,
         }))
 
-      const maquinasMapeadas: MaquinaCafe[] = maquinasList
-        .filter((m: any) => {
-          const tipo = String(m.Tipo_Maquina ?? m.tipo ?? '').toUpperCase()
-          return tipo === 'CAFE' || tipo === 'CAFÉ'
-        })
-        .map((m: any) => ({
+      const maquinasMapeadas: MaquinaCafe[] = maquinasList.map((m: any) => ({
           id: m.idMaquina ?? m.id,
           serial: m.serial ?? '',
           zona: m.ubicacionEsp ?? m.zona ?? '',
@@ -179,9 +177,7 @@ const FacturacionNRQ = () => {
       const productoId = r.ID_Producto ?? r.idProducto ?? r.productoId
       const producto = productosDosificados.find((p) => p.id === productoId)
 
-      // El backend devuelve en snake_case/Mayúsculas (query raw + PreciosCliente).
-      // Precio_Promedio proviene de la tabla PRECIOS_CLIENTE (precio de venta por
-      // cliente+producto que se asigna en la sección Precios).
+      // El promedio ponderado usa los precios guardados con las lecturas.
       const precio = Number(
         r.Precio_Promedio ?? r.precioPromedio ?? r.precio ?? r.precioUnitario ?? producto?.precio ?? 0
       )
@@ -195,6 +191,7 @@ const FacturacionNRQ = () => {
         zona: r.zona ?? maquina?.zona ?? '',
         clienteNombre: r.Razon_Social ?? r.cliente?.razonSocial ?? r.clienteNombre ?? cliente?.nombre ?? '',
         productoNombre: r.Nombre_Producto ?? r.producto?.nombre ?? r.productoNombre ?? producto?.nombre ?? '',
+        tipo: ({ NRQ_CAFE: 'Café NRQ', SUBSIDIO_TOTAL: 'Subsidio total', SUBSIDIO_PARCIAL: 'Subsidio parcial' } as Record<string, string>)[r.tipo] ?? '',
         precio,
         nrq_inicial: ni,
         nrq_final: nf,
@@ -212,6 +209,7 @@ const FacturacionNRQ = () => {
     setLoading(true)
     setFiltros(null)
     setResultados([])
+    setAvisos([])
     try {
       const params: Record<string, any> = {
         fechaInicio: dayjs(values.fechas[0]).format('YYYY-MM-DD'),
@@ -220,14 +218,15 @@ const FacturacionNRQ = () => {
       if (values.clienteId) params.idCliente = values.clienteId
       if (values.productoId) params.idProducto = values.productoId
 
-      const res = await apiService.get<{ registros: any[] }>('/tesoreria/facturacion-nrq', params)
+      const res = await apiService.get<{ registros: any[]; avisos?: { serial: string; motivo: string }[] }>('/tesoreria/facturacion-cliente', params)
       const filas = res.registros ?? []
       setResultados(mapearResultados(filas))
       setConsultado(true)
+      setAvisos(res.avisos ?? [])
       if (filas.some(f => f.incompleta)) message.warning('Hay registros sin precio o cliente. Revisa los datos antes de facturar.')
       else if (filas.some(f => Number(f.NRQ_Diferencia) > 0)) setFiltros(params)
     } catch (err: any) {
-      message.error(err?.response?.data?.message ?? 'No se pudo consultar la facturación NRQ')
+      message.error(err?.response?.data?.message ?? 'No se pudo consultar la facturación al cliente')
     } finally {
       setLoading(false)
     }
@@ -237,11 +236,11 @@ const FacturacionNRQ = () => {
     if (!filtros) return
     setGenerando(true)
     try {
-      const res = await apiService.post<{ count: number }>('/tesoreria/facturacion-nrq/generar', filtros)
+      const res = await apiService.post<{ count: number }>('/tesoreria/facturacion-cliente/generar', filtros)
       setFiltros(null)
       message.success(`${res.count} registro(s) de facturación generados`)
     } catch (err: any) {
-      message.error(err?.response?.data?.message ?? 'No se pudo generar la facturación NRQ')
+      message.error(err?.response?.data?.message ?? 'No se pudo generar la facturación al cliente')
     } finally {
       setGenerando(false)
     }
@@ -266,7 +265,8 @@ const FacturacionNRQ = () => {
     { title: 'Máquina', dataIndex: 'maquinaSerial', key: 'm', render: (v: string) => <code>{v}</code>, fixed: 'left' as const },
     { title: 'Zona', dataIndex: 'zona', key: 'z' },
     { title: 'Cliente', dataIndex: 'clienteNombre', key: 'c', render: (v) => <Tag color="blue">{v}</Tag> },
-    { title: 'Producto Dosificado', dataIndex: 'productoNombre', key: 'p', render: (v) => <strong>{v}</strong> },
+{ title: 'Producto', dataIndex: 'productoNombre', key: 'p', render: (v: string) => <strong>{v}</strong> },
+    { title: 'Tipo', dataIndex: 'tipo', key: 'tipo' },
     { title: 'Precio Und', dataIndex: 'precio', key: 'pr', render: (v: number) => `$ ${v.toLocaleString('es-CO')}` },
     { title: 'NRQ Inicial', dataIndex: 'nrq_inicial', key: 'ni', align: 'right' as const },
     { title: 'NRQ Final', dataIndex: 'nrq_final', key: 'nf', align: 'right' as const },
@@ -296,8 +296,13 @@ const FacturacionNRQ = () => {
   return (
     <div>
       <Title level={4} style={{ marginBottom: 16 }}>
-        <FileTextOutlined /> Facturación por Contadores NRQ (Dosificadoras Café)
+        <FileTextOutlined /> Facturación al cliente
       </Title>
+      {avisos.length > 0 && <Alert style={{ marginBottom: 16 }} showIcon type="warning"
+        message="Máquinas omitidas por falta de corte"
+        description={<ul>{avisos.map(({ serial, motivo }) => <li key={serial}>
+          {serial}: {motivo === 'SIN_CORTE_DEL_MES' ? 'falta el corte del mes' : 'falta el corte del mes anterior'}
+        </li>)}</ul>} />}
 
       <Spin spinning={initialLoading} tip="Cargando catálogos...">
         <Card title="🔎 Filtros de Consulta (Avanzados)" style={{ marginBottom: 16 }}>
@@ -316,7 +321,7 @@ const FacturacionNRQ = () => {
                 </Form.Item>
               </Col>
               <Col xs={24} md={7}>
-                <Form.Item name="productoId" label="Filtrar Producto Dosificado">
+                <Form.Item name="productoId" label="Filtrar por producto">
                   <Select allowClear placeholder="Todos los productos" size="large">
                     {productosDosificados.map((p) => <Option key={p.id} value={p.id}>{p.nombre}</Option>)}
                   </Select>

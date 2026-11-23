@@ -3,7 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEfectivoNrDto, CompletarEfectivoNrDto, CreateSaldoDigitalDto, UpdateSaldoDigitalDto, QueryFacturacionNrqDto } from './dto/treasury.dto';
 import { Prisma } from '@prisma/client';
 import { umbralDiferenciaVenta } from '../common/contadores';
-import { rangoColombia } from '../common/fecha-colombia';
+import { mesColombia, rangoColombia } from '../common/fecha-colombia';
+import { agruparFacturacionCliente } from '../common/facturacion-cliente';
 
 @Injectable()
 export class TreasuryService {
@@ -533,73 +534,95 @@ export class TreasuryService {
   async facturacionNrq(query: QueryFacturacionNrqDto) {
     const result = await this.lecturasFacturables(this.prisma, query);
     return {
-      registros: result,
-      totalDiferenciaNrq: result.reduce((acc, r) => acc + r.NRQ_Diferencia, 0n),
-      totalFacturarEstimado: result.reduce((acc, r) => acc.plus(r.total), new Prisma.Decimal(0)),
+      registros: result.registros,
+      avisos: result.avisos,
+      totalDiferenciaNrq: result.registros.reduce((acc, r) => acc + r.NRQ_Diferencia, 0n),
+      totalFacturarEstimado: result.registros.reduce((acc, r) => acc.plus(r.total), new Prisma.Decimal(0)),
     };
   }
 
   private async lecturasFacturables(tx: Prisma.TransactionClient, query: QueryFacturacionNrqDto) {
     const { desde, hasta } = rangoColombia(query.fechaInicio, query.fechaFin);
     if (!desde || !hasta) throw new BadRequestException('Indica el período de facturación');
-    return tx.$queryRaw<{
-      ID_Maquina: number; ID_Cliente: number | null; ID_Producto: number; Serial: string;
-      Razon_Social: string | null; Nombre_Producto: string; incompleta: boolean;
-      NRQ_Inicial: bigint; NRQ_Final: bigint; NRQ_Diferencia: bigint;
-      Precio_Promedio: Prisma.Decimal; total: Prisma.Decimal;
-    }[]>`
-      WITH por_boton AS (
-        SELECT v."ID_Maquina", v."ID_Cliente", l."ID_Prod_Term",
-          (array_agg(l."Lectura_Anterior" ORDER BY v."Fecha_Visita", v."ID_Visita"))[1] AS inicial,
-          (array_agg(l."Lectura_Actual" ORDER BY v."Fecha_Visita" DESC, v."ID_Visita" DESC))[1] AS final,
-          SUM(l."Unidades") AS unidades, COALESCE(SUM(l."Subtotal"), 0) AS subtotal,
-          bool_or(l."Unidades" > 0 AND l."Subtotal" IS NULL) AS incompleta
-        FROM "LECTURAS_NRQ" l
-        JOIN "VISITAS" v ON v."ID_Visita" = l."ID_Visita"
-        WHERE v."Fecha_Visita" >= ${desde.toISOString()}::timestamp
-          AND v."Fecha_Visita" < ${hasta.toISOString()}::timestamp
-          AND v."Estado" <> 'ANULADA'
-          AND (${query.idCliente ?? null}::int IS NULL OR v."ID_Cliente" = ${query.idCliente ?? null}::int)
-          AND (${query.idProducto ?? null}::int IS NULL OR l."ID_Prod_Term" = ${query.idProducto ?? null}::int)
-        GROUP BY v."ID_Maquina", v."ID_Cliente", l."ID_Prod_Term", l."ID_Mapa_NRQ", l."Opcion_Boton"
-      )
-      SELECT m."ID_Maquina", m."Serial", b."ID_Cliente", c."Razon_Social", p."ID_Producto", p."Nombre_Producto",
-        SUM(b.inicial)::bigint AS "NRQ_Inicial", SUM(b.final)::bigint AS "NRQ_Final",
-        SUM(b.unidades)::bigint AS "NRQ_Diferencia", SUM(b.subtotal) AS total,
-        COALESCE(SUM(b.subtotal) / NULLIF(SUM(b.unidades), 0), 0) AS "Precio_Promedio",
-        bool_or(b.incompleta OR b."ID_Cliente" IS NULL) AS incompleta
-      FROM por_boton b
-      JOIN "MAQUINAS_Y_TIENDAS" m ON m."ID_Maquina" = b."ID_Maquina"
-      JOIN "PRODUCTOS" p ON p."ID_Producto" = b."ID_Prod_Term"
-      LEFT JOIN "CLIENTES" c ON c."ID_Cliente" = b."ID_Cliente"
-      GROUP BY m."ID_Maquina", m."Serial", b."ID_Cliente", c."Razon_Social", p."ID_Producto", p."Nombre_Producto"
-      ORDER BY c."Razon_Social", m."Serial", p."Nombre_Producto"`;
+    const mesInicio = mesColombia(desde).inicio;
+    if (hasta.getTime() > mesColombia(desde).fin.getTime()) {
+      throw new BadRequestException('Consulta un solo mes de facturación a la vez');
+    }
+    const maquinas = await tx.maquinasYTiendas.findMany({
+      where: { AND: [
+        ...(query.idCliente == null ? [] : [{ OR: [
+          { idCliente: query.idCliente },
+          { visitas: { some: { idCliente: query.idCliente, fechaVisita: { gte: mesInicio, lt: hasta } } } },
+        ] }]),
+        { OR: [
+        { tipoNegociacion: 'ESPECIAL' }, { mapaCafeNrq: { some: { porcentajeCliente: { gt: 0 } } } },
+        { visitas: { some: { fechaVisita: { gte: mesInicio, lt: hasta }, lecturasNrq: { some: { porcentajeCliente: { gt: 0 } } } } } },
+        ] },
+      ] },
+      select: { idMaquina: true, serial: true },
+    });
+    const avisos: { idMaquina: number; serial: string; motivo: string }[] = [];
+    const registros: ReturnType<typeof agruparFacturacionCliente> = [];
+    for (const maquina of maquinas) {
+      const buscarCorte = (fechaVisita: Prisma.DateTimeFilter) => tx.visitas.findFirst({
+        where: { idMaquina: maquina.idMaquina, esCorteMes: true, estado: { not: 'ANULADA' }, fechaVisita },
+        orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
+        select: { fechaVisita: true, idVisita: true },
+      });
+      const [anterior, actual] = await Promise.all([
+        buscarCorte({ gte: mesColombia(new Date(mesInicio.getTime() - 1)).inicio, lt: mesInicio }),
+        buscarCorte({ gte: desde, lt: hasta }),
+      ]);
+      if (!anterior || !actual) {
+        avisos.push({ ...maquina, motivo: !actual ? 'SIN_CORTE_DEL_MES' : 'SIN_CORTE_ANTERIOR' });
+        continue;
+      }
+      const lecturas = await tx.lecturasNrq.findMany({
+        where: { idProdTerm: query.idProducto, porcentajeCliente: { gt: 0 }, unidades: { gt: 0n },
+          visita: { idMaquina: maquina.idMaquina, estado: { not: 'ANULADA' },
+            fechaVisita: { gt: anterior.fechaVisita, lte: actual.fechaVisita } } },
+        include: { visita: { select: { idCliente: true, cliente: { select: { razonSocial: true } } } },
+          producto: { select: { nombreProducto: true } } },
+        orderBy: [{ visita: { fechaVisita: 'asc' } }, { idVisita: 'asc' }, { idLectura: 'asc' }],
+      });
+      const filas = agruparFacturacionCliente(maquina.idMaquina, maquina.serial, lecturas);
+      registros.push(...filas.filter(f => query.idCliente == null || query.idCliente === f.ID_Cliente));
+    }
+    return { registros, avisos };
   }
 
   async generarFacturacionNrq(query: QueryFacturacionNrqDto, idUsuario: number) {
-    const { fechaInicio, fechaFin } = rangoColombia(query.fechaInicio, query.fechaFin);
-    if (!fechaInicio || !fechaFin) throw new BadRequestException('Indica el período de facturación');
+    const { desde, hasta } = rangoColombia(query.fechaInicio, query.fechaFin);
+    if (!desde || !hasta) throw new BadRequestException('Indica el período de facturación');
+    const mes = mesColombia(desde);
+    const fechaInicio = new Date(mes.inicio.getTime() - 5 * 60 * 60 * 1000);
+    const fechaFin = new Date(mes.fin.getTime() - 29 * 60 * 60 * 1000);
     return this.prisma.$transaction(async tx => {
       // Los generadores concurrentes verifican solapamientos de forma serializada.
       await tx.$executeRaw`LOCK TABLE "TESORERIA_FACTURACION_NRQ" IN SHARE ROW EXCLUSIVE MODE`;
-      const filas = (await this.lecturasFacturables(tx, query)).filter(f => f.NRQ_Diferencia > 0n);
+      const { registros: filas, avisos } = await this.lecturasFacturables(tx, query);
       if (!filas.length) throw new BadRequestException('No hay unidades NRQ facturables en este período');
       if (filas.some(f => f.incompleta)) throw new BadRequestException('Hay lecturas sin cliente o sin precio guardado');
-      const pares = filas.map(f => ({ idMaquina: f.ID_Maquina, idProdTerm: f.ID_Producto }));
-      if (new Set(pares.map(p => `${p.idMaquina}:${p.idProdTerm}`)).size !== pares.length) {
+      const pares = filas.map(f => ({ idMaquina: f.ID_Maquina, idProdTerm: f.ID_Producto, tipo: f.tipo }));
+      if (new Set(pares.map(p => `${p.idMaquina}:${p.idProdTerm}:${p.tipo}`)).size !== pares.length) {
         throw new BadRequestException('Una máquina cambió de cliente durante el período. Divide el rango antes de facturar.');
       }
       const existente = await tx.tesoreriaFacturacionNrq.findFirst({
-        where: { fechaInicio: { lte: fechaFin }, fechaFin: { gte: fechaInicio }, OR: pares },
+        where: { fechaInicio: { lte: fechaFin }, fechaFin: { gte: fechaInicio }, OR: [
+          ...pares,
+          ...pares.map(({ idMaquina, idProdTerm }) => ({ idMaquina, idProdTerm, porcentajeCliente: null })),
+        ] },
       });
       if (existente) throw new BadRequestException('Ya existe una factura NRQ para un período que se cruza con el solicitado');
-      return tx.tesoreriaFacturacionNrq.createMany({
+      const resultado = await tx.tesoreriaFacturacionNrq.createMany({
         data: filas.map(f => ({
           idMaquina: f.ID_Maquina, idProdTerm: f.ID_Producto, idCliente: f.ID_Cliente!,
           fechaInicio, fechaFin, idUsuario, nrqInicial: f.NRQ_Inicial, nrqFinal: f.NRQ_Final,
           nrqDiferencia: f.NRQ_Diferencia, precioUnitarioVenta: f.Precio_Promedio, totalFacturar: f.total,
+          tipo: f.tipo, idMapaMp: f.idMapaMp, porcentajeCliente: f.porcentajeCliente, valorVentaTotal: f.valorVentaTotal,
         })),
       });
+      return { ...resultado, avisos };
     });
   }
 }

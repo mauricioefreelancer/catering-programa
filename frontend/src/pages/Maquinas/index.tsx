@@ -265,6 +265,7 @@ const Maquinas = () => {
               capacidad_max: e.capacidadMax ?? 0,
               cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
               porcentajeCliente: Number(e.porcentajeCliente ?? (e.precioCero ? 100 : 0)),
+              lecturaInicial: Number(e.lecturaInicial ?? 0),
               productoId: e.idProducto,
               productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
               precio_venta_cliente: e.precioVentaCliente,
@@ -342,6 +343,7 @@ const Maquinas = () => {
           capacidad_max: e.capacidadMax ?? 0,
           cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
           porcentajeCliente: Number(e.porcentajeCliente ?? (e.precioCero ? 100 : 0)),
+          lecturaInicial: Number(e.lecturaInicial ?? 0),
           productoId: e.idProducto,
           productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
           precio_venta_cliente: e.precioVentaCliente,
@@ -454,6 +456,7 @@ const Maquinas = () => {
       capacidad_max: 15,
       cantidad_actual: 0,
       porcentajeCliente: 0,
+      lecturaInicial: 0,
     })
     setOpenEspModal(true)
   }
@@ -466,6 +469,7 @@ const Maquinas = () => {
       productoId: esp.productoId,
       cantidad_actual: esp.cantidad_actual ?? 0,
       porcentajeCliente: esp.porcentajeCliente ?? 0,
+      lecturaInicial: esp.lecturaInicial ?? 0,
       capacidad_max: esp.capacidad_max,
     })
     setOpenEspModal(true)
@@ -504,6 +508,7 @@ const Maquinas = () => {
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
           porcentajeCliente: values.porcentajeCliente ?? 0,
+          lecturaInicial: values.lecturaInicial,
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
@@ -519,6 +524,7 @@ const Maquinas = () => {
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
           porcentajeCliente: values.porcentajeCliente ?? 0,
+          lecturaInicial: values.lecturaInicial ?? original?.lecturaInicial,
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: original?.precio_venta_cliente,
@@ -1389,6 +1395,11 @@ const Maquinas = () => {
             <Form.Item name="porcentajeCliente" label="Porcentaje a cargo del cliente">
               <PorcentajeCliente />
             </Form.Item>
+            {editing?.tipoNegociacion === 'ESPECIAL' && <Form.Item label="Lectura inicial NRQ del espiral" name="lecturaInicial"
+              rules={[{ type: 'integer', min: 0, max: Number.MAX_SAFE_INTEGER }]}
+              extra="Solo se usa si el espiral todavía no tiene una lectura registrada.">
+              <InputNumber min={0} max={Number.MAX_SAFE_INTEGER} precision={0} />
+            </Form.Item>}
             <Form.Item label="Lectura inicial NRQ" name="lecturaInicial"
               rules={[{ required: true, type: 'integer', min: 0, max: Number.MAX_SAFE_INTEGER, message: 'Ingresa un entero no negativo' }]}
               extra="Se usa solo mientras este botón no tenga lecturas registradas.">

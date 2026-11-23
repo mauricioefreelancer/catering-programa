@@ -16,7 +16,7 @@ export async function baseEspirales(tx: Prisma.TransactionClient, idVisita?: num
 }
 
 export async function ultimasLecturas(tx: Prisma.TransactionClient, idMaquina: number) {
-  const [visita, efectivo, botones] = await Promise.all([
+  const [visita, efectivo, botones, mapas] = await Promise.all([
     tx.visitas.findFirst({
       where: { idMaquina, estado: { not: 'ANULADA' } },
       orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
@@ -38,6 +38,15 @@ export async function ultimasLecturas(tx: Prisma.TransactionClient, idMaquina: n
         },
       },
     }),
+    tx.mapaMateriaPrima.findMany({
+      where: { idMaquina, producto: { tipoProducto: 'ESTANDAR' }, maquina: { tipoNegociacion: 'ESPECIAL' } },
+      orderBy: { espiralCodigo: 'asc' },
+      select: { idMapaMp: true, idProducto: true, lecturaInicial: true, lecturasNrq: {
+        where: { visita: { idMaquina, estado: { not: 'ANULADA' } } },
+        orderBy: [{ visita: { fechaVisita: 'desc' } }, { idVisita: 'desc' }],
+        select: { idVisita: true, idProdTerm: true, lecturaActual: true }, take: 1,
+      } },
+    }),
   ]);
   return {
     visita,
@@ -45,6 +54,12 @@ export async function ultimasLecturas(tx: Prisma.TransactionClient, idMaquina: n
     botones: botones.map(b => ({
       idMapaNrq: b.idMapaNrq,
       lectura: b.lecturas[0]?.lecturaActual ?? b.lecturaInicial,
+    })),
+    nrqEspirales: mapas.map(m => ({
+      idMapaMp: m.idMapaMp,
+      idVisita: m.lecturasNrq[0]?.idVisita ?? null,
+      idProductoAnterior: m.lecturasNrq[0]?.idProdTerm ?? null,
+      lectura: m.lecturasNrq[0]?.lecturaActual ?? m.lecturaInicial,
     })),
   };
 }

@@ -9,11 +9,12 @@ type Boton = { idMapaNrq: number; idProdTerm: number; opcionBoton: string; porce
 type Lecturas = {
   ultimaVisitaId: number; nrEfectivo: number | string
   botones: { idMapaNrq: number; lectura: number | string }[]
+  nrqEspirales: { idMapaMp: number; lectura: number | string }[]
   espirales: { idMapaMp: number; idProducto: number; fisicoDigitado: number; despachado: number }[]
   precios: { idProducto: number; precio: number }[]
   umbralDiferenciaVenta: number
 }
-type Maquina = { serial: string; idOperador: number | null; ubicacionEsp?: string; mapaMateriaPrima: Espiral[]; mapaCafeNrq: Boton[] }
+type Maquina = { serial: string; idOperador: number | null; ubicacionEsp?: string; mapaMateriaPrima: Espiral[]; mapaCafeNrq: Boton[]; tipoNegociacion: string; lecturaNrqEspiral: string }
 type Datos = { maquina: Maquina; lecturas: Lecturas; idOperador: number | null }
 type Registro = Record<string, number | null>
 const entero = (n: number | null | undefined) => n != null && Number.isSafeInteger(n) && n >= 0
@@ -29,6 +30,7 @@ export default function InventarioMobile() {
   const [fisicos, setFisicos] = useState<Registro>({})
   const [contadores, setContadores] = useState<Registro>({})
   const [reinicio, setReinicio] = useState(false)
+  const [esCorteMes, setEsCorteMes] = useState(false)
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [idRegistro, setIdRegistro] = useState(() => crypto.randomUUID())
@@ -59,6 +61,7 @@ export default function InventarioMobile() {
     setFisicos({})
     setContadores({})
     setReinicio(false)
+    setEsCorteMes(false)
     setGuardado(false)
     setIdRegistro(crypto.randomUUID())
     void cargar()
@@ -80,6 +83,8 @@ export default function InventarioMobile() {
   if (guardado) return <Result status="success" title="Visita registrada" subTitle={maquina.serial} extra={<Button onClick={() => navigate('/mobile/home')}>Volver a máquinas</Button>} />
 
   const espirales = maquina.mapaMateriaPrima ?? []
+  const nrqEspirales = maquina.tipoNegociacion === 'ESPECIAL' && (esCorteMes || maquina.lecturaNrqEspiral === 'CADA_VISITA')
+    ? espirales.filter(e => e.producto.tipoProducto === 'ESTANDAR') : []
   const lista = [
     { key: 'nr', nombre: 'NR efectivo (COP)', anterior: Number(lecturas.nrEfectivo) },
     ...(maquina.mapaCafeNrq ?? []).map(b => ({
@@ -106,6 +111,10 @@ export default function InventarioMobile() {
       precio: lecturas.precios.find(p => p.idProducto === b.idProdTerm)?.precio,
       porcentajeCliente: b.porcentajeCliente,
     })),
+    ...nrqEspirales.map(e => ({
+      key: `nrq-espiral-${e.idMapaMp}`, nombre: `NRQ espiral ${e.espiralCodigo} · ${e.producto.nombreProducto}`,
+      anterior: Number(lecturas.nrqEspirales?.find(l => l.idMapaMp === e.idMapaMp)?.lectura ?? 0),
+    })),
   ]
   const comparable = lineasVenta.length > 0 && lineasVenta.every(c => c.unidades != null && c.unidades >= 0 && c.precio != null)
   const diferenciaVenta = comparable && lista[0].diferencia != null
@@ -117,9 +126,12 @@ export default function InventarioMobile() {
     try {
       await apiService.post('/pedidos-operador', {
         idMaquina: id, idOperador, idOffline: idRegistro, ultimaVisitaId: lecturas.ultimaVisitaId,
-        nrEfectivoActual: contadores.nr, reinicioContador: reinicio,
+        nrEfectivoActual: contadores.nr, reinicioContador: reinicio, esCorteMes,
         items: espirales.map(e => ({ idProducto: e.idProducto, idMapaMP: e.idMapaMp, fisicoDigitado: fisicos[e.idMapaMp] })),
-        nrqLecturas: (maquina.mapaCafeNrq ?? []).map(b => ({ idMapaNRQ: b.idMapaNrq, lecturaActual: contadores[`nrq-${b.idMapaNrq}`] })),
+        nrqLecturas: [
+          ...(maquina.mapaCafeNrq ?? []).map(b => ({ idMapaNRQ: b.idMapaNrq, lecturaActual: contadores[`nrq-${b.idMapaNrq}`] })),
+          ...nrqEspirales.map(e => ({ idMapaMP: e.idMapaMp, lecturaActual: contadores[`nrq-espiral-${e.idMapaMp}`] })),
+        ],
       })
       setGuardado(true)
       message.success('Visita registrada')
@@ -144,6 +156,8 @@ export default function InventarioMobile() {
       </Card>)}
     </>}
     {paso === 1 && <>
+      {(maquina.tipoNegociacion === 'ESPECIAL' || (maquina.mapaCafeNrq ?? []).length > 0) &&
+        <Checkbox checked={esCorteMes} onChange={(e: { target: { checked: boolean } }) => setEsCorteMes(e.target.checked)}>Corte de mes</Checkbox>}
       <Checkbox checked={reinicio} onChange={() => {
         if (reinicio) setReinicio(false)
         else Modal.confirm({ title: '¿Se reiniciaron los contadores?', content: 'Las lecturas nuevas se registrarán como el consumo desde el reinicio.', onOk: () => setReinicio(true) })
@@ -158,6 +172,7 @@ export default function InventarioMobile() {
       </Card>)}
     </>}
     {paso === 2 && <>
+      {esCorteMes && <Alert type="info" showIcon message="Esta visita quedará marcada como corte de mes." />}
       {reinicio && <Alert type="warning" showIcon message="Esta visita se registrará con reinicio confirmado." />}
       {!idOperador && <Alert type="error" showIcon message="No existe operador asociado a esta visita." />}
       {controles.filter(c => c.unidades != null && c.unidades < 0).map(c =>

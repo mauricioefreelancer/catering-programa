@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateMaquinaDto, UpdateMaquinaDto, AsignarMaquinaDto,
@@ -177,7 +177,8 @@ export class MachinesService {
     await this.findOne(id);
     return this.prisma.mapaMateriaPrima.create({
       data: { idMaquina: id, idProducto: dto.idProducto, espiralCodigo: dto.espiralCodigo,
-        capacidadMax: dto.capacidadMax ?? 0, ...porcentajeEspiral(dto.porcentajeCliente, dto.precioCero) },
+        capacidadMax: dto.capacidadMax ?? 0, lecturaInicial: dto.lecturaInicial,
+        ...porcentajeEspiral(dto.porcentajeCliente, dto.precioCero) },
     });
   }
 
@@ -191,6 +192,9 @@ export class MachinesService {
   async removeMapaMP(id: number, idMapa: number) {
     const m = await this.prisma.mapaMateriaPrima.findUnique({ where: { idMapaMp: idMapa } });
     if (!m || m.idMaquina !== id) throw new NotFoundException('Mapa MP no encontrado');
+    if (await this.prisma.lecturasNrq.count({ where: { idMapaMp: idMapa } })) {
+      throw new ConflictException('El espiral tiene lecturas históricas y no se puede eliminar');
+    }
     return this.prisma.mapaMateriaPrima.delete({ where: { idMapaMp: idMapa } });
   }
 
@@ -223,6 +227,9 @@ export class MachinesService {
     this.validarMapaCafe(maq.tipo);
     const m = await this.prisma.mapaCafeNrq.findUnique({ where: { idMapaNrq: idMapa } });
     if (!m || m.idMaquina !== id) throw new NotFoundException('Mapa NRQ no encontrado');
+    if (await this.prisma.lecturasNrq.count({ where: { idMapaNrq: idMapa } })) {
+      throw new ConflictException('El botón tiene lecturas históricas y no se puede eliminar');
+    }
     return this.prisma.mapaCafeNrq.delete({ where: { idMapaNrq: idMapa } });
   }
 
@@ -375,16 +382,24 @@ export class MachinesService {
     await this.findOne(id); // valida que la máquina exista
     if (!Array.isArray(espirales)) throw new BadRequestException('espirales debe ser un arreglo');
     const codigos = espirales.map((e) => String(e.espiral)).filter((c) => !!c);
+    if (await this.prisma.mapaMateriaPrima.count({ where: { idMaquina: id, espiralCodigo: { notIn: codigos }, lecturasNrq: { some: {} } } })) {
+      throw new ConflictException('No se pueden eliminar espirales con lecturas históricas');
+    }
     for (const e of espirales) {
       if (!e?.espiral || e?.espiral === '') continue;
       const idProducto = Number(e.productoId ?? e.idProducto);
       if (!idProducto) throw new BadRequestException('Cada espiral debe tener un producto asignado');
+      const lecturaInicial = e.lecturaInicial == null ? undefined : Number(e.lecturaInicial);
+      if (lecturaInicial != null && (!Number.isSafeInteger(lecturaInicial) || lecturaInicial < 0)) {
+        throw new BadRequestException(`Lectura inicial inválida para espiral ${e.espiral}`);
+      }
       await this.prisma.mapaMateriaPrima.upsert({
         where: { idMaquina_espiralCodigo: { idMaquina: id, espiralCodigo: String(e.espiral) } },
         update: {
           idProducto,
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
+          lecturaInicial,
           ...porcentajeEspiral(e.porcentajeCliente, e.precioCero),
         },
         create: {
@@ -393,6 +408,7 @@ export class MachinesService {
           espiralCodigo: String(e.espiral),
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
+          lecturaInicial,
           ...porcentajeEspiral(e.porcentajeCliente, e.precioCero),
         },
       });
@@ -409,6 +425,9 @@ export class MachinesService {
     this.validarMapaCafe(maq.tipo);
     if (!Array.isArray(botones)) throw new BadRequestException('botones debe ser un arreglo');
     const opciones = botones.map((b) => String(b.boton)).filter((c) => !!c);
+    if (await this.prisma.mapaCafeNrq.count({ where: { idMaquina: id, opcionBoton: { notIn: opciones }, lecturas: { some: {} } } })) {
+      throw new ConflictException('No se pueden eliminar botones con lecturas históricas');
+    }
     for (const b of botones) {
       if (!b?.boton || b?.boton === '') continue;
       const idProdTerm = Number(b.productoId ?? b.idProdTerm);

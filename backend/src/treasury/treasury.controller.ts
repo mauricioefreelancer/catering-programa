@@ -41,11 +41,11 @@ export class TreasuryController {
   @Permissions('tesoreria', 'eliminar')
   removeSaldo(@Param('id') id: string) { return this.srv.removeSaldo(+id); }
 
-  @Get('facturacion-nrq')
+  @Get(['facturacion-cliente', 'facturacion-nrq'])
   @Permissions('tesoreria', 'ver')
   facturacionNrq(@Query() q: QueryFacturacionNrqDto) { return this.srv.facturacionNrq(q); }
 
-  @Post('facturacion-nrq/generar')
+  @Post(['facturacion-cliente/generar', 'facturacion-nrq/generar'])
   @Permissions('tesoreria', 'crear')
   generarFacturacionNrq(@Body() dto: QueryFacturacionNrqDto, @Req() req: { user?: { sub?: number } }) {
     const idUsuario = req.user?.sub;

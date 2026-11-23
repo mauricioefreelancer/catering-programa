@@ -229,6 +229,7 @@ model MapaMateriaPrima {
   capacidadActual Int                       @default(0) @map("Capacidad_Actual")
   precioCero      Boolean                   @default(false) @map("Precio_Cero")
   porcentajeCliente Decimal                 @default(0) @map("Porcentaje_Cliente") @db.Decimal(5, 2)
+  lecturaInicial BigInt                     @default(0) @map("Lectura_Inicial")
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
@@ -236,6 +237,8 @@ model MapaMateriaPrima {
   proveedor Proveedores?   @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   pedidosOperador PedidosOperador[]
   despachosBodega  DespachosBodega[]
+  lecturasNrq LecturasNrq[]
+  facturas TesoreriaFacturacionNrq[]
 
   @@unique([idMaquina, espiralCodigo], map: "uq_espiral_maquina")
   @@map("MAPA_MATERIA_PRIMA")
@@ -303,6 +306,7 @@ model Visitas {
   /// Obsoleto; se conserva para el historial.
   nrProductoActual   BigInt? @map("NR_Producto_Actual")
   reinicioContador   Boolean @default(false) @map("Reinicio_Contador")
+  esCorteMes         Boolean @default(false) @map("Es_Corte_Mes")
   ventaNr            BigInt? @map("Venta_NR")
   idOffline         String?  @unique @map("Id_Offline") @db.VarChar(64)
   observaciones     String?  @map("Observaciones") @db.Text
@@ -327,6 +331,8 @@ model LecturasNrq {
   idLectura       Int      @id @default(autoincrement()) @map("ID_Lectura")
   idVisita        Int      @map("ID_Visita")
   idMapaNrq       Int?     @map("ID_Mapa_NRQ")
+  idMapaMp        Int?     @map("ID_Mapa_MP")
+  /// Producto del boton o del espiral, segun el mapa de origen.
   idProdTerm      Int      @map("ID_Prod_Term")
   opcionBoton     String   @map("Opcion_Boton") @db.VarChar(50)
   lecturaAnterior BigInt   @map("Lectura_Anterior")
@@ -336,10 +342,12 @@ model LecturasNrq {
   subtotal        Decimal?                 @map("Subtotal") @db.Decimal(18, 2)
   porcentajeCliente Decimal?               @map("Porcentaje_Cliente") @db.Decimal(5, 2)
   visita   Visitas     @relation(fields: [idVisita], references: [idVisita], onDelete: Restrict)
-  mapa     MapaCafeNrq? @relation(fields: [idMapaNrq], references: [idMapaNrq], onDelete: SetNull)
+  mapa     MapaCafeNrq? @relation(fields: [idMapaNrq], references: [idMapaNrq], onDelete: Restrict)
+  mapaMp   MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: Restrict)
   producto Productos  @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict)
 
   @@unique([idVisita, idMapaNrq])
+  @@unique([idVisita, idMapaMp])
   @@index([idMapaNrq])
   @@map("LECTURAS_NRQ")
 }
@@ -472,6 +480,10 @@ model TesoreriaFacturacionNrq {
   idMaquina          Int                       @map("ID_Maquina")
   idCliente          Int                       @map("ID_Cliente")
   idProdTerm         Int                       @map("ID_Prod_Term")
+  idMapaMp           Int?                      @map("ID_Mapa_MP")
+  tipo               String                    @default("NRQ_CAFE") @map("Tipo") @db.VarChar(20)
+  porcentajeCliente  Decimal?                  @map("Porcentaje_Cliente") @db.Decimal(5, 2)
+  valorVentaTotal    Decimal?                  @map("Valor_Venta_Total") @db.Decimal(18, 2)
   fechaInicio      DateTime                  @map("Fecha_Inicio") @db.Date
   fechaFin         DateTime                  @map("Fecha_Fin") @db.Date
   nrqInicial       BigInt                    @default(0) @map("NRQ_Inicial")
@@ -485,9 +497,10 @@ model TesoreriaFacturacionNrq {
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   cliente  Clientes @relation(fields: [idCliente], references: [idCliente], onDelete: Restrict, onUpdate: Cascade)
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
+  mapaMp MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
 
-  @@unique([idMaquina, idProdTerm, fechaInicio, fechaFin], map: "uq_facturacion_nrq_periodo")
+  @@unique([idMaquina, idProdTerm, fechaInicio, fechaFin, tipo], map: "uq_facturacion_nrq_periodo")
   @@map("TESORERIA_FACTURACION_NRQ")
 }
 
