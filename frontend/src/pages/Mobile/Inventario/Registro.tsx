@@ -4,10 +4,10 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { apiService } from '../../../api/services/api'
 import { useAuth } from '../../../hooks/useAuth'
 
-type Espiral = { idMapaMp: number; idProducto: number; espiralCodigo: string; capacidadMax: number; precioCero: boolean; producto: { nombreProducto: string; tipoProducto: string } }
-type Boton = { idMapaNrq: number; opcionBoton: string; productoTerminado: { nombreProducto: string } }
+type Espiral = { idMapaMp: number; idProducto: number; espiralCodigo: string; capacidadMax: number; porcentajeCliente: number; producto: { nombreProducto: string; tipoProducto: string } }
+type Boton = { idMapaNrq: number; idProdTerm: number; opcionBoton: string; porcentajeCliente: number; productoTerminado: { nombreProducto: string } }
 type Lecturas = {
-  ultimaVisitaId: number; nrEfectivo: number | string; nrProducto: number | string
+  ultimaVisitaId: number; nrEfectivo: number | string
   botones: { idMapaNrq: number; lectura: number | string }[]
   espirales: { idMapaMp: number; idProducto: number; fisicoDigitado: number; despachado: number }[]
   precios: { idProducto: number; precio: number }[]
@@ -82,7 +82,6 @@ export default function InventarioMobile() {
   const espirales = maquina.mapaMateriaPrima ?? []
   const lista = [
     { key: 'nr', nombre: 'NR efectivo (COP)', anterior: Number(lecturas.nrEfectivo) },
-    { key: 'producto', nombre: 'NR producto (unidades)', anterior: Number(lecturas.nrProducto) },
     ...(maquina.mapaCafeNrq ?? []).map(b => ({
       key: `nrq-${b.idMapaNrq}`, nombre: `NRQ ${b.opcionBoton} · ${b.productoTerminado.nombreProducto}`,
       anterior: Number(lecturas.botones.find(l => l.idMapaNrq === b.idMapaNrq)?.lectura ?? 0),
@@ -93,18 +92,24 @@ export default function InventarioMobile() {
   })
   const fisicoValido = espirales.every(e => entero(fisicos[e.idMapaMp]) && fisicos[e.idMapaMp]! <= e.capacidadMax)
   const contadoresValidos = lista.every(l => entero(l.actual) && l.diferencia! >= 0 && Number.isSafeInteger(l.anterior))
-  const controles = espirales.filter(e => e.producto.tipoProducto !== 'MATERIA_PRIMA').map(e => {
+  const controles = espirales.filter(e => e.producto.tipoProducto === 'ESTANDAR').map(e => {
     const anterior = lecturas.espirales.find(p => p.idMapaMp === e.idMapaMp && p.idProducto === e.idProducto)
     const actual = fisicos[e.idMapaMp]
     const unidades = anterior && actual != null ? anterior.fisicoDigitado + anterior.despachado - actual : null
     const precio = lecturas.precios.find(p => p.idProducto === e.idProducto)?.precio
     return { ...e, unidades, precio }
   })
-  const comparable = lista.length === 2 && controles.length > 0 && controles.every(c => c.unidades != null)
-  const diferenciaUnidades = comparable && lista[1].diferencia != null
-    ? lista[1].diferencia - controles.reduce((total, c) => total + (c.unidades ?? 0), 0) : null
-  const diferenciaVenta = comparable && lista[0].diferencia != null && controles.every(c => c.precio != null)
-    ? lista[0].diferencia - controles.reduce((total, c) => total + (c.precioCero ? 0 : (c.unidades ?? 0) * (c.precio ?? 0)), 0) : null
+  const lineasVenta = [
+    ...controles,
+    ...(maquina.mapaCafeNrq ?? []).map(b => ({
+      unidades: lista.find(l => l.key === `nrq-${b.idMapaNrq}`)?.diferencia,
+      precio: lecturas.precios.find(p => p.idProducto === b.idProdTerm)?.precio,
+      porcentajeCliente: b.porcentajeCliente,
+    })),
+  ]
+  const comparable = lineasVenta.length > 0 && lineasVenta.every(c => c.unidades != null && c.unidades >= 0 && c.precio != null)
+  const diferenciaVenta = comparable && lista[0].diferencia != null
+    ? lista[0].diferencia - lineasVenta.reduce((total, c) => total + (c.unidades ?? 0) * (c.precio ?? 0) * (1 - Number(c.porcentajeCliente ?? 0) / 100), 0) : null
   const guardar = async () => {
     if (!idOperador || !navigator.onLine || !fisicoValido || !contadoresValidos || guardando) return
     setGuardando(true)
@@ -112,7 +117,7 @@ export default function InventarioMobile() {
     try {
       await apiService.post('/pedidos-operador', {
         idMaquina: id, idOperador, idOffline: idRegistro, ultimaVisitaId: lecturas.ultimaVisitaId,
-        nrEfectivoActual: contadores.nr, nrProductoActual: contadores.producto, reinicioContador: reinicio,
+        nrEfectivoActual: contadores.nr, reinicioContador: reinicio,
         items: espirales.map(e => ({ idProducto: e.idProducto, idMapaMP: e.idMapaMp, fisicoDigitado: fisicos[e.idMapaMp] })),
         nrqLecturas: (maquina.mapaCafeNrq ?? []).map(b => ({ idMapaNRQ: b.idMapaNrq, lecturaActual: contadores[`nrq-${b.idMapaNrq}`] })),
       })
@@ -157,10 +162,8 @@ export default function InventarioMobile() {
       {!idOperador && <Alert type="error" showIcon message="No existe operador asociado a esta visita." />}
       {controles.filter(c => c.unidades != null && c.unidades < 0).map(c =>
         <Alert key={c.idMapaMp} type="warning" showIcon message={`Espiral ${c.espiralCodigo}: el cruce de inventario da ${c.unidades} unidades vendidas. Revisa el físico digitado.`} />)}
-      {diferenciaUnidades != null && diferenciaUnidades !== 0 &&
-        <Alert type="warning" showIcon message={`El NR producto difiere en ${formato(diferenciaUnidades)} unidades del cruce por espiral.`} />}
       {diferenciaVenta != null && Math.abs(diferenciaVenta) >= lecturas.umbralDiferenciaVenta &&
-        <Alert type="warning" showIcon message={`El NR efectivo difiere en $${formato(diferenciaVenta)} COP de la venta estimada por espiral.`} />}
+        <Alert type="warning" showIcon message={`El NR efectivo difiere en $${formato(diferenciaVenta)} COP de la venta teórica de la máquina.`} />}
       <Card title="Físicos y pedido" size="small">{espirales.map(e =>
         <div key={e.idMapaMp}>{e.espiralCodigo} · {e.producto.nombreProducto}: físico {fisicos[e.idMapaMp]}, pedido {e.capacidadMax - (fisicos[e.idMapaMp] ?? 0)}</div>)}</Card>
       <Card title="Lecturas y diferencias" size="small">{lista.map(l =>

@@ -8,6 +8,20 @@ import { Prisma } from '@prisma/client';
 import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
 import { umbralDiferenciaVenta } from '../common/contadores';
 
+function porcentajeValido(valor: unknown): number | undefined {
+  if (valor == null) return undefined;
+  if (typeof valor !== 'number' || !Number.isFinite(valor) || valor < 0 ||
+      valor > 100 || Number(valor.toFixed(2)) !== valor) {
+    throw new BadRequestException('El porcentaje del cliente debe estar entre 0 y 100, con hasta dos decimales');
+  }
+  return valor;
+}
+
+function porcentajeEspiral(valor: unknown, precioCero: unknown) {
+  const porcentajeCliente = porcentajeValido(valor) ?? (typeof precioCero === 'boolean' ? (precioCero ? 100 : 0) : undefined);
+  return porcentajeCliente === undefined ? {} : { porcentajeCliente, precioCero: porcentajeCliente === 100 };
+}
+
 function tipoCanonico(tipo?: string): string | undefined {
   if (!tipo) return tipo;
   const t = String(tipo).toUpperCase();
@@ -133,14 +147,16 @@ export class MachinesService {
     return this.prisma.$transaction(async tx => {
       const maquina = await tx.maquinasYTiendas.findUnique({
         where: { idMaquina: id },
-        select: { idCliente: true, mapaMateriaPrima: { select: { idProducto: true } } },
+        select: { idCliente: true, mapaMateriaPrima: { select: { idProducto: true } }, mapaCafeNrq: { select: { idProdTerm: true } } },
       });
       if (!maquina) throw new NotFoundException('Máquina no encontrada');
       const { visita, ...lecturas } = await ultimasLecturas(tx, id);
       const [espirales, precios] = await Promise.all([
         baseEspirales(tx, visita?.idVisita),
         maquina.idCliente == null ? [] : tx.preciosCliente.findMany({
-          where: { idCliente: maquina.idCliente, idProducto: { in: maquina.mapaMateriaPrima.map(m => m.idProducto) } },
+          where: { idCliente: maquina.idCliente, idProducto: { in: [
+            ...maquina.mapaMateriaPrima.map(m => m.idProducto), ...maquina.mapaCafeNrq.map(b => b.idProdTerm),
+          ] } },
           select: { idProducto: true, precioVenta: true },
         }),
       ]);
@@ -160,14 +176,16 @@ export class MachinesService {
   async addMapaMP(id: number, dto: CreateMapaMPDto) {
     await this.findOne(id);
     return this.prisma.mapaMateriaPrima.create({
-      data: { idMaquina: id, idProducto: dto.idProducto, espiralCodigo: dto.espiralCodigo, capacidadMax: dto.capacidadMax ?? 0, precioCero: dto.precioCero },
+      data: { idMaquina: id, idProducto: dto.idProducto, espiralCodigo: dto.espiralCodigo,
+        capacidadMax: dto.capacidadMax ?? 0, ...porcentajeEspiral(dto.porcentajeCliente, dto.precioCero) },
     });
   }
 
   async updateMapaMP(id: number, idMapa: number, dto: UpdateMapaMPDto) {
     const m = await this.prisma.mapaMateriaPrima.findUnique({ where: { idMapaMp: idMapa } });
     if (!m || m.idMaquina !== id) throw new NotFoundException('Mapa MP no encontrado');
-    return this.prisma.mapaMateriaPrima.update({ where: { idMapaMp: idMapa }, data: dto });
+    const { precioCero, porcentajeCliente, ...data } = dto;
+    return this.prisma.mapaMateriaPrima.update({ where: { idMapaMp: idMapa }, data: { ...data, ...porcentajeEspiral(porcentajeCliente, precioCero) } });
   }
 
   async removeMapaMP(id: number, idMapa: number) {
@@ -178,29 +196,31 @@ export class MachinesService {
 
   async getMapaNRQ(id: number) {
     const maq = await this.findOne(id);
-    if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
+    this.validarMapaCafe(maq.tipo);
     return this.prisma.mapaCafeNrq.findMany({ where: { idMaquina: id }, include: { productoTerminado: true }, orderBy: { opcionBoton: 'asc' } });
   }
 
   async addMapaNRQ(id: number, dto: CreateMapaNRQDto) {
     const maq = await this.findOne(id);
-    if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
+    this.validarMapaCafe(maq.tipo);
     return this.prisma.mapaCafeNrq.create({
-      data: { idMaquina: id, idProdTerm: dto.idProdTerm, opcionBoton: dto.opcionBoton, lecturaInicial: dto.lecturaInicial },
+      data: { idMaquina: id, idProdTerm: dto.idProdTerm, opcionBoton: dto.opcionBoton,
+        lecturaInicial: dto.lecturaInicial, porcentajeCliente: porcentajeValido(dto.porcentajeCliente) },
     });
   }
 
   async updateMapaNRQ(id: number, idMapa: number, dto: UpdateMapaNRQDto) {
     const maq = await this.findOne(id);
-    if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
+    this.validarMapaCafe(maq.tipo);
     const m = await this.prisma.mapaCafeNrq.findUnique({ where: { idMapaNrq: idMapa } });
     if (!m || m.idMaquina !== id) throw new NotFoundException('Mapa NRQ no encontrado');
-    return this.prisma.mapaCafeNrq.update({ where: { idMapaNrq: idMapa }, data: dto });
+    return this.prisma.mapaCafeNrq.update({ where: { idMapaNrq: idMapa },
+      data: { ...dto, porcentajeCliente: porcentajeValido(dto.porcentajeCliente) } });
   }
 
   async removeMapaNRQ(id: number, idMapa: number) {
     const maq = await this.findOne(id);
-    if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
+    this.validarMapaCafe(maq.tipo);
     const m = await this.prisma.mapaCafeNrq.findUnique({ where: { idMapaNrq: idMapa } });
     if (!m || m.idMaquina !== id) throw new NotFoundException('Mapa NRQ no encontrado');
     return this.prisma.mapaCafeNrq.delete({ where: { idMapaNrq: idMapa } });
@@ -214,7 +234,7 @@ export class MachinesService {
   // ============================================================
   async rendimiento(id: number) {
     const m = await this.findOne(id);
-    if (m.tipo !== 'CAFE') throw new BadRequestException('Solo las máquinas de tipo CAFE tienen rendimiento de dosificados');
+    this.validarMapaCafe(m.tipo);
 
     // Precio de venta del dosificado según el cliente asignado a la máquina
     const preciosCliente = m.idCliente
@@ -365,7 +385,7 @@ export class MachinesService {
           idProducto,
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
-          precioCero: typeof e.precioCero === 'boolean' ? e.precioCero : undefined,
+          ...porcentajeEspiral(e.porcentajeCliente, e.precioCero),
         },
         create: {
           idMaquina: id,
@@ -373,7 +393,7 @@ export class MachinesService {
           espiralCodigo: String(e.espiral),
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
-          precioCero: e.precioCero === true,
+          ...porcentajeEspiral(e.porcentajeCliente, e.precioCero),
         },
       });
     }
@@ -386,7 +406,7 @@ export class MachinesService {
 
   async saveMapaBotones(id: number, botones: any[]) {
     const maq = await this.findOne(id);
-    if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
+    this.validarMapaCafe(maq.tipo);
     if (!Array.isArray(botones)) throw new BadRequestException('botones debe ser un arreglo');
     const opciones = botones.map((b) => String(b.boton)).filter((c) => !!c);
     for (const b of botones) {
@@ -406,10 +426,11 @@ export class MachinesService {
       if (!tipoProd.includes('DOSIF')) {
         throw new BadRequestException(`El botón ${b?.boton} debe ser un producto DOSIFICADO (receta café). '${prodTerm.tipoProducto}' no es válido.`);
       }
+      const porcentajeCliente = porcentajeValido(b.porcentajeCliente);
       await this.prisma.mapaCafeNrq.upsert({
         where: { idMaquina_opcionBoton: { idMaquina: id, opcionBoton: String(b.boton) } },
-        update: { idProdTerm, lecturaInicial },
-        create: { idMaquina: id, idProdTerm, opcionBoton: String(b.boton), lecturaInicial },
+        update: { idProdTerm, lecturaInicial, porcentajeCliente },
+        create: { idMaquina: id, idProdTerm, opcionBoton: String(b.boton), lecturaInicial, porcentajeCliente },
       });
     }
     // Eliminar botones que ya no están en el mapa
@@ -417,6 +438,12 @@ export class MachinesService {
       where: { idMaquina: id, opcionBoton: { notIn: opciones } },
     });
     return this.getMapaNRQ(id);
+  }
+
+  private validarMapaCafe(tipo: string) {
+    if (tipo !== 'CAFE' && tipo !== 'COMBINADA') {
+      throw new BadRequestException('La máquina debe ser de tipo CAFE o COMBINADA');
+    }
   }
 
   // ============================================================

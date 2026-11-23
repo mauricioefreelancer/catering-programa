@@ -16,7 +16,7 @@ export async function baseEspirales(tx: Prisma.TransactionClient, idVisita?: num
 }
 
 export async function ultimasLecturas(tx: Prisma.TransactionClient, idMaquina: number) {
-  const [visita, efectivo, producto, botones] = await Promise.all([
+  const [visita, efectivo, botones] = await Promise.all([
     tx.visitas.findFirst({
       where: { idMaquina, estado: { not: 'ANULADA' } },
       orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
@@ -25,11 +25,6 @@ export async function ultimasLecturas(tx: Prisma.TransactionClient, idMaquina: n
       where: { idMaquina, estado: { not: 'ANULADA' }, nrEfectivoActual: { not: null } },
       orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
       select: { nrEfectivoActual: true },
-    }),
-    tx.visitas.findFirst({
-      where: { idMaquina, estado: { not: 'ANULADA' }, nrProductoActual: { not: null } },
-      orderBy: [{ fechaVisita: 'desc' }, { idVisita: 'desc' }],
-      select: { nrProductoActual: true },
     }),
     tx.mapaCafeNrq.findMany({
       where: { idMaquina },
@@ -47,7 +42,6 @@ export async function ultimasLecturas(tx: Prisma.TransactionClient, idMaquina: n
   return {
     visita,
     nrEfectivo: efectivo?.nrEfectivoActual ?? 0n,
-    nrProducto: producto?.nrProductoActual ?? 0n,
     botones: botones.map(b => ({
       idMapaNrq: b.idMapaNrq,
       lectura: b.lecturas[0]?.lecturaActual ?? b.lecturaInicial,

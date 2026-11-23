@@ -22,7 +22,6 @@ export class CreatePedidoOperadorDto {
   @IsInt() @IsNotEmpty() idOperador: number;
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) nrActual?: number;
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) nrEfectivoActual?: number;
-  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) nrProductoActual?: number;
   @IsOptional() @IsBoolean() reinicioContador?: boolean;
   @IsOptional() @IsInt() @Min(0) ultimaVisitaId?: number;
   @IsOptional() @IsUUID() idOffline?: string;

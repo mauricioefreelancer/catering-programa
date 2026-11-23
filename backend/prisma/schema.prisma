@@ -190,11 +190,14 @@ model MaquinasYTiendas {
   serial                String                    @unique @map("Serial") @db.VarChar(100)
   marca                 String?                   @map("Marca") @db.VarChar(150)
   tipo                  String                    @default("SNACKS") @map("Tipo") @db.VarChar(30)
+  tipoNegociacion       String                    @default("NORMAL") @map("Tipo_Negociacion") @db.VarChar(20)
+  lecturaNrqEspiral     String                    @default("CORTE_MES") @map("Lectura_NRQ_Espiral") @db.VarChar(20)
   ubicacionEsp          String?                   @map("Ubicacion_Esp") @db.VarChar(300)
   mediosPago           Json?                     @map("Medios_Pago") @db.JsonB
   tarifaPromedioOverride Decimal?                @map("Tarifa_Promedio_Override") @db.Decimal(18, 2)
   base                  Decimal                   @default(0) @map("Base") @db.Decimal(18, 2)
   ultimoContadorNR      BigInt?                   @map("Ultimo_Contador_NR")
+  /// Obsoleto; se conserva para el historial.
   ultimoContadorNRProducto BigInt?                @map("Ultimo_Contador_NR_Producto")
   fechaUltimaVisita     DateTime?                 @map("Fecha_Ultima_Visita")
   fechaInstalacion      DateTime?                 @map("Fecha_Instalacion") @db.Date
@@ -225,6 +228,7 @@ model MapaMateriaPrima {
   capacidadMax    Int                       @default(0) @map("Capacidad_Max")
   capacidadActual Int                       @default(0) @map("Capacidad_Actual")
   precioCero      Boolean                   @default(false) @map("Precio_Cero")
+  porcentajeCliente Decimal                 @default(0) @map("Porcentaje_Cliente") @db.Decimal(5, 2)
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
@@ -244,6 +248,7 @@ model MapaCafeNrq {
   idProveedor    Int?                      @map("ID_Proveedor")
   opcionBoton    String                    @map("Opcion_Boton") @db.VarChar(50)
   lecturaInicial BigInt                    @default(0) @map("Lectura_Inicial")
+  porcentajeCliente Decimal                @default(0) @map("Porcentaje_Cliente") @db.Decimal(5, 2)
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
@@ -293,7 +298,9 @@ model Visitas {
   estado            String   @default("REGISTRADA") @map("Estado") @db.VarChar(20)
   nrEfectivoAnterior BigInt? @map("NR_Efectivo_Anterior")
   nrEfectivoActual  BigInt?  @map("NR_Efectivo_Actual")
+  /// Obsoleto; se conserva para el historial.
   nrProductoAnterior BigInt? @map("NR_Producto_Anterior")
+  /// Obsoleto; se conserva para el historial.
   nrProductoActual   BigInt? @map("NR_Producto_Actual")
   reinicioContador   Boolean @default(false) @map("Reinicio_Contador")
   ventaNr            BigInt? @map("Venta_NR")
@@ -326,7 +333,8 @@ model LecturasNrq {
   lecturaActual   BigInt   @map("Lectura_Actual")
   unidades        BigInt   @map("Unidades")
   precioUnitario  Decimal? @map("Precio_Unitario") @db.Decimal(18, 2)
-  subtotal        Decimal? @map("Subtotal") @db.Decimal(18, 2)
+  subtotal        Decimal?                 @map("Subtotal") @db.Decimal(18, 2)
+  porcentajeCliente Decimal?               @map("Porcentaje_Cliente") @db.Decimal(5, 2)
   visita   Visitas     @relation(fields: [idVisita], references: [idVisita], onDelete: Restrict)
   mapa     MapaCafeNrq? @relation(fields: [idMapaNrq], references: [idMapaNrq], onDelete: SetNull)
   producto Productos  @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict)
@@ -402,6 +410,7 @@ model VentasPorVisita {
   totalVendido    Decimal                   @default(0) @map("Total_Vendido") @db.Decimal(18, 2)
   totalDespachado Decimal                   @default(0) @map("Total_Despachado") @db.Decimal(18, 2)
   totalVendidoProductos Decimal            @default(0) @map("Total_Vendido_Productos") @db.Decimal(18, 2)
+  /// Obsoleto; se conserva para el historial.
   unidadesNrProducto BigInt? @map("Unidades_NR_Producto")
   ventaTeoricaProductos Decimal? @map("Venta_Teorica_Productos") @db.Decimal(18, 2)
   diferenciaVenta Decimal? @map("Diferencia_Venta") @db.Decimal(18, 2)

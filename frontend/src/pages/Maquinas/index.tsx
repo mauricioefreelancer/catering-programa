@@ -17,6 +17,7 @@ import {
   Drawer,
   Spin,
   Checkbox,
+  Switch,
   Modal,
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons'
@@ -34,7 +35,7 @@ interface Espiral {
   espiral: string
   capacidad_max: number
   cantidad_actual: number
-  precioCero?: boolean
+  porcentajeCliente?: number
   productoId?: number
   productoNombre?: string
   precio_venta_cliente?: number
@@ -46,6 +47,8 @@ interface BotonNRQ {
   productoId?: number
   productoNombre?: string
   precio_venta_cliente?: number
+  lecturaInicial?: number
+  porcentajeCliente?: number
 }
 
 interface MediosPago {
@@ -66,6 +69,8 @@ interface Maquina {
   serial: string
   marca: string
   tipo: 'SNACK' | 'BEBIDA' | 'CAFE' | 'COMBINADA'
+  tipoNegociacion: 'NORMAL' | 'ESPECIAL'
+  lecturaNrqEspiral: 'CORTE_MES' | 'CADA_VISITA'
   clienteId: number
   clienteNombre: string
   operadorId: number
@@ -80,6 +85,14 @@ interface Maquina {
 
 const genEspiralesVacio = (): Espiral[] => []
 const genBotonesVacio = (): BotonNRQ[] => []
+
+function PorcentajeCliente({ value = 0, onChange }: { value?: number | null; onChange?: (value: number | null) => void }) {
+  return <Space>
+    <Switch checked={value === 100} onChange={(checked: boolean) => onChange?.(checked ? 100 : 0)} aria-label="Precio 0" />
+    <span>Precio 0</span>
+    <InputNumber value={value} onChange={onChange} min={0} max={100} precision={2} addonAfter="%" aria-label="Porcentaje a cargo del cliente" />
+  </Space>
+}
 
 const normalizarTipo = (t: any): 'SNACK' | 'BEBIDA' | 'CAFE' | 'COMBINADA' => {
   const s = String(t || '').toUpperCase()
@@ -235,6 +248,8 @@ const Maquinas = () => {
         serial: m.serial ?? '',
         marca: m.marca ?? '',
         tipo: normalizarTipo(m.tipo ?? m.Tipo_Maquina),
+        tipoNegociacion: m.tipoNegociacion ?? 'NORMAL',
+        lecturaNrqEspiral: m.lecturaNrqEspiral ?? 'CORTE_MES',
         clienteId: m.idCliente ?? m.clienteId,
         clienteNombre: m.cliente?.razonSocial ?? m.clienteNombre ?? '',
         operadorId: m.idOperador ?? m.operadorId,
@@ -249,7 +264,7 @@ const Maquinas = () => {
               espiral: e.espiralCodigo ?? '',
               capacidad_max: e.capacidadMax ?? 0,
               cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
-              precioCero: e.precioCero === true,
+              porcentajeCliente: Number(e.porcentajeCliente ?? (e.precioCero ? 100 : 0)),
               productoId: e.idProducto,
               productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
               precio_venta_cliente: e.precioVentaCliente,
@@ -262,6 +277,8 @@ const Maquinas = () => {
               productoId: b.idProdTerm,
               productoNombre: b.productoTerminado?.nombreProducto ?? b.productoTerminado?.nombre ?? '',
               precio_venta_cliente: b.precioVentaCliente,
+              lecturaInicial: Number(b.lecturaInicial ?? 0),
+              porcentajeCliente: Number(b.porcentajeCliente ?? 0),
             }))
           : (m.botonesNRQ ?? genBotonesVacio()),
       }))
@@ -324,7 +341,7 @@ const Maquinas = () => {
           espiral: e.espiralCodigo ?? '',
           capacidad_max: e.capacidadMax ?? 0,
           cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
-          precioCero: e.precioCero === true,
+          porcentajeCliente: Number(e.porcentajeCliente ?? (e.precioCero ? 100 : 0)),
           productoId: e.idProducto,
           productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
           precio_venta_cliente: e.precioVentaCliente,
@@ -338,9 +355,10 @@ const Maquinas = () => {
           productoNombre: b.productoTerminado?.nombreProducto ?? b.productoTerminado?.nombre ?? '',
           precio_venta_cliente: b.precioVentaCliente,
           lecturaInicial: Number(b.lecturaInicial ?? 0),
+          porcentajeCliente: Number(b.porcentajeCliente ?? 0),
         })),
       )
-      if (m.tipo === 'CAFE') {
+      if (m.tipo === 'CAFE' || m.tipo === 'COMBINADA') {
         loadRendimiento(m.id)
       }
     } catch {
@@ -363,6 +381,8 @@ const Maquinas = () => {
         serial: values.serial,
         marca: values.marca,
         tipo: values.tipo,
+        tipoNegociacion: values.tipoNegociacion,
+        lecturaNrqEspiral: values.lecturaNrqEspiral,
         idCliente: values.clienteId ?? null,
         idOperador: values.operadorId ?? null,
         ubicacionEsp: values.zona,
@@ -433,7 +453,7 @@ const Maquinas = () => {
       productoId: undefined,
       capacidad_max: 15,
       cantidad_actual: 0,
-      precioCero: false,
+      porcentajeCliente: 0,
     })
     setOpenEspModal(true)
   }
@@ -445,7 +465,7 @@ const Maquinas = () => {
       espiral: esp.espiral,
       productoId: esp.productoId,
       cantidad_actual: esp.cantidad_actual ?? 0,
-      precioCero: esp.precioCero === true,
+      porcentajeCliente: esp.porcentajeCliente ?? 0,
       capacidad_max: esp.capacidad_max,
     })
     setOpenEspModal(true)
@@ -483,7 +503,7 @@ const Maquinas = () => {
           espiral: codEspiral,
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
-          precioCero: values.precioCero === true,
+          porcentajeCliente: values.porcentajeCliente ?? 0,
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
@@ -498,7 +518,7 @@ const Maquinas = () => {
           espiral: codEspiral,
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
-          precioCero: values.precioCero === true,
+          porcentajeCliente: values.porcentajeCliente ?? 0,
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: original?.precio_venta_cliente,
@@ -511,7 +531,7 @@ const Maquinas = () => {
       if (editing?.id) {
         try {
           await apiService.post(`/maquinas/${editing.id}/espirales`, { espirales: ns })
-          if (editing.tipo === 'CAFE') loadRendimiento(editing.id)
+          if (editing.tipo === 'CAFE' || editing.tipo === 'COMBINADA') loadRendimiento(editing.id)
         } catch {
           message.warning(esCafe ? 'El insumo quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)' : 'El espiral quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
         }
@@ -537,6 +557,7 @@ const Maquinas = () => {
       boton: '',
       productoId: undefined,
       lecturaInicial: 0,
+      porcentajeCliente: 0,
     })
     setOpenBtnModal(true)
   }
@@ -548,6 +569,7 @@ const Maquinas = () => {
       boton: b.boton,
       productoId: b.productoId,
       lecturaInicial: b.lecturaInicial ?? 0,
+      porcentajeCliente: b.porcentajeCliente ?? 0,
     })
     setOpenBtnModal(true)
   }
@@ -573,6 +595,7 @@ const Maquinas = () => {
           productoNombre: prodName,
           precio_venta_cliente: undefined,
           lecturaInicial: values.lecturaInicial,
+          porcentajeCliente: values.porcentajeCliente ?? 0,
         }
         ns = [...botones, nuevo]
         message.success(`Botón ${nuevo.boton} agregado`)
@@ -585,6 +608,7 @@ const Maquinas = () => {
           productoNombre: prodName,
           precio_venta_cliente: ns[editBtnIdx]?.precio_venta_cliente,
           lecturaInicial: values.lecturaInicial,
+          porcentajeCliente: values.porcentajeCliente ?? 0,
         }
         message.success(`Botón ${ns[editBtnIdx].boton} actualizado`)
       }
@@ -593,7 +617,7 @@ const Maquinas = () => {
       if (editing?.id) {
         try {
           await apiService.post(`/maquinas/${editing.id}/botones`, { botones: ns })
-          if (editing.tipo === 'CAFE') loadRendimiento(editing.id)
+          if (editing.tipo === 'CAFE' || editing.tipo === 'COMBINADA') loadRendimiento(editing.id)
         } catch {
           message.warning('El botón quedó pendiente de guardar (verifica conexión y vuelve a Guardar la máquina)')
         }
@@ -607,7 +631,7 @@ const Maquinas = () => {
     const removed = ns.splice(idx, 1)[0]
     setBotones(ns)
     message.success(`Botón ${removed.boton} eliminado`)
-    if (editing?.id && editing.tipo === 'CAFE') {
+    if (editing?.id && (editing.tipo === 'CAFE' || editing.tipo === 'COMBINADA')) {
       apiService.post(`/maquinas/${editing.id}/botones`, { botones: ns }).then(() => loadRendimiento(editing.id)).catch(() => {})
     }
   }
@@ -700,6 +724,8 @@ const Maquinas = () => {
       ['Serial', editing.serial || '—'],
       ['Marca', editing.marca || '—'],
       ['Tipo', editing.tipo],
+      ['Negociación', editing.tipoNegociacion],
+      ...(editing.tipoNegociacion === 'ESPECIAL' ? [['NRQ espiral', editing.lecturaNrqEspiral === 'CORTE_MES' ? 'Corte de mes' : 'Cada visita']] : []),
       ['Estado', editing.estado],
       ['Ubicación / Zona', editing.zona || '—'],
       ['Base en Dinero ($)', editing.base ? editing.base.toLocaleString('es-CO') : '—'],
@@ -753,29 +779,29 @@ const Maquinas = () => {
 
     // ---- Mapa de la máquina ----
     let tituloMapa = 'MAPA MP (ESPIRALES)'
-    let columnas: string[] = ['Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.', 'Precio cero']
+    let columnas: string[] = ['Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.', '% cliente']
     let filas: any[] = []
 
     if (esCafe) {
       tituloMapa = 'MAPA DE INSUMOS'
-      columnas = ['Espiral', 'Producto Asignado', 'Capacidad Actual', 'Capacidad Máx.', 'Precio cero']
+      columnas = ['Espiral', 'Producto Asignado', 'Capacidad Actual', 'Capacidad Máx.', '% cliente']
       filas = espirales.map((e) => [
         e.espiral,
         e.productoNombre || 'Sin asignar',
         e.cantidad_actual ?? 0,
         e.capacidad_max ?? 0,
-        e.precioCero ? 'Sí' : 'No',
+        `${e.porcentajeCliente ?? 0}%`,
       ])
       if (botones.length > 0) {
         tituloMapa = 'MAPA DE INSUMOS + BOTONES NRQ'
-        columnas = ['Botón/Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.', 'Precio cero']
+        columnas = ['Botón/Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.', '% cliente']
         const filasBotones = botones.map((b) => [
           b.boton,
           b.productoNombre || 'Sin asignar',
           b.precio_venta_cliente ?? '—',
           '—',
           '—',
-          '—',
+          `${b.porcentajeCliente ?? 0}%`,
         ])
         filas = [...filasBotones, ...filas.map(fila => [...fila.slice(0, 2), '—', ...fila.slice(2)])]
       }
@@ -788,8 +814,15 @@ const Maquinas = () => {
           : '—',
         e.cantidad_actual ?? 0,
         e.capacidad_max ?? 0,
-        e.precioCero ? 'Sí' : 'No',
+        `${e.porcentajeCliente ?? 0}%`,
       ])
+    }
+    if (!esCafe && botones.length) {
+      tituloMapa = 'MAPA DE ESPIRALES + BOTONES NRQ'
+      filas.push(...botones.map(b => [
+        b.boton, b.productoNombre || 'Sin asignar', b.precio_venta_cliente ?? '—', '—', '—',
+        `${b.porcentajeCliente ?? 0}%`,
+      ]))
     }
 
     doc.setFontSize(10.5)
@@ -844,6 +877,16 @@ const Maquinas = () => {
             </Form.Item>
           )}
         </div>
+        <Form.Item name="tipoNegociacion" label="Tipo de negociación" initialValue="NORMAL">
+          <Select options={[{ value: 'NORMAL', label: 'Normal' }, { value: 'ESPECIAL', label: 'Especial' }]} />
+        </Form.Item>
+        <Form.Item noStyle shouldUpdate={(a: Partial<Maquina>, b: Partial<Maquina>) => a.tipoNegociacion !== b.tipoNegociacion}>
+          {({ getFieldValue }: { getFieldValue: (field: string) => unknown }) => getFieldValue('tipoNegociacion') === 'ESPECIAL' && (
+            <Form.Item name="lecturaNrqEspiral" label="Lectura NRQ por espiral" initialValue="CORTE_MES">
+              <Select options={[{ value: 'CORTE_MES', label: 'Corte de mes' }, { value: 'CADA_VISITA', label: 'Cada visita' }]} />
+            </Form.Item>
+          )}
+        </Form.Item>
         <Tabs
           items={[
             {
@@ -1023,7 +1066,7 @@ const Maquinas = () => {
                   ),
                 }
               })(),
-              ...(editing?.tipo === 'CAFE'
+              ...((editing?.tipo === 'CAFE' || editing?.tipo === 'COMBINADA')
                 ? [
                     {
                       key: 'NRQ',
@@ -1319,8 +1362,8 @@ const Maquinas = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </div>
-            <Form.Item name="precioCero" valuePropName="checked">
-              <Checkbox>Precio cero en máquina (se cobra al cliente)</Checkbox>
+            <Form.Item name="porcentajeCliente" label="Porcentaje a cargo del cliente">
+              <PorcentajeCliente />
             </Form.Item>
           </Form>
         </Spin>
@@ -1343,6 +1386,9 @@ const Maquinas = () => {
       >
         <Spin spinning={false}>
           <Form form={formBtn} layout="vertical" requiredMark={false} style={{ maxWidth: '100%' }} preserve>
+            <Form.Item name="porcentajeCliente" label="Porcentaje a cargo del cliente">
+              <PorcentajeCliente />
+            </Form.Item>
             <Form.Item label="Lectura inicial NRQ" name="lecturaInicial"
               rules={[{ required: true, type: 'integer', min: 0, max: Number.MAX_SAFE_INTEGER, message: 'Ingresa un entero no negativo' }]}
               extra="Se usa solo mientras este botón no tenga lecturas registradas.">

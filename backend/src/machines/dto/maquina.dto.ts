@@ -5,6 +5,8 @@ export class CreateMaquinaDto {
   @IsOptional() @IsInt() idOperador?: number;
   @IsString() @IsNotEmpty() serial: string;
   @IsOptional() @IsString() marca?: string;
+  @IsOptional() @IsIn(['NORMAL', 'ESPECIAL']) tipoNegociacion?: string;
+  @IsOptional() @IsIn(['CORTE_MES', 'CADA_VISITA']) lecturaNrqEspiral?: string;
   @IsOptional() @IsIn(['SNACKS', 'SNACK', 'COMBINADA', 'REFRIGERADA', 'TIENDA', 'CAFE', 'CAFÉ', 'BEBIDA']) tipo?: string;
   @IsOptional() @IsString() ubicacionEsp?: string;
   @IsOptional() @IsObject() mediosPago?: any;
@@ -19,6 +21,8 @@ export class UpdateMaquinaDto {
   @IsOptional() @IsInt() idOperador?: number;
   @IsOptional() @IsString() serial?: string;
   @IsOptional() @IsString() marca?: string;
+  @IsOptional() @IsIn(['NORMAL', 'ESPECIAL']) tipoNegociacion?: string;
+  @IsOptional() @IsIn(['CORTE_MES', 'CADA_VISITA']) lecturaNrqEspiral?: string;
   @IsOptional() @IsIn(['SNACKS', 'SNACK', 'COMBINADA', 'REFRIGERADA', 'TIENDA', 'CAFE', 'CAFÉ', 'BEBIDA']) tipo?: string;
   @IsOptional() @IsString() ubicacionEsp?: string;
   @IsOptional() @IsObject() mediosPago?: any;
@@ -38,6 +42,7 @@ export class CreateMapaMPDto {
   @IsString() @IsNotEmpty() espiralCodigo: string;
   @IsOptional() @IsInt() capacidadMax?: number;
   @IsOptional() @IsBoolean() precioCero?: boolean;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) porcentajeCliente?: number;
 }
 
 export class UpdateMapaMPDto {
@@ -45,18 +50,21 @@ export class UpdateMapaMPDto {
   @IsOptional() @IsString() espiralCodigo?: string;
   @IsOptional() @IsInt() capacidadMax?: number;
   @IsOptional() @IsBoolean() precioCero?: boolean;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) porcentajeCliente?: number;
 }
 
 export class CreateMapaNRQDto {
   @IsInt() @IsNotEmpty() idProdTerm: number;
   @IsString() @IsNotEmpty() opcionBoton: string;
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) lecturaInicial?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) porcentajeCliente?: number;
 }
 
 export class UpdateMapaNRQDto {
   @IsOptional() @IsInt() idProdTerm?: number;
   @IsOptional() @IsString() opcionBoton?: string;
   @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) lecturaInicial?: number;
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) porcentajeCliente?: number;
 }
 
 export class QueryMaquinaDto {
