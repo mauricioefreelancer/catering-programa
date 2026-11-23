@@ -34,9 +34,11 @@ interface Espiral {
   espiral: string
   capacidad_max: number
   cantidad_actual: number
+  precioCero?: boolean
   productoId?: number
   productoNombre?: string
   precio_venta_cliente?: number
+  lecturaInicial?: number
 }
 interface BotonNRQ {
   id: number
@@ -247,6 +249,7 @@ const Maquinas = () => {
               espiral: e.espiralCodigo ?? '',
               capacidad_max: e.capacidadMax ?? 0,
               cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
+              precioCero: e.precioCero === true,
               productoId: e.idProducto,
               productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
               precio_venta_cliente: e.precioVentaCliente,
@@ -321,6 +324,7 @@ const Maquinas = () => {
           espiral: e.espiralCodigo ?? '',
           capacidad_max: e.capacidadMax ?? 0,
           cantidad_actual: Number(e.capacidadActual ?? e.cantidad_actual ?? 0),
+          precioCero: e.precioCero === true,
           productoId: e.idProducto,
           productoNombre: e.producto?.nombreProducto ?? e.producto?.nombre ?? '',
           precio_venta_cliente: e.precioVentaCliente,
@@ -333,6 +337,7 @@ const Maquinas = () => {
           productoId: b.idProdTerm,
           productoNombre: b.productoTerminado?.nombreProducto ?? b.productoTerminado?.nombre ?? '',
           precio_venta_cliente: b.precioVentaCliente,
+          lecturaInicial: Number(b.lecturaInicial ?? 0),
         })),
       )
       if (m.tipo === 'CAFE') {
@@ -428,6 +433,7 @@ const Maquinas = () => {
       productoId: undefined,
       capacidad_max: 15,
       cantidad_actual: 0,
+      precioCero: false,
     })
     setOpenEspModal(true)
   }
@@ -439,6 +445,7 @@ const Maquinas = () => {
       espiral: esp.espiral,
       productoId: esp.productoId,
       cantidad_actual: esp.cantidad_actual ?? 0,
+      precioCero: esp.precioCero === true,
       capacidad_max: esp.capacidad_max,
     })
     setOpenEspModal(true)
@@ -465,7 +472,7 @@ const Maquinas = () => {
         return String(maxN + 1).padStart(2, '0')
       })()
       const codEspiral = esCafe
-        ? `I${nextInsumo}`
+        ? editEspIdx === null ? `I${nextInsumo}` : espirales[editEspIdx].espiral
         : String(values.espiral).trim().toUpperCase()
 
       let ns: Espiral[]
@@ -476,6 +483,7 @@ const Maquinas = () => {
           espiral: codEspiral,
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
+          precioCero: values.precioCero === true,
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
@@ -490,6 +498,7 @@ const Maquinas = () => {
           espiral: codEspiral,
           capacidad_max: Number(values.capacidad_max),
           cantidad_actual: Number(values.cantidad_actual ?? 0),
+          precioCero: values.precioCero === true,
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: original?.precio_venta_cliente,
@@ -527,6 +536,7 @@ const Maquinas = () => {
     formBtn.setFieldsValue({
       boton: '',
       productoId: undefined,
+      lecturaInicial: 0,
     })
     setOpenBtnModal(true)
   }
@@ -537,6 +547,7 @@ const Maquinas = () => {
     formBtn.setFieldsValue({
       boton: b.boton,
       productoId: b.productoId,
+      lecturaInicial: b.lecturaInicial ?? 0,
     })
     setOpenBtnModal(true)
   }
@@ -561,6 +572,7 @@ const Maquinas = () => {
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: undefined,
+          lecturaInicial: values.lecturaInicial,
         }
         ns = [...botones, nuevo]
         message.success(`Botón ${nuevo.boton} agregado`)
@@ -572,6 +584,7 @@ const Maquinas = () => {
           productoId: values.productoId,
           productoNombre: prodName,
           precio_venta_cliente: ns[editBtnIdx]?.precio_venta_cliente,
+          lecturaInicial: values.lecturaInicial,
         }
         message.success(`Botón ${ns[editBtnIdx].boton} actualizado`)
       }
@@ -740,29 +753,31 @@ const Maquinas = () => {
 
     // ---- Mapa de la máquina ----
     let tituloMapa = 'MAPA MP (ESPIRALES)'
-    let columnas: string[] = ['Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.']
+    let columnas: string[] = ['Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.', 'Precio cero']
     let filas: any[] = []
 
     if (esCafe) {
       tituloMapa = 'MAPA DE INSUMOS'
-      columnas = ['Espiral', 'Producto Asignado', 'Capacidad Actual', 'Capacidad Máx.']
+      columnas = ['Espiral', 'Producto Asignado', 'Capacidad Actual', 'Capacidad Máx.', 'Precio cero']
       filas = espirales.map((e) => [
         e.espiral,
         e.productoNombre || 'Sin asignar',
         e.cantidad_actual ?? 0,
         e.capacidad_max ?? 0,
+        e.precioCero ? 'Sí' : 'No',
       ])
       if (botones.length > 0) {
         tituloMapa = 'MAPA DE INSUMOS + BOTONES NRQ'
-        columnas = ['Botón/Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.']
+        columnas = ['Botón/Espiral', 'Producto Asignado', 'Precio Venta', 'Capacidad Actual', 'Capacidad Máx.', 'Precio cero']
         const filasBotones = botones.map((b) => [
           b.boton,
           b.productoNombre || 'Sin asignar',
           b.precio_venta_cliente ?? '—',
           '—',
           '—',
+          '—',
         ])
-        filas = [...filasBotones, ...filas]
+        filas = [...filasBotones, ...filas.map(fila => [...fila.slice(0, 2), '—', ...fila.slice(2)])]
       }
     } else {
       filas = espirales.map((e) => [
@@ -773,6 +788,7 @@ const Maquinas = () => {
           : '—',
         e.cantidad_actual ?? 0,
         e.capacidad_max ?? 0,
+        e.precioCero ? 'Sí' : 'No',
       ])
     }
 
@@ -1303,6 +1319,9 @@ const Maquinas = () => {
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </div>
+            <Form.Item name="precioCero" valuePropName="checked">
+              <Checkbox>Precio cero en máquina (se cobra al cliente)</Checkbox>
+            </Form.Item>
           </Form>
         </Spin>
       </Drawer>
@@ -1324,6 +1343,11 @@ const Maquinas = () => {
       >
         <Spin spinning={false}>
           <Form form={formBtn} layout="vertical" requiredMark={false} style={{ maxWidth: '100%' }} preserve>
+            <Form.Item label="Lectura inicial NRQ" name="lecturaInicial"
+              rules={[{ required: true, type: 'integer', min: 0, max: Number.MAX_SAFE_INTEGER, message: 'Ingresa un entero no negativo' }]}
+              extra="Se usa solo mientras este botón no tenga lecturas registradas.">
+              <InputNumber min={0} max={Number.MAX_SAFE_INTEGER} precision={0} />
+            </Form.Item>
             <Form.Item
               label="Código Botón"
               name="boton"

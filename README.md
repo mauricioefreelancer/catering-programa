@@ -101,6 +101,7 @@ Módulo operador móvil PWA: `http://localhost:5173/mobile`
 - **Pre-Deploy Command**: `npx prisma migrate deploy`
 - **Start Command**: `npm run start:prod`
 - **Variables**: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `TARIFA_PROMEDIO_DEFAULT`, `UMBRAL_MARGEN`
+- **Alerta de venta**: `UMBRAL_DIFERENCIA_VENTA_COP` es opcional y vale `10000` por defecto. Para cambiarlo, configura en Render el monto en pesos, sin separadores, y reinicia el servicio. Inventario y Vendido por visita usan el mismo valor: alertan cuando la diferencia absoluta entre NR efectivo y venta estimada por espiral alcanza el umbral.
 - **Base ya existente**: antes de activar este despliegue, seguir la [guía de adopción del baseline](backend/prisma/BASELINE.md). No aplicar `0_baseline` sobre una base con tablas existentes.
 
 ### Frontend → Netlify
@@ -117,7 +118,7 @@ En una base de desarrollo, ejecutar `npx prisma migrate dev --create-only --name
 
 1. **Catálogos**: Clientes / Proveedores / Productos (Estándar, Materia Prima, Dosificado / Operadores / Máquinas / Precios x Cliente Matriz IPC)
 2. **Inventarios Bodega Principal Ingresos/Compras Despachos por Bodega)
-3. **Operador Móvil PWA Offline)
+3. **Operador móvil**: registro en línea desde Inventario, con físico, lecturas y confirmación antes de enviar.
 4. **Tesorería: Cuadres Efectivo (NR/NRQ), Saldos Digitales, Facturación Café)
 5. **Admin**: Maestro Roles Dinámicos, Dashboards Analíticos Auditoría)
 
