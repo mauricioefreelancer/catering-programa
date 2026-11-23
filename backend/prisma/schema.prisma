@@ -41,6 +41,7 @@ model UsuariosSistema {
   saldosDigitales SaldosDigitales[]
   auditoriaLog   AuditoriaLog[]
   historialMediosPago HistorialMediosPago[]
+  visitasRegistradas Visitas[]
 
   @@map("USUARIOS_SISTEMA")
 }
@@ -62,6 +63,7 @@ model Clientes {
   maquinasYTiendas  MaquinasYTiendas[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
   ventasPorVisita VentasPorVisita[]
+  visitas Visitas[]
 
   @@map("CLIENTES")
 }
@@ -107,6 +109,7 @@ model Operadores {
   pedidosOperador  PedidosOperador[]
   ventasPorVisita  VentasPorVisita[]
   tesoreriaEfectivoNr TesoreriaEfectivoNr[]
+  visitas Visitas[]
 
   @@map("OPERADORES")
 }
@@ -141,6 +144,7 @@ model Productos {
   pedidosOperador PedidosOperador[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
   stockProveedor StockProveedor[]
+  lecturasNrq LecturasNrq[]
 
   @@map("PRODUCTOS")
 }
@@ -191,6 +195,7 @@ model MaquinasYTiendas {
   tarifaPromedioOverride Decimal?                @map("Tarifa_Promedio_Override") @db.Decimal(18, 2)
   base                  Decimal                   @default(0) @map("Base") @db.Decimal(18, 2)
   ultimoContadorNR      BigInt?                   @map("Ultimo_Contador_NR")
+  ultimoContadorNRProducto BigInt?                @map("Ultimo_Contador_NR_Producto")
   fechaUltimaVisita     DateTime?                 @map("Fecha_Ultima_Visita")
   fechaInstalacion      DateTime?                 @map("Fecha_Instalacion") @db.Date
   estado                Boolean                   @default(true) @map("Estado")
@@ -206,6 +211,7 @@ model MaquinasYTiendas {
   saldosDigitales SaldosDigitales[]
   historialMediosPago HistorialMediosPago[]
   ventasPorVisita VentasPorVisita[]
+  visitas Visitas[]
 
   @@map("MAQUINAS_Y_TIENDAS")
 }
@@ -218,6 +224,7 @@ model MapaMateriaPrima {
   espiralCodigo   String                    @map("Espiral_Codigo") @db.VarChar(20)
   capacidadMax    Int                       @default(0) @map("Capacidad_Max")
   capacidadActual Int                       @default(0) @map("Capacidad_Actual")
+  precioCero      Boolean                   @default(false) @map("Precio_Cero")
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
@@ -236,11 +243,13 @@ model MapaCafeNrq {
   idProdTerm     Int                       @map("ID_Prod_Term")
   idProveedor    Int?                      @map("ID_Proveedor")
   opcionBoton    String                    @map("Opcion_Boton") @db.VarChar(50)
+  lecturaInicial BigInt                    @default(0) @map("Lectura_Inicial")
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
 
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Cascade, onUpdate: Cascade)
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
   proveedor Proveedores?  @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
+  lecturas  LecturasNrq[]
 
   @@unique([idMaquina, opcionBoton], map: "uq_nrq_boton_maquina")
   @@map("MAPA_CAFE_NRQ")
@@ -275,6 +284,58 @@ model DetalleIngresos {
   @@map("DETALLE_INGRESOS")
 }
 
+model Visitas {
+  idVisita          Int      @id @default(autoincrement()) @map("ID_Visita")
+  idMaquina         Int      @map("ID_Maquina")
+  idOperador        Int      @map("ID_Operador")
+  idCliente         Int?     @map("ID_Cliente")
+  fechaVisita       DateTime @map("Fecha_Visita")
+  estado            String   @default("REGISTRADA") @map("Estado") @db.VarChar(20)
+  nrEfectivoAnterior BigInt? @map("NR_Efectivo_Anterior")
+  nrEfectivoActual  BigInt?  @map("NR_Efectivo_Actual")
+  nrProductoAnterior BigInt? @map("NR_Producto_Anterior")
+  nrProductoActual   BigInt? @map("NR_Producto_Actual")
+  reinicioContador   Boolean @default(false) @map("Reinicio_Contador")
+  ventaNr            BigInt? @map("Venta_NR")
+  idOffline         String?  @unique @map("Id_Offline") @db.VarChar(64)
+  observaciones     String?  @map("Observaciones") @db.Text
+  fechaCreacion     DateTime @default(now()) @map("Fecha_Creacion")
+  idUsuarioRegistro Int?     @map("ID_Usuario_Registro")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict)
+  operador Operadores      @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict)
+  cliente  Clientes?       @relation(fields: [idCliente], references: [idCliente], onDelete: SetNull)
+  usuario  UsuariosSistema? @relation(fields: [idUsuarioRegistro], references: [idUsuario], onDelete: SetNull)
+  pedidos  PedidosOperador[]
+  ventas   VentasPorVisita?
+  recaudo  TesoreriaEfectivoNr?
+  lecturasNrq LecturasNrq[]
+  saldosDigitales SaldosDigitales[]
+
+  @@index([idMaquina, fechaVisita])
+  @@map("VISITAS")
+}
+
+model LecturasNrq {
+  idLectura       Int      @id @default(autoincrement()) @map("ID_Lectura")
+  idVisita        Int      @map("ID_Visita")
+  idMapaNrq       Int?     @map("ID_Mapa_NRQ")
+  idProdTerm      Int      @map("ID_Prod_Term")
+  opcionBoton     String   @map("Opcion_Boton") @db.VarChar(50)
+  lecturaAnterior BigInt   @map("Lectura_Anterior")
+  lecturaActual   BigInt   @map("Lectura_Actual")
+  unidades        BigInt   @map("Unidades")
+  precioUnitario  Decimal? @map("Precio_Unitario") @db.Decimal(18, 2)
+  subtotal        Decimal? @map("Subtotal") @db.Decimal(18, 2)
+  visita   Visitas     @relation(fields: [idVisita], references: [idVisita], onDelete: Restrict)
+  mapa     MapaCafeNrq? @relation(fields: [idMapaNrq], references: [idMapaNrq], onDelete: SetNull)
+  producto Productos  @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict)
+
+  @@unique([idVisita, idMapaNrq])
+  @@index([idMapaNrq])
+  @@map("LECTURAS_NRQ")
+}
+
 model PedidosOperador {
   idPedido          Int                       @id @default(autoincrement()) @map("ID_Pedido")
   idGrupo           Int?                      @map("ID_Grupo")
@@ -289,7 +350,13 @@ model PedidosOperador {
   nrActualMedido BigInt?                   @map("NR_Actual_Medido")
   nrqActualLectura BigInt?                 @map("NRQ_Actual_Lectura")
   estado            String                    @default("PENDIENTE") @map("Estado") @db.VarChar(20)
+  idPedidoReemplazado Int?                  @map("ID_Pedido_Reemplazado")
+  fechaFaltanteOriginal DateTime?           @map("Fecha_Faltante_Original")
+  pendienteCongelado Int?                  @map("Pendiente_Congelado")
 
+  visita       Visitas? @relation(fields: [idGrupo], references: [idVisita], onDelete: Restrict)
+  reemplaza    PedidosOperador? @relation("HistorialReposicion", fields: [idPedidoReemplazado], references: [idPedido], onDelete: Restrict)
+  reemplazos   PedidosOperador[] @relation("HistorialReposicion")
   maquina      MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   operador     Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
   producto     Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
@@ -297,6 +364,8 @@ model PedidosOperador {
   mapaMp       MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull, onUpdate: Cascade)
   despachosBodega DespachosBodega[]
 
+  @@index([idGrupo])
+  @@index([idMaquina, idMapaMp, estado])
   @@map("PEDIDOS_OPERADOR")
 }
 
@@ -333,12 +402,18 @@ model VentasPorVisita {
   totalVendido    Decimal                   @default(0) @map("Total_Vendido") @db.Decimal(18, 2)
   totalDespachado Decimal                   @default(0) @map("Total_Despachado") @db.Decimal(18, 2)
   totalVendidoProductos Decimal            @default(0) @map("Total_Vendido_Productos") @db.Decimal(18, 2)
+  unidadesNrProducto BigInt? @map("Unidades_NR_Producto")
+  ventaTeoricaProductos Decimal? @map("Venta_Teorica_Productos") @db.Decimal(18, 2)
+  diferenciaVenta Decimal? @map("Diferencia_Venta") @db.Decimal(18, 2)
+  diferenciaUnidades BigInt? @map("Diferencia_Unidades")
+  valorFacturarCliente Decimal? @map("Valor_Facturar_Cliente") @db.Decimal(18, 2)
   unidadesSugeridas Int                    @default(0) @map("Unidades_Sugeridas")
   detalle         Json?                     @map("Detalle")
   firmaFecha      DateTime                  @default(now()) @map("Firma_Fecha")
   firmaUsuario    Int?                      @map("Firma_Usuario")
   firmaOrigen     String                    @default("REGISTRO") @map("Firma_Origen") @db.VarChar(20)
 
+  visita    Visitas? @relation(fields: [idGrupo], references: [idVisita], onDelete: Restrict)
   maquina   MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   cliente   Clientes?        @relation(fields: [idCliente], references: [idCliente], onDelete: SetNull, onUpdate: Cascade)
   operador  Operadores       @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
@@ -350,7 +425,7 @@ model VentasPorVisita {
 
 model TesoreriaEfectivoNr {
   idRecaudo       Int                       @id @default(autoincrement()) @map("ID_Recaudo")
-  idGrupo         Int?                      @map("ID_Grupo")
+  idGrupo         Int?                      @unique @map("ID_Grupo")
   idMaquina      Int                       @map("ID_Maquina")
   idOperador     Int                       @map("ID_Operador")
   idUsuario      Int                       @map("ID_Usuario")
@@ -366,12 +441,14 @@ model TesoreriaEfectivoNr {
   diferenciaRec Decimal                   @default(0) @map("Diferencia_Rec") @db.Decimal(18, 2)
   veosRecog     Decimal                   @default(0) @map("Veos_Recog") @db.Decimal(18, 2)
   datafonoRecog Decimal                   @default(0) @map("Datafono_Recog") @db.Decimal(18, 2)
+  nequiRecog    Decimal                   @default(0) @map("Nequi_Recog") @db.Decimal(18, 2)
   cuposRecog    Decimal                   @default(0) @map("Cupos_Recog") @db.Decimal(18, 2)
   mediosNoEfectivo Decimal               @default(0) @map("Medios_No_Efectivo") @db.Decimal(18, 2)
   efectivoEsperado Decimal               @default(0) @map("Efectivo_Esperado") @db.Decimal(18, 2)
   totalVendido  Decimal                   @default(0) @map("Total_Vendido") @db.Decimal(18, 2)
   estado         String                    @default("CERRADO") @map("Estado") @db.VarChar(20)
 
+  visita   Visitas? @relation(fields: [idGrupo], references: [idVisita], onDelete: Restrict)
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   operador Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
@@ -400,6 +477,7 @@ model TesoreriaFacturacionNrq {
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
 
+  @@unique([idMaquina, idProdTerm, fechaInicio, fechaFin], map: "uq_facturacion_nrq_periodo")
   @@map("TESORERIA_FACTURACION_NRQ")
 }
 
@@ -411,10 +489,13 @@ model SaldosDigitales {
   fechaTransaccion DateTime                  @default(now()) @map("Fecha_Transaccion")
   referencia       String?                   @map("Referencia") @db.VarChar(200)
   idUsuario         Int                       @map("ID_Usuario")
+  idVisita          Int?                      @map("ID_Visita")
 
+  visita   Visitas? @relation(fields: [idVisita], references: [idVisita], onDelete: SetNull)
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)
 
+  @@index([idVisita])
   @@map("SALDOS_DIGITALES")
 }
 

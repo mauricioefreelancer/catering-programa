@@ -14,7 +14,9 @@ import {
   Spin,
   Drawer,
   Descriptions,
+  DatePicker,
 } from 'antd'
+import type { Dayjs } from 'dayjs'
 import { WalletOutlined, CheckCircleOutlined, ReloadOutlined, EyeOutlined, WarningOutlined, SaveOutlined } from '@ant-design/icons'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { useAuth } from '../../../hooks/useAuth'
@@ -23,11 +25,12 @@ import { apiService } from '../../../api/services/api'
 const { Title } = Typography
 
 // Medios de pago que maneja una máquina (Efectivo siempre está presente).
-const MEDIOS_DIGITALES = ['veos', 'datafono', 'cupos'] as const
+const MEDIOS_DIGITALES = ['veos', 'datafono', 'nequi', 'cupos'] as const
 type MedioDigital = typeof MEDIOS_DIGITALES[number]
 const MEDIO_LABEL: Record<string, string> = {
   veos: 'Veos',
   datafono: 'Datafono',
+  nequi: 'Nequi',
   cupos: 'Cupos',
 }
 
@@ -35,6 +38,7 @@ interface MediosPago {
   efectivo?: boolean
   veos?: boolean
   datafono?: boolean
+  nequi?: boolean
   cupos?: boolean
 }
 
@@ -47,6 +51,7 @@ interface RecaudoGuardado {
   efectivoMonedas: number
   veosRecog: number
   datafonoRecog: number
+  nequiRecog: number
   cuposRecog: number
 }
 
@@ -70,7 +75,7 @@ interface VisitaRecaudo {
 // Devuelve qué medios digitales acepta la máquina (leyendo el JSON mediosPago).
 const mediosActivos = (m: VisitaRecaudo['maquina']): MedioDigital[] => {
   const mp = m?.mediosPago ?? {}
-  return MEDIOS_DIGITALES.filter((k) => !!mp[k])
+  return MEDIOS_DIGITALES.filter((k) => k === 'nequi' || !!mp[k])
 }
 
 const fmt = (n: number | null | undefined) => (n == null ? '—' : `$ ${Number(n).toLocaleString('es-CO')}`)
@@ -80,44 +85,48 @@ const Efectivo = () => {
   const [loading, setLoading] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [soloPendientes, setSoloPendientes] = useState(true)
+  const [pagina, setPagina] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [rango, setRango] = useState<[Dayjs | null, Dayjs | null] | null>(null)
   const perm = usePermissions('tesoreria')
   const { usuario } = useAuth()
 
   // Drawer / cierre de recaudo
   const [selected, setSelected] = useState<VisitaRecaudo | null>(null)
-  const [nrActual, setNrActual] = useState<number | null>(null)
   const [digitales, setDigitales] = useState<Record<string, number | null>>({})
   const [efectivoBilletes, setEfectivoBilletes] = useState<number | null>(null)
   const [efectivoMonedas, setEfectivoMonedas] = useState<number | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [guardandoParcial, setGuardandoParcial] = useState(false)
 
-  const loadData = useCallback(async (soloPend?: boolean) => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
       const res: any = await apiService.get<any>('/tesoreria/efectivo-nr/visitas', {
-        soloPendientes: soloPend !== undefined ? soloPend : soloPendientes,
-      }).catch(() => null)
+        soloPendientes, pagina, limite: 20,
+        fechaInicio: rango?.[0]?.format('YYYY-MM-DD'),
+        fechaFin: rango?.[1]?.format('YYYY-MM-DD'),
+      })
       const lista: VisitaRecaudo[] =
         Array.isArray(res?.visitas) ? res.visitas : Array.isArray(res) ? res : []
       setVisitas(lista)
+      setTotal(Number(res?.total ?? lista.length))
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al cargar visitas para recaudo')
       setVisitas([])
+      setTotal(0)
     } finally {
       setLoading(false)
       setInitialLoading(false)
     }
-  }, [soloPendientes])
+  }, [soloPendientes, pagina, rango])
 
   useEffect(() => {
     loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [loadData])
 
   const abrirVisita = (v: VisitaRecaudo) => {
     setSelected(v)
-    setNrActual(v.nrActual)
     const activos = mediosActivos(v.maquina)
     const precarga: Record<string, number | null> = {}
     for (const k of MEDIOS_DIGITALES) {
@@ -145,9 +154,7 @@ const Efectivo = () => {
       idGrupo: selected?.idGrupo,
       idMaquina: selected?.idMaquina,
       idOperador: selected?.idOperador,
-      idUsuario: usuario?.idUsuario,
-      nrAnterior: selected?.nrAnterior,
-      nrActual: nrActual ?? selected?.nrActual,
+      idUsuario: usuario?.idUsuario ?? usuario?.id,
     }
     for (const k of MEDIOS_DIGITALES) {
       if (medios.includes(k)) body[`${k}Recog`] = digitales[k] ?? 0
@@ -165,16 +172,12 @@ const Efectivo = () => {
   // Guardado parcial: se digita lo no-efectivo y queda PENDIENTE (falta el efectivo).
   const guardarParcial = async () => {
     if (!selected) return
-    if (nrActual === null || nrActual < selected.nrAnterior) {
-      message.error(`NR debe ser >= NR Anterior (${selected.nrAnterior})`)
-      return
-    }
     setGuardandoParcial(true)
     try {
       await apiService.post('/tesoreria/efectivo-nr', buildBody(null))
       message.success(`✅ Medios digitales guardados para la visita ${selected.idGrupo}. Recaudo PENDIENTE hasta digitar el efectivo.`)
       setSelected(null)
-      loadData(true)
+      void loadData()
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al guardar los medios de pago')
     } finally {
@@ -184,10 +187,6 @@ const Efectivo = () => {
 
   const cerrarRecaudo = async () => {
     if (!selected) return
-    if (nrActual === null || nrActual < selected.nrAnterior) {
-      message.error(`NR debe ser >= NR Anterior (${selected.nrAnterior})`)
-      return
-    }
     const billetes = Number(efectivoBilletes ?? 0)
     const monedas = Number(efectivoMonedas ?? 0)
     const efectivoTotal = billetes + monedas
@@ -215,7 +214,8 @@ const Efectivo = () => {
       const idRecaudo = res?.id ?? res?.idRecaudo ?? res?.data?.idRecaudo ?? Math.floor(Math.random() * 10000)
       message.success(`✅ Recaudo #${idRecaudo} ${accion} para la visita ${selected.idGrupo}`)
       setSelected(null)
-      loadData(true)
+      if (pagina === 1) void loadData()
+      else setPagina(1)
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al cerrar recaudo')
     } finally {
@@ -225,7 +225,7 @@ const Efectivo = () => {
 
   const diffColor = (v: number) => (v > 0 ? '#52c41a' : v < 0 ? '#ff4d4f' : '#666')
   // El NR es un contador acumulativo de valor en $: la diferencia ya es la venta en dinero del periodo.
-  const diferenciaActual = selected && nrActual !== null ? nrActual - (selected.nrAnterior || 0) : 0
+  const diferenciaActual = selected?.diferenciaNR ?? 0
   const totalVendidoActual = Math.max(0, diferenciaActual)
   const mediosActivosSel = selected ? mediosActivos(selected.maquina) : []
   const sumaDigitales = mediosActivosSel.reduce((acc, k) => acc + (digitales[k] ?? 0), 0)
@@ -245,7 +245,7 @@ const Efectivo = () => {
       title: 'Fecha',
       dataIndex: 'fechaVisita',
       width: 180,
-      render: (v: string) => new Date(v).toLocaleString('es-CO'),
+      render: (v: string) => new Date(v).toLocaleString('es-CO', { timeZone: 'America/Bogota' }),
       sorter: (a: any, b: any) => new Date(a.fechaVisita).getTime() - new Date(b.fechaVisita).getTime(),
       defaultSortOrder: 'descend' as const,
     },
@@ -356,11 +356,12 @@ const Efectivo = () => {
           onClick={() => {
             const nuevo = !soloPendientes
             setSoloPendientes(nuevo)
-            loadData(!soloPendientes)
+            setPagina(1)
           }}
         >
           {soloPendientes ? 'Mostrando solo pendientes' : 'Mostrando todas las visitas'}
         </Button>
+        <DatePicker.RangePicker onChange={(valores) => { setRango(valores); setPagina(1) }} format="DD/MM/YYYY" />
         <Button icon={<ReloadOutlined />} onClick={() => loadData()} loading={loading}>
           Recargar
         </Button>
@@ -376,7 +377,7 @@ const Efectivo = () => {
             columns={columns as any}
             dataSource={visitas}
             size="middle"
-            pagination={{ pageSize: 20, showTotal: (t) => `${t} visita(s)` }}
+            pagination={{ current: pagina, total, pageSize: 20, showSizeChanger: false, onChange: setPagina, showTotal: (t) => `${t} visita(s)` }}
             scroll={{ x: 1500 }}
             locale={{ emptyText: 'No hay visitas con lectura NR registrada' }}
           />
@@ -391,7 +392,7 @@ const Efectivo = () => {
               <span style={{ color: '#888', fontSize: 12 }}>
                 {selected.maquina?.serial ?? `Máq #${selected.idMaquina}`} ·{' '}
                 {selected.operador?.nombreCompleto ?? `Op #${selected.idOperador}`} ·{' '}
-                {new Date(selected.fechaVisita).toLocaleString('es-CO')}
+                {new Date(selected.fechaVisita).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}
               </span>
             </Space>
           ) : (
@@ -428,8 +429,8 @@ const Efectivo = () => {
               size="large"
               style={{ width: '100%' }}
               min={0}
-              value={nrActual}
-              onChange={(v: any) => setNrActual(Number(v))}
+              value={selected?.nrActual}
+              readOnly
               placeholder={`Valor digitado: ${selected?.nrActual ?? 0}`}
             />
           </div>
@@ -520,7 +521,7 @@ const Efectivo = () => {
             {(selected?.nrAnterior ?? 0).toLocaleString('es-CO')}
           </Descriptions.Item>
           <Descriptions.Item label="NR Actual (a cerrar)">
-            {nrActual?.toLocaleString('es-CO') ?? '—'}
+            {selected?.nrActual.toLocaleString('es-CO') ?? '—'}
           </Descriptions.Item>
           <Descriptions.Item label="Diferencia NR — Total Vendido ($)">
             {fmt(totalVendidoActual)}

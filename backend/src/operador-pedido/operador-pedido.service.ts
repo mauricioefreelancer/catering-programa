@@ -1,10 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePedidoOperadorDto } from './dto/operador-pedido.dto';
+import { EstadoPedido, PEDIDOS_ABIERTOS, pendientePedido, sugeridoPorEspiral } from '../common/reposicion';
+import { diferenciaContador, sugeridoMateriaPrima, vendidasPorEspiral } from '../common/contadores';
+import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
 
 @Injectable()
 export class OperadorPedidoService {
+  private readonly logger = new Logger(OperadorPedidoService.name);
   constructor(private prisma: PrismaService) {}
 
   async findAll(params?: { idOperador?: number; idMaquina?: number; estado?: string }) {
@@ -27,7 +31,21 @@ export class OperadorPedidoService {
   }
 
   async create(dto: CreatePedidoOperadorDto, userId?: number | null) {
-    const maquina = await this.prisma.maquinasYTiendas.findUnique({
+    return this.prisma.$transaction(
+      async (tx) => {
+    await tx.$queryRaw`SELECT "ID_Maquina" FROM "MAQUINAS_Y_TIENDAS" WHERE "ID_Maquina" = ${dto.idMaquina} FOR UPDATE`;
+    if (dto.idOffline) {
+      const anterior = await tx.visitas.findUnique({
+        where: { idOffline: dto.idOffline }, include: { pedidos: true },
+      });
+      if (anterior) {
+        if (anterior.idMaquina !== dto.idMaquina || anterior.idOperador !== dto.idOperador) {
+          throw new ConflictException('El identificador offline pertenece a otra visita');
+        }
+        return { idGrupo: anterior.idVisita, visita: anterior, totalCreados: anterior.pedidos.length, pedidos: anterior.pedidos };
+      }
+    }
+    const maquina = await tx.maquinasYTiendas.findUnique({
       where: { idMaquina: dto.idMaquina },
       include: {
         mapaMateriaPrima: { include: { producto: true } },
@@ -35,182 +53,219 @@ export class OperadorPedidoService {
       },
     });
     if (!maquina) throw new NotFoundException('Máquina no encontrada');
-    const operador = await this.prisma.operadores.findUnique({ where: { idOperador: dto.idOperador } });
+    const operador = await tx.operadores.findUnique({ where: { idOperador: dto.idOperador } });
     if (!operador) throw new NotFoundException('Operador no encontrado');
-
-    // Se ejecuta toda la creación en una transacción para que, ante cualquier error,
-    // no queden pedidos parciales de la misma visita (integridad del grupo).
-    // Además se serializa la asignación del idGrupo con un bloqueo de asesoría a nivel
-    // de transacción, evitando que dos operadores concurrentes obtengan el mismo grupo.
-    return this.prisma.$transaction(
-      async (tx) => {
-        // Bloqueo de asesoría a nivel de transacción. La clave es un entero fijo que
-        // representa la "secuencia global de grupos"; todos los creates pasan por aquí.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(446001230)`;
 
         // Contexto de auditoría dentro de la MISMA transacción (triggers PEDIDOS/MAQUINAS).
         const auditUid = userId ? String(userId) : '';
-        await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', '${auditUid}', TRUE)`);
+        await tx.$queryRaw`SELECT set_config('app.current_user_id', ${auditUid}, TRUE)`;
 
         // Marcar la máquina: última fecha de visita y guardar el nuevo contador NR (lectura acumulada)
-        const updateMaquina: any = { fechaUltimaVisita: new Date() };
-        if (dto.nrActual != null) {
-          updateMaquina.ultimoContadorNR = BigInt(Math.round(dto.nrActual));
+        const lecturas = await ultimasLecturas(tx, dto.idMaquina);
+        if (dto.ultimaVisitaId != null && dto.ultimaVisitaId !== (lecturas.visita?.idVisita ?? 0)) {
+          throw new ConflictException('Ya hay otra visita registrada. Recarga las lecturas antes de confirmar.');
         }
+        const fechaVisita = new Date(Math.max(Date.now(), (lecturas.visita?.fechaVisita.getTime() ?? 0) + 1));
+        const efectivo = dto.nrEfectivoActual ?? dto.nrActual;
+        if (efectivo == null) throw new BadRequestException('La lectura NR efectivo es obligatoria');
+        if (dto.nrEfectivoActual != null && dto.nrProductoActual == null) {
+          throw new BadRequestException('La lectura NR producto es obligatoria');
+        }
+        if (dto.nrEfectivoActual == null || dto.nrqItems?.length) this.logger.warn('Registro con contadores del formato móvil anterior');
+        const calcular = (nombre: string, anterior: bigint, actual: bigint) => {
+          try {
+            return diferenciaContador(anterior, actual, dto.reinicioContador === true);
+          } catch (error) {
+            if (error instanceof RangeError) throw new BadRequestException(`${nombre}: ${error.message}`);
+            throw error;
+          }
+        };
+        const nrActual = BigInt(efectivo);
+        const nrProductoActual = dto.nrProductoActual == null ? null : BigInt(dto.nrProductoActual);
+        const ventaNr = calcular('NR efectivo', lecturas.nrEfectivo, nrActual);
+        const unidadesNrProducto = nrProductoActual == null ? null : calcular('NR producto', lecturas.nrProducto, nrProductoActual);
+        const visita = await tx.visitas.create({
+          data: {
+            idMaquina: dto.idMaquina, idOperador: dto.idOperador, idCliente: maquina.idCliente,
+            fechaVisita, idOffline: dto.idOffline, idUsuarioRegistro: userId ?? null,
+            nrEfectivoAnterior: lecturas.nrEfectivo, nrEfectivoActual: nrActual,
+            nrProductoAnterior: nrProductoActual == null ? null : lecturas.nrProducto,
+            nrProductoActual, ventaNr, reinicioContador: dto.reinicioContador ?? false,
+          },
+        });
+        const idGrupo = visita.idVisita;
         await tx.maquinasYTiendas.update({
           where: { idMaquina: dto.idMaquina },
-          data: updateMaquina,
+          data: { fechaUltimaVisita: fechaVisita, ultimoContadorNR: nrActual,
+            ultimoContadorNRProducto: nrProductoActual ?? undefined },
         });
 
         const mapaMpById = new Map(maquina.mapaMateriaPrima.map((m) => [m.idMapaMp, m]));
         const mapaNrqById = new Map(maquina.mapaCafeNrq.map((m) => [m.idMapaNrq, m]));
-        const pedidosCreados: any[] = [];
-
-        // id de grupo (cabecera del pedido): secuencial INDEPENDIENTE de pedidos.
-        // Se calcula con el máximo idGrupo existente (+1), no con max(idPedido),
-        // para que la numeración de pedidos no colisione con los ids de las filas internas.
-        const maxGrupo = await tx.pedidosOperador.aggregate({ _max: { idGrupo: true } });
-        const idGrupo = (maxGrupo._max.idGrupo ?? 0) + 1;
-
-        // Faltante pendiente de reposición por producto (mismo máquina): suma de lo que ya se
-        // solicitó (pedidos PENDIENTE/PARCIAL) menos lo que bodega efectivamente despachó.
-        // Sirve para NO volver a pedir en esta visita lo que sigue pendiente de despacho,
-        // evitando el "falso faltante" cuando un pedido previo no se pudo reponer (stock 0 o
-        // parcial) y el espiral sigue vacío sin que realmente se haya vendido.
-        const pendientesPrevios = await tx.pedidosOperador.findMany({
-          where: { idMaquina: dto.idMaquina, estado: { in: ['PENDIENTE', 'PARCIAL'] } },
-          select: {
-            idProducto: true,
-            cantSugerida: true,
-            despachosBodega: { select: { cantDespachada: true } },
-          },
+        const pedidosCreados: Awaited<ReturnType<typeof tx.pedidosOperador.create>>[] = [];
+        const espiralesRegistrados = new Set<number>();
+        // Orden comun con bodega, incluso si la visita procesa los espirales en otro orden.
+        await tx.$queryRaw`
+          SELECT "ID_Pedido" FROM "PEDIDOS_OPERADOR" WHERE "ID_Maquina" = ${dto.idMaquina}
+            AND "Estado" IN ('PENDIENTE', 'PARCIAL') ORDER BY "ID_Pedido" FOR UPDATE
+        `;
+        const precios = await tx.preciosCliente.findMany({
+          where: { idCliente: maquina.idCliente ?? 0, idProducto: { in: [
+            ...maquina.mapaMateriaPrima.map(m => m.idProducto), ...maquina.mapaCafeNrq.map(b => b.idProdTerm),
+          ] } },
+          select: { idProducto: true, precioVenta: true },
         });
-        const pendienteSinDespacharById = new Map<number, number>();
-        for (const prev of pendientesPrevios) {
-          const despachado = prev.despachosBodega.reduce((acc: number, d) => acc + d.cantDespachada, 0);
-          const falta = Math.max(0, prev.cantSugerida - despachado);
-          if (falta > 0) {
-            pendienteSinDespacharById.set(
-              prev.idProducto,
-              (pendienteSinDespacharById.get(prev.idProducto) ?? 0) + falta,
-            );
-          }
-        }
-        // Ajusta la cantidad sugerida descontando lo que ya está pedido sin despachar,
-        // con piso en 0 para no generar sugerencias negativas.
-        const ajustarSugerida = (idProducto: number, cantCalculada: number) =>
-          Math.max(0, cantCalculada - (pendienteSinDespacharById.get(idProducto) ?? 0));
-
-        for (const item of dto.items) {
-          let capacidad = 0;
-          let idMapaMpFinal: number | null = item.idMapaMP ?? null;
-          let mpMatch: any = null;
-          if (item.idMapaMP) {
-            mpMatch = mapaMpById.get(item.idMapaMP);
-            if (!mpMatch || mpMatch.idMaquina !== dto.idMaquina) {
-              throw new BadRequestException(`Mapa MP ${item.idMapaMP} no pertenece a la máquina`);
+        const precioPorProducto = new Map(precios.map(p => [p.idProducto, p.precioVenta]));
+        const pedidosAnteriores = await baseEspirales(tx, lecturas.visita?.idVisita, fechaVisita);
+        const anteriorPorEspiral = new Map(pedidosAnteriores.map(p => [p.idMapaMp, p]));
+        const detalleControles: Prisma.InputJsonObject[] = [];
+        let ventaTeorica = new Prisma.Decimal(0);
+        let valorFacturar = new Prisma.Decimal(0);
+        let vendidasEspirales = 0;
+        let faltanDatos = false;
+        let faltanUnidades = false;
+        const crearPedido = async (data: Pick<Prisma.PedidosOperadorUncheckedCreateInput,
+          'idProducto' | 'fisicoDigitado' | 'cantSugerida' | 'nrActualMedido' | 'nrqActualLectura'> & { idMapaMp: number }) => {
+          if (espiralesRegistrados.has(data.idMapaMp)) throw new BadRequestException(`Espiral repetido: ${data.idMapaMp}`);
+          espiralesRegistrados.add(data.idMapaMp);
+          const anteriores = await tx.pedidosOperador.findMany({
+            where: { idMaquina: dto.idMaquina, idMapaMp: data.idMapaMp, estado: { in: PEDIDOS_ABIERTOS } },
+            include: { despachosBodega: { select: { cantDespachada: true } } },
+            orderBy: [{ fechaHora: 'desc' }, { idPedido: 'desc' }],
+          });
+          let fechaFaltante: Date | null = null;
+          let idPedidoReemplazado: number | null = null;
+          for (const anterior of anteriores) {
+            const despachado = anterior.despachosBodega.reduce((total, d) => total + d.cantDespachada, 0);
+            const pendiente = pendientePedido(anterior.cantSugerida, despachado);
+            if (anterior.idProducto === data.idProducto && pendiente > 0) {
+              const origen = anterior.fechaFaltanteOriginal ?? anterior.fechaHora;
+              if (!fechaFaltante || origen < fechaFaltante) fechaFaltante = origen;
             }
-            if (mpMatch.idProducto !== item.idProducto) {
-              throw new BadRequestException(`Mapa MP ${item.idMapaMP} no corresponde al producto ${item.idProducto}`);
-            }
-            capacidad = mpMatch.capacidadMax;
-          } else {
-            mpMatch = maquina.mapaMateriaPrima.find((m) => m.idProducto === item.idProducto);
-            if (mpMatch) {
-              capacidad = mpMatch.capacidadMax;
-              idMapaMpFinal = mpMatch.idMapaMp;
-            } else {
-              capacidad = 500;
-            }
+            idPedidoReemplazado ??= anterior.idPedido;
+            await tx.pedidosOperador.update({
+              where: { idPedido: anterior.idPedido },
+              data: { estado: EstadoPedido.REEMPLAZADO, pendienteCongelado: pendiente },
+            });
           }
-          if (capacidad < item.fisicoDigitado) {
-            throw new BadRequestException(`Físico digitado ${item.fisicoDigitado} excede capacidad ${capacidad}`);
-          }
-          const cantSugerida = ajustarSugerida(item.idProducto, Math.max(0, capacidad - item.fisicoDigitado));
           const pedido = await tx.pedidosOperador.create({
             data: {
-              idGrupo,
-              idMaquina: dto.idMaquina,
-              idOperador: dto.idOperador,
-              idProducto: item.idProducto,
-              idMapaMp: idMapaMpFinal,
-              fisicoDigitado: item.fisicoDigitado,
-              cantSugerida,
-              nrActualMedido: dto.nrActual ? BigInt(dto.nrActual) : null,
-              estado: 'PENDIENTE',
+              ...data, idGrupo, idMaquina: dto.idMaquina, idOperador: dto.idOperador, fechaHora: fechaVisita,
+              estado: data.cantSugerida ? EstadoPedido.PENDIENTE : EstadoPedido.APROBADO,
+              idPedidoReemplazado,
+              fechaFaltanteOriginal: data.cantSugerida ? fechaFaltante ?? fechaVisita : null,
             },
           });
           pedidosCreados.push(pedido);
+        };
+
+        for (const item of dto.items) {
+          const candidatos = maquina.mapaMateriaPrima.filter(m => m.idProducto === item.idProducto);
+          const mapa = item.idMapaMP != null
+            ? mapaMpById.get(item.idMapaMP)
+            : candidatos.length === 1 ? candidatos[0] : null;
+          if (!mapa || mapa.idProducto !== item.idProducto) {
+            throw new BadRequestException(`Indica un espiral válido para el producto ${item.idProducto}`);
+          }
+          let cantSugerida: number;
+          try {
+            cantSugerida = sugeridoPorEspiral(mapa.capacidadMax, item.fisicoDigitado);
+          } catch (error) {
+            if (error instanceof RangeError) throw new BadRequestException(error.message);
+            throw error;
+          }
+          await crearPedido({
+              idProducto: item.idProducto,
+              idMapaMp: mapa.idMapaMp,
+              fisicoDigitado: item.fisicoDigitado,
+              cantSugerida,
+              nrActualMedido: nrActual,
+          });
+          if (mapa.producto.tipoProducto === 'MATERIA_PRIMA') continue;
+          const anterior = anteriorPorEspiral.get(mapa.idMapaMp);
+          const comparable = anterior?.idProducto === item.idProducto;
+          const precio = precioPorProducto.get(item.idProducto);
+          const vendidas = comparable
+            ? vendidasPorEspiral(anterior.fisicoDigitado, anterior.despachado, item.fisicoDigitado)
+            : null;
+          if (vendidas == null) faltanUnidades = true;
+          else vendidasEspirales += vendidas;
+          if (vendidas == null || precio == null) faltanDatos = true;
+          const subtotal = vendidas == null || precio == null ? null : precio.mul(vendidas);
+          if (subtotal != null) {
+            if (mapa.precioCero) {
+              if (vendidas! >= 0) valorFacturar = valorFacturar.plus(subtotal);
+            } else ventaTeorica = ventaTeorica.plus(subtotal);
+          }
+          detalleControles.push({ idMapaMp: mapa.idMapaMp, espiral: mapa.espiralCodigo,
+            idProducto: item.idProducto, fisico: item.fisicoDigitado, vendidas, precioCero: mapa.precioCero,
+            precio: precio?.toString() ?? null, subtotal: subtotal?.toString() ?? null,
+            inconsistencia: vendidas == null ? 'SIN_BASE_COMPARABLE' : vendidas < 0 ? 'UNIDADES_NEGATIVAS'
+              : precio == null ? 'SIN_PRECIO_CLIENTE' : null });
         }
 
-        const mpConsolidado = new Map<number, { mp: any; consumoUnidadConsumo: number; idMapaMp?: number; vendidasTotal: number }>();
-        let totalNrqVendidas = 0;
+        const mpConsolidado = new Map<number, { consumo: Prisma.Decimal; equivalencia: Prisma.Decimal; idMapaMp: number }>();
+        const anteriorNrq = new Map(lecturas.botones.map(b => [b.idMapaNrq, b.lectura]));
+        const nrqEntradas = dto.nrqLecturas?.map(b => ({ idMapaNRQ: b.idMapaNRQ, lectura: BigInt(b.lecturaActual) }))
+          ?? dto.nrqItems?.map(b => ({ idMapaNRQ: b.idMapaNRQ, lectura: (anteriorNrq.get(b.idMapaNRQ) ?? 0n) + BigInt(b.valor) })) ?? [];
+        const botonesProcesados = new Set<number>();
 
-        for (const nrqItem of dto.nrqItems ?? []) {
+        for (const nrqItem of nrqEntradas) {
           const nrq = mapaNrqById.get(nrqItem.idMapaNRQ);
           if (!nrq || nrq.idMaquina !== dto.idMaquina) {
             throw new BadRequestException(`Mapa NRQ ${nrqItem.idMapaNRQ} no pertenece a la máquina`);
           }
+          if (botonesProcesados.has(nrq.idMapaNrq)) throw new BadRequestException('Hay una lectura NRQ repetida');
+          botonesProcesados.add(nrq.idMapaNrq);
+          const anterior = anteriorNrq.get(nrq.idMapaNrq) ?? nrq.lecturaInicial;
+          const unidades = calcular(`Botón ${nrq.opcionBoton}`, anterior, nrqItem.lectura);
           const idProdTerm = nrq.idProdTerm;
+          const precio = precioPorProducto.get(idProdTerm);
+          await tx.lecturasNrq.create({ data: {
+            idVisita: idGrupo, idMapaNrq: nrq.idMapaNrq, idProdTerm, opcionBoton: nrq.opcionBoton,
+            lecturaAnterior: anterior, lecturaActual: nrqItem.lectura, unidades,
+            precioUnitario: precio, subtotal: precio?.mul(unidades.toString()),
+          } });
+          if (unidades === 0n) continue;
           const recetas = await tx.recetasDosificados.findMany({
             where: { idProdTerm },
             include: { materiaPrima: true },
           });
-          const vendidas = Number(nrqItem.valor) || 0;
-          totalNrqVendidas += vendidas;
           if (recetas.length === 0) continue;
 
           for (const receta of recetas) {
             const mp = receta.materiaPrima;
             if (!mp) continue;
-            const dosisXUnidad = Number(receta.cantidadDosis) || 0;
-            const consumoTotalUnidadConsumo = dosisXUnidad * vendidas;
-            const mpEnMapa = maquina.mapaMateriaPrima.find((m) => m.idProducto === mp.idProducto);
+            const consumo = receta.cantidadDosis.mul(unidades.toString());
+            const mapas = maquina.mapaMateriaPrima.filter((m) => m.idProducto === mp.idProducto);
+            if (mapas.some(m => espiralesRegistrados.has(m.idMapaMp))) continue;
+            if (mapas.length !== 1) throw new BadRequestException(`Configura un espiral para la materia prima ${mp.idProducto}`);
 
             const anterior = mpConsolidado.get(mp.idProducto);
             if (anterior) {
-              anterior.consumoUnidadConsumo += consumoTotalUnidadConsumo;
-              anterior.vendidasTotal += vendidas;
+              anterior.consumo = anterior.consumo.plus(consumo);
             } else {
               mpConsolidado.set(mp.idProducto, {
-                mp,
-                consumoUnidadConsumo: consumoTotalUnidadConsumo,
-                idMapaMp: mpEnMapa?.idMapaMp,
-                vendidasTotal: vendidas,
+                consumo, equivalencia: mp.equivalencia,
+                idMapaMp: mapas[0].idMapaMp,
               });
             }
           }
         }
 
-        for (const [, data] of mpConsolidado) {
-          const { mp, consumoUnidadConsumo, idMapaMp } = data;
-          const equivalencia = Number(mp.equivalencia) || 1;
-          const capacidadUnidadesMapa = idMapaMp ? (mapaMpById.get(idMapaMp)?.capacidadMax ?? 0) : 0;
-          const capacidadDotacionMaxUnidadConsumo =
-            capacidadUnidadesMapa > 0 ? capacidadUnidadesMapa * equivalencia : equivalencia;
-
-          const faltanteUnidadConsumo = Math.max(0, consumoUnidadConsumo);
-          const cantSugeridaUnidadCompra = ajustarSugerida(
-            mp.idProducto,
-            Math.ceil(faltanteUnidadConsumo / equivalencia),
-          );
-          const fisicoEstimadoUnidadConsumo = Math.max(0, capacidadDotacionMaxUnidadConsumo - consumoUnidadConsumo);
-          const fisicoDigitadoUnidadCompra = Math.round(fisicoEstimadoUnidadConsumo / equivalencia);
-
-          const pedido = await tx.pedidosOperador.create({
-            data: {
-              idGrupo,
-              idMaquina: dto.idMaquina,
-              idOperador: dto.idOperador,
-              idProducto: mp.idProducto,
-              idMapaMp: idMapaMp ?? null,
-              fisicoDigitado: fisicoDigitadoUnidadCompra,
-              cantSugerida: cantSugeridaUnidadCompra,
-              nrqActualLectura: totalNrqVendidas ? BigInt(totalNrqVendidas) : null,
-              estado: 'PENDIENTE',
-            },
+        if (dto.nrEfectivoActual != null && botonesProcesados.size !== mapaNrqById.size) {
+          throw new BadRequestException('Registra la lectura de cada botón configurado');
+        }
+        for (const [idProducto, { consumo, equivalencia, idMapaMp }] of mpConsolidado) {
+          const mapa = mapaMpById.get(idMapaMp)!;
+          if (equivalencia.lte(0)) throw new BadRequestException(`Equivalencia inválida para el producto ${idProducto}`);
+          const sugerida = sugeridoMateriaPrima(consumo, equivalencia, mapa.capacidadMax);
+          await crearPedido({
+              idProducto,
+              idMapaMp: mapa.idMapaMp,
+              fisicoDigitado: mapa.capacidadMax - sugerida,
+              cantSugerida: sugerida,
           });
-          pedidosCreados.push(pedido);
         }
 
         // Persistir los totales de la visita (VENTAS_POR_VISITA) para que queden como
@@ -238,9 +293,7 @@ export class OperadorPedidoService {
           unidadesSugeridasVisita += cantidad;
           detalleVisita.push({ idProducto: p.idProducto, cantidad, precio, subtotal: cantidad * precio });
         }
-        const nrAnteriorVisita = maquina.ultimoContadorNR ? Number(maquina.ultimoContadorNR) : 0;
-        const nrActualVisita = dto.nrActual != null ? Number(dto.nrActual) : 0;
-        const totalVendidoVisita = Math.max(0, nrActualVisita - nrAnteriorVisita);
+        const controlCompleto = detalleControles.length > 0 && !faltanDatos && botonesProcesados.size === 0;
 
         await tx.ventasPorVisita.upsert({
           where: { idGrupo: idGrupo ?? 0 },
@@ -249,27 +302,32 @@ export class OperadorPedidoService {
             idMaquina: dto.idMaquina,
             idCliente: idClienteVisita,
             idOperador: dto.idOperador,
-            fechaVisita: new Date(),
-            nrAnterior: BigInt(nrAnteriorVisita),
-            nrActual: BigInt(nrActualVisita),
-            totalVendido: new Prisma.Decimal(totalVendidoVisita),
+            fechaVisita,
+            nrAnterior: lecturas.nrEfectivo,
+            nrActual,
+            totalVendido: new Prisma.Decimal(ventaNr.toString()),
             totalDespachado: new Prisma.Decimal(totalDespachadoVisita),
-            // Total vendido por productos = Σ sugerido × precio (sin pendiente en el
-            // momento del registro; el pendiente aparece al despachar y recién entonces
-            // el "Vendido por Visita" recalcula restando lo que quedó pendiente).
-            totalVendidoProductos: new Prisma.Decimal(totalDespachadoVisita),
+            totalVendidoProductos: ventaTeorica,
+            unidadesNrProducto,
+            ventaTeoricaProductos: detalleControles.length ? ventaTeorica : null,
+            diferenciaVenta: controlCompleto ? new Prisma.Decimal(ventaNr.toString()).minus(ventaTeorica) : null,
+            diferenciaUnidades: unidadesNrProducto != null && !faltanUnidades && detalleControles.length && !botonesProcesados.size
+              ? unidadesNrProducto - BigInt(vendidasEspirales) : null,
+            valorFacturarCliente: detalleControles.length ? valorFacturar : null,
             unidadesSugeridas: unidadesSugeridasVisita,
-            detalle: detalleVisita,
-            firmaOrigen: 'REGISTRO',
+            detalle: { reposicion: detalleVisita, controles: detalleControles },
+            firmaOrigen: 'CONTADORES',
             firmaUsuario: userId ?? null,
           },
           update: {},
         });
 
         return {
+          idGrupo,
+          visita,
           totalCreados: pedidosCreados.length,
           pedidos: pedidosCreados,
-          nrqItemsProcesados: dto.nrqItems?.length || 0,
+          nrqItemsProcesados: botonesProcesados.size,
           mpDesdeRecetas: mpConsolidado.size,
         };
       },

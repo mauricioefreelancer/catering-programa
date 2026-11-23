@@ -269,7 +269,7 @@ const Ingresos = () => {
       const body = {
         idProveedor: Number(values.proveedorId),
         facturaNum: values.factura,
-        fechaHora: values.fecha ? dayjs(values.fecha).format('YYYY-MM-DDTHH:mm:ss') : dayjs().format('YYYY-MM-DDTHH:mm:ss'),
+        fechaHora: values.fecha ? `${dayjs(values.fecha).format('YYYY-MM-DDTHH:mm:ss')}-05:00` : new Date().toISOString(),
         observaciones: values.observaciones,
         idUsuario: Number(usuario?.idUsuario ?? usuario?.id),
         detalle: items.map((i) => ({
@@ -280,7 +280,11 @@ const Ingresos = () => {
         })),
       }
       const res: any = await apiService.post('/ingresos-bodega', body)
-      message.success(`Ingreso #${res?.idIngreso ?? res?.id ?? Math.floor(Math.random() * 1000)} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
+      message.success(`Ingreso #${res.idIngreso} confirmado. ${items.length} productos, Total $${total.toLocaleString('es-CO')}`)
+      if (res.cambiosCosto?.length) {
+        message.warning(`Cambió el costo de compra: ${res.cambiosCosto.map((c: { nombreProducto: string; anterior: string; nuevo: string }) =>
+          `${c.nombreProducto} ($${c.anterior} → $${c.nuevo})`).join(', ')}`, 8)
+      }
       form.resetFields()
       setItems([])
       setSobreStockConfirmado(false)

@@ -443,8 +443,8 @@ const PanelDispositivos = () => {
     setLoading(true)
     try {
       const params: any = {}
-      if (rangeDisp && rangeDisp[0]) params.fechaDesde = rangeDisp[0].toISOString()
-      if (rangeDisp && rangeDisp[1]) params.fechaHasta = rangeDisp[1].toISOString()
+      if (rangeDisp && rangeDisp[0]) params.fechaDesde = rangeDisp[0].format('YYYY-MM-DD')
+      if (rangeDisp && rangeDisp[1]) params.fechaHasta = rangeDisp[1].format('YYYY-MM-DD')
       if (maquinaFiltro) params.maquinaId = maquinaFiltro
       if (tipoFiltro) params.tipoMedio = tipoFiltro
       const res: any = await apiService.get('/dashboard/dispositivos', params)
@@ -570,8 +570,8 @@ const PanelIngresosBodega = () => {
     setLoading(true)
     try {
       const params: any = {}
-      if (rangeIng && rangeIng[0]) params.fechaDesde = rangeIng[0].startOf('day').toISOString()
-      if (rangeIng && rangeIng[1]) params.fechaHasta = rangeIng[1].endOf('day').toISOString()
+      if (rangeIng && rangeIng[0]) params.fechaDesde = rangeIng[0].format('YYYY-MM-DD')
+      if (rangeIng && rangeIng[1]) params.fechaHasta = rangeIng[1].format('YYYY-MM-DD')
       if (usuarioFiltro) params.usuarioId = usuarioFiltro
       const res: any = await apiService.get('/dashboard/ingresos-bodega', params)
       setDatos({

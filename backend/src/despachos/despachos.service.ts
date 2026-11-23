@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDespachoDto } from './dto/despacho.dto';
+import { DespachosBodega, Prisma } from '@prisma/client';
+import { calcularDespacho, PEDIDOS_ABIERTOS } from '../common/reposicion';
 
 @Injectable()
 export class DespachosService {
@@ -8,7 +10,7 @@ export class DespachosService {
 
   async pedidosPendientes() {
     return this.prisma.pedidosOperador.findMany({
-      where: { estado: { in: ['PENDIENTE', 'PARCIAL'] } },
+      where: { estado: { in: PEDIDOS_ABIERTOS } },
       include: {
         maquina: true,
         operador: true,
@@ -37,6 +39,34 @@ export class DespachosService {
     return Array.isArray(raw) ? raw : (raw?.value ?? []);
   }
 
+  pendientesPorDespachar() {
+    return this.prisma.$queryRaw`
+      WITH pedidos AS (
+        SELECT p."ID_Maquina", p."ID_Producto", p."ID_Operador",
+               coalesce(p."Fecha_Faltante_Original", p."Fecha_Hora") AS origen,
+               p."Cant_Sugerida" - coalesce(d.total, 0) AS pendiente
+        FROM "PEDIDOS_OPERADOR" p
+        LEFT JOIN LATERAL (
+          SELECT sum("Cant_Despachada") AS total FROM "DESPACHOS_BODEGA"
+          WHERE "ID_Pedido" = p."ID_Pedido"
+        ) d ON true
+        WHERE p."Estado" IN ('PENDIENTE', 'PARCIAL')
+      )
+      SELECT p."ID_Maquina" AS "idMaquina", m."Serial" AS serial,
+             p."ID_Producto" AS "idProducto", pr."Nombre_Producto" AS producto,
+             p."ID_Operador" AS "idOperador", o."Nombre_Completo" AS operador,
+             sum(p.pendiente)::int AS pendiente, min(p.origen) AS "fechaOriginal",
+             greatest(0, floor(extract(epoch FROM ((now() AT TIME ZONE 'UTC') - min(p.origen))) / 86400))::int AS "diasAntiguedad"
+      FROM pedidos p
+      JOIN "MAQUINAS_Y_TIENDAS" m ON m."ID_Maquina" = p."ID_Maquina"
+      JOIN "PRODUCTOS" pr ON pr."ID_Producto" = p."ID_Producto"
+      JOIN "OPERADORES" o ON o."ID_Operador" = p."ID_Operador"
+      WHERE p.pendiente > 0
+      GROUP BY p."ID_Maquina", m."Serial", p."ID_Producto", pr."Nombre_Producto", p."ID_Operador", o."Nombre_Completo"
+      ORDER BY min(p.origen)
+    `;
+  }
+
   async create(dto: CreateDespachoDto) {
     return this.prisma.$transaction(
       async (tx) => {
@@ -44,122 +74,72 @@ export class DespachosService {
         const uid = dto.idUsuario ? String(dto.idUsuario) : '';
         await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', '${uid}', TRUE)`);
 
-        const result: any[] = [];
+        const ids = [...new Set(dto.items.map(item => item.idPedido))];
+        if (!ids.length) return { despachos: [], total: 0 };
+        if (ids.length !== dto.items.length) throw new BadRequestException('No repita un pedido en el despacho');
+        await tx.$queryRaw`
+          SELECT "ID_Pedido" FROM "PEDIDOS_OPERADOR"
+          WHERE "ID_Pedido" IN (${Prisma.join(ids)}) ORDER BY "ID_Pedido" FOR UPDATE
+        `;
+        await tx.$queryRaw`
+          SELECT "ID_Producto" FROM "PRODUCTOS"
+          WHERE "ID_Producto" IN (
+            SELECT "ID_Producto" FROM "PEDIDOS_OPERADOR" WHERE "ID_Pedido" IN (${Prisma.join(ids)})
+          ) ORDER BY "ID_Producto" FOR UPDATE
+        `;
+        const result: DespachosBodega[] = [];
         for (const item of dto.items) {
           const pedido = await tx.pedidosOperador.findUnique({
             where: { idPedido: item.idPedido },
             include: { producto: true, mapaMp: true },
           });
           if (!pedido) throw new NotFoundException(`Pedido ${item.idPedido} no encontrado`);
-          if (pedido.estado === 'APROBADO' || pedido.estado === 'RECHAZADO') {
+          if (!PEDIDOS_ABIERTOS.some(estado => estado === pedido.estado)) {
             throw new BadRequestException(`Pedido ${item.idPedido} ya está ${pedido.estado}`);
           }
-
-          const stockActual = (pedido.producto as any).stockActual ?? 0;
-          const cantSugerida = pedido.cantSugerida;
-          const cantSolicitada = item.cantDespachada ?? cantSugerida;
-          // "no reponer" solo es decisión explícita del despachador (flag en la UI). Un
-          // cantDespachada = 0 sin el flag conserva el comportamiento original de cerrar el
-          // pedido sin despacho (productos que no requieren reposición).
-          const noReponerExplicito = item.noReponer === true;
-          const esCierreSinDespacho = !noReponerExplicito && cantSolicitada === 0;
-          let cantDespachada = Math.min(cantSolicitada, stockActual);
-          if (cantDespachada < 0) throw new BadRequestException(`Cantidad negativa en pedido ${item.idPedido}`);
-
-          // TOPE POR FÍSICA REAL DEL ESPIRAL: no se puede despachar más de lo que cabe en el
-          // espiral. El cupo restante = capacidad máxima − (físico digitado + ya despachado).
-          // Así, aunque el pendiente acumulado sea mayor, el despacho nunca supera la capacidad,
-          // evitando "rellenar" un espiral con más producto de lo que físicamente admite.
-          const capacidadMaxEspiral = Number(pedido.mapaMp?.capacidadMax ?? 0);
-          const totalDespachadoPrevio = (
-            await tx.despachosBodega.findMany({
-              where: { idPedido: pedido.idPedido },
-              select: { cantDespachada: true },
-            })
-          ).reduce((acc, d) => acc + d.cantDespachada, 0);
-          const fisicoActualMaquina = (pedido.fisicoDigitado ?? 0) + totalDespachadoPrevio;
-          let cupoRestante = stockActual;
-          if (capacidadMaxEspiral > 0 && fisicoActualMaquina < capacidadMaxEspiral) {
-            cupoRestante = Math.min(cupoRestante, capacidadMaxEspiral - fisicoActualMaquina);
+          const noReponer = item.noReponer === true;
+          if (!noReponer && (!pedido.mapaMp || pedido.mapaMp.idMaquina !== pedido.idMaquina ||
+              pedido.mapaMp.idProducto !== pedido.idProducto)) {
+            throw new BadRequestException(`El pedido ${item.idPedido} no tiene un espiral vigente para ese producto`);
           }
-          cantDespachada = Math.min(cantDespachada, cupoRestante);
-
-          // ¿El cero es por cierre sin despacho, "no reponer" o por FALTA DE STOCK?
-          // - Cierre sin despacho (esCierreSinDespacho): producto que no requiere reposición.
-          //   Comportamiento original: se cierra el pedido APROBADO sin registrar despacho.
-          // - "No reponer" (noReponerExplicito) o cupo de espiral lleno: queda PARCIAL con
-          //   pendienteDesp = lo faltante y observación distintiva. Efecto:
-          //     * el producto NO cuenta como venta en "Vendido por Visita" (pendiente = sugerido
-          //       → vendido = 0), y
-          //     * NO vuelve a re-pedirse en la siguiente visita (pendiente se resta con
-          //       ajustarSugerida).
-          // - Falta de stock (sin "no reponer" y sin stock): igual que "no reponer" (PARCIAL +
-          //   pendiente), quedando la deuda visible hasta reponer.
-          if (cantDespachada === 0) {
-            const sinStockReal = cantSolicitada > 0 && stockActual <= 0;
-            const stockAntes = Number(pedido.producto?.stockActual ?? 0);
-            if (esCierreSinDespacho && pedido.estado === 'PENDIENTE') {
-              await tx.pedidosOperador.update({
-                where: { idPedido: pedido.idPedido },
-                data: { estado: 'APROBADO' },
-              });
-            } else if (noReponerExplicito || sinStockReal) {
-              // "NO REPONER" (decisión explícita) o falta de stock: queda PARCIAL con el faltante.
-              const observacion =
-                (noReponerExplicito ? 'Espiral NO repuesto (decisión). ' : `Sin stock para despachar (solicitado ${cantSolicitada}). `) +
-                (item.observaciones ?? '');
-              await tx.pedidosOperador.update({
-                where: { idPedido: pedido.idPedido },
-                data: { estado: 'PARCIAL' },
-              });
-              await tx.despachosBodega.create({
-                data: {
-                  idPedido: pedido.idPedido,
-                  idUsuario: dto.idUsuario,
-                  cantDespachada: 0,
-                  // Para que el pendiente se reste en la próxima visita (evita re-pedir) y a la
-                  // vez el informe no lo cuente como venta, se marca el faltante completo.
-                  pendienteDesp: cantSolicitada,
-                  observaciones: observacion,
-                  idMapaMp: pedido.idMapaMp ?? null,
-                  stockAntes,
-                  stockDespues: stockAntes,
-                },
-              });
-            }
-            // Si llega a 0 por cupo de espiral lleno (sin "no reponer" ni falta de stock real),
-            // simplemente no se registra despacho (el pedido permanece como estaba).
-            continue;
+          const { _sum } = await tx.despachosBodega.aggregate({
+            where: { idPedido: pedido.idPedido }, _sum: { cantDespachada: true },
+          });
+          const stock = pedido.producto.stockActual;
+          const { cantidad, pendiente, estado } = calcularDespacho({
+            sugerido: pedido.cantSugerida,
+            acumulado: _sum.cantDespachada ?? 0,
+            capacidad: pedido.mapaMp?.capacidadMax ?? 0,
+            fisico: pedido.fisicoDigitado,
+            stock,
+            solicitado: item.cantDespachada,
+            noReponer,
+          });
+          let stockDespues = stock;
+          if (cantidad > 0) {
+            const [actualizado] = await tx.$queryRaw<{ stock: number }[]>`
+              UPDATE "PRODUCTOS" SET "Stock_Actual" = "Stock_Actual" - ${cantidad}
+              WHERE "ID_Producto" = ${pedido.idProducto} AND "Stock_Actual" >= ${cantidad}
+              RETURNING "Stock_Actual" AS stock
+            `;
+            if (!actualizado) throw new BadRequestException('El stock cambió; vuelve a cargar los pedidos');
+            stockDespues = actualizado.stock;
           }
-
-          const pendienteDesp = cantSugerida - cantDespachada;
-
-          // Registro del estado del stock del producto para trazabilidad en el despacho.
-          const stockAntes = Number(pedido.producto?.stockActual ?? 0);
-          const stockDespues = Math.max(0, stockAntes - cantDespachada);
-
-          if (cantDespachada > 0) {
-            await tx.productos.update({
-              where: { idProducto: pedido.idProducto },
-              data: { stockActual: { decrement: cantDespachada } },
-            });
-          }
-
-          const nuevoEstado = pendienteDesp <= 0 ? 'APROBADO' : 'PARCIAL';
           await tx.pedidosOperador.update({
             where: { idPedido: pedido.idPedido },
-            data: { estado: nuevoEstado },
+            data: { estado },
           });
+          if (cantidad === 0 && pendiente === 0 && !noReponer) continue;
 
           const desp = await tx.despachosBodega.create({
             data: {
               idPedido: pedido.idPedido,
               idUsuario: dto.idUsuario,
-              cantDespachada,
-              pendienteDesp,
-              observaciones: item.observaciones ?? null,
+              cantDespachada: cantidad,
+              pendienteDesp: pendiente,
+              observaciones: item.observaciones ?? (noReponer ? 'No reponer' : stock === 0 ? 'Sin stock' : null),
               idMapaMp: pedido.idMapaMp ?? null,
-              stockAntes,
+              stockAntes: stockDespues + cantidad,
               stockDespues,
             },
           });

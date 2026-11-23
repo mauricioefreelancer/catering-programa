@@ -13,11 +13,13 @@ import {
   DatePicker,
   Spin,
   Alert,
+  Input,
 } from 'antd'
 import { PlusOutlined, EditOutlined, DeleteOutlined, DollarOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import ModalDrawer from '../../../components/common/ModalDrawer'
 import { usePermissions } from '../../../hooks/usePermissions'
+import { useAuth } from '../../../hooks/useAuth'
 import { apiService } from '../../../api/services/api'
 
 const { Title } = Typography
@@ -39,6 +41,8 @@ interface Saldo {
   plataforma: string
   monto: number
   fecha: string
+  idVisita: number | null
+  referencia: string | null
 }
 
 const Saldos = () => {
@@ -46,32 +50,23 @@ const Saldos = () => {
   const [maquinas, setMaquinas] = useState<any[]>([])
   const [fetching, setFetching] = useState(true)
   const [initialLoading, setInitialLoading] = useState(true)
-  const [endpointNoImplementado, setEndpointNoImplementado] = useState(false)
+  const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Saldo | null>(null)
   const [loading, setLoading] = useState(false)
   const perm = usePermissions('tesoreria')
+  const { usuario } = useAuth()
 
   const loadData = useCallback(async () => {
     setFetching(true)
-    setEndpointNoImplementado(false)
+    setError('')
     try {
       const [saldosRes, maquinasRes] = await Promise.all([
-        apiService.get('/tesoreria/saldos').catch((err) => ({ error: err, data: null })),
+        apiService.get('/tesoreria/saldos-digitales'),
         apiService.get('/maquinas'),
       ])
 
-      let saldosList: any[] = []
-      if ((saldosRes as any).error) {
-        const status = (saldosRes as any).error?.response?.status
-        if (status === 404 || status === undefined) {
-          setEndpointNoImplementado(true)
-          saldosList = []
-        }
-      } else {
-        const resData = saldosRes as any
-        saldosList = Array.isArray(resData) ? resData : (resData?.data || [])
-      }
+      const saldosList: any[] = Array.isArray(saldosRes) ? saldosRes : []
 
       const maquinasList = Array.isArray(maquinasRes) ? maquinasRes : (maquinasRes?.data || [])
 
@@ -85,20 +80,16 @@ const Saldos = () => {
         maquinaId: s.idMaquina ?? s.maquinaId,
         maquinaSerial: s.maquina?.serial ?? s.maquinaSerial ?? (maquinasMapeadas.find((m) => m.id === (s.idMaquina ?? s.maquinaId))?.serial || ''),
         plataforma: s.plataforma ?? '',
-        monto: s.monto ?? 0,
-        fecha: s.fecha ?? '',
+        monto: Number(s.montoTransaccion ?? 0),
+        fecha: s.fechaTransaccion ?? '',
+        idVisita: s.idVisita ?? null,
+        referencia: s.referencia ?? null,
       }))
 
       setMaquinas(maquinasMapeadas)
       setData(saldosMapeados)
     } catch (err: any) {
-      const status = err?.response?.status
-      if (status === 404 || status === undefined) {
-        setEndpointNoImplementado(true)
-        setData([])
-      } else {
-        message.error(err?.response?.data?.message || 'Error al cargar datos')
-      }
+      setError(err?.response?.data?.message || 'No fue posible cargar los saldos digitales')
     } finally {
       setFetching(false)
       setInitialLoading(false)
@@ -112,53 +103,26 @@ const Saldos = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
-      const maq = maquinas.find((m) => m.id === values.maquinaId)
-      const fechaFormateada = values.fecha ? dayjs(values.fecha).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD')
-      const payload = {
-        ...values,
-        maquinaSerial: maq?.serial || '',
-        fecha: fechaFormateada,
-      }
       const bodyApi = {
         idMaquina: values.maquinaId,
         plataforma: values.plataforma,
-        monto: values.monto,
-        fecha: fechaFormateada,
+        montoTransaccion: values.monto,
+        idVisita: values.idVisita ?? null,
+        referencia: values.referencia?.trim() || null,
       }
-      let endpointError = false
-      try {
-        if (editing) {
-          await apiService.patch(`/tesoreria/saldos/${editing.id}`, bodyApi)
-          setData(data.map((c) => (c.id === editing.id ? { ...c, ...payload } : c)))
-          message.success('Saldo actualizado')
-        } else {
-          const res: any = await apiService.post('/tesoreria/saldos', bodyApi)
-          const newId = res?.idSaldo ?? res?.id ?? Math.max(0, ...data.map((d) => d.id)) + 1
-          setData([...data, { id: newId, ...payload }])
-          message.success('Saldo plataforma creado')
-        }
-      } catch (err: any) {
-        const status = err?.response?.status
-        if (status === 404 || status === undefined) {
-          endpointError = true
-          if (editing) {
-            setData(data.map((c) => (c.id === editing.id ? { ...c, ...payload } : c)))
-          } else {
-            const newId = Math.max(0, ...data.map((d) => d.id)) + 1
-            setData([...data, { id: newId, ...payload }])
-          }
-          message.warning('Endpoint no existe, cambios solo locales')
-        } else {
-          throw err
-        }
-      }
-      if (!endpointError || !editing) {
-        setOpen(false)
-        setEditing(null)
+      if (editing) {
+        await apiService.patch(`/tesoreria/saldos-digitales/${editing.id}`, bodyApi)
       } else {
-        setOpen(false)
-        setEditing(null)
+        await apiService.post('/tesoreria/saldos-digitales', {
+          ...bodyApi,
+          fechaTransaccion: `${dayjs(values.fecha).format('YYYY-MM-DD')}T00:00:00-05:00`,
+          idUsuario: usuario?.idUsuario ?? usuario?.id,
+        })
       }
+      message.success('Saldo guardado')
+      setOpen(false)
+      setEditing(null)
+      await loadData()
     } catch (err: any) {
       message.error(err?.response?.data?.message || 'Error al guardar saldo')
     } finally {
@@ -168,17 +132,11 @@ const Saldos = () => {
 
   const handleDelete = async (id: number) => {
     try {
-      await apiService.remove(`/tesoreria/saldos/${id}`)
+      await apiService.remove(`/tesoreria/saldos-digitales/${id}`)
       setData(data.filter((c) => c.id !== id))
       message.success('Saldo eliminado')
     } catch (err: any) {
-      const status = err?.response?.status
-      if (status === 404 || status === undefined) {
-        setData(data.filter((c) => c.id !== id))
-        message.success('Saldo eliminado (local)')
-      } else {
-        message.error(err?.response?.data?.message || 'Error al eliminar saldo')
-      }
+      message.error(err?.response?.data?.message || 'Error al eliminar saldo')
     }
   }
 
@@ -200,7 +158,9 @@ const Saldos = () => {
       render: (v: number) => <strong style={{ fontSize: 16 }}>$ {v.toLocaleString('es-CO')}</strong>,
       sorter: (a: Saldo, b: Saldo) => a.monto - b.monto,
     },
-    { title: 'Fecha', dataIndex: 'fecha', key: 'f', render: (v: string) => v ? dayjs(v).format('DD/MM/YYYY') : '' },
+    { title: 'Fecha', dataIndex: 'fecha', key: 'f', render: (v: string) => v ? new Date(v).toLocaleDateString('es-CO', { timeZone: 'America/Bogota' }) : '' },
+    { title: 'Referencia', dataIndex: 'referencia' },
+    { title: 'Visita', dataIndex: 'idVisita', render: (id: number | null) => id == null ? 'Sin vincular' : `#${id}` },
     {
       title: 'Acciones',
       key: 'acc',
@@ -241,14 +201,7 @@ const Saldos = () => {
           )}
         </Space>
       </div>
-      {endpointNoImplementado && (
-        <Alert
-          type="error"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="🛑 Endpoint /tesoreria/saldos NO implementado. Lista se cargará vacía y cambios Drawer solo se guardan localmente hasta crear endpoint en backend."
-        />
-      )}
+      {error && <Alert type="error" showIcon message={error} />}
       <Spin spinning={initialLoading}>
         <Table rowKey="id" dataSource={data} columns={columns} pagination={{ pageSize: 10, showTotal: (t) => `Total ${t} registros` }} />
       </Spin>
@@ -273,9 +226,15 @@ const Saldos = () => {
         <Form.Item name="monto" label="Monto" rules={[{ required: true }]}>
           <InputNumber style={{ width: '100%' }} min={0} prefix="$" step={1000} />
         </Form.Item>
-        <Form.Item name="fecha" label="Fecha Registro" rules={[{ required: true }]}>
-          <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+        <Form.Item name="referencia" label="Referencia de la transacción">
+          <Input maxLength={200} />
         </Form.Item>
+        <Form.Item name="idVisita" label="Número de visita" extra="Opcional. Debe pertenecer a la máquina seleccionada.">
+          <InputNumber min={1} precision={0} style={{ width: '100%' }} />
+        </Form.Item>
+        {!editing && <Form.Item name="fecha" label="Fecha de la transacción" rules={[{ required: true }]}>
+          <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+        </Form.Item>}
       </ModalDrawer>
     </div>
   )

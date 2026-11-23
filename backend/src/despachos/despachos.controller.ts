@@ -17,6 +17,10 @@ export class DespachosController {
   @Permissions('despachos', 'ver')
   pendientes() { return this.srv.pendientes(); }
 
+  @Get('despachos/pendientes-por-despachar')
+  @Permissions('despachos', 'ver')
+  pendientesPorDespachar() { return this.srv.pendientesPorDespachar(); }
+
   @Post('despachos')
   @Permissions('despachos', 'crear')
   create(@Body() dto: CreateDespachoDto) { return this.srv.create(dto); }

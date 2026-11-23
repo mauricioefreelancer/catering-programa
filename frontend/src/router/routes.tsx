@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import AppLayout from '../components/layout/AppLayout'
 import Login from '../pages/Login'
@@ -15,17 +15,21 @@ import Despachos from '../pages/Despachos'
 import PedidosOperador from '../pages/Pedidos'
 import Efectivo from '../pages/Tesoreria/Efectivo'
 import FacturacionNRQ from '../pages/Tesoreria/FacturacionNRQ'
+import SaldosDigitales from '../pages/Tesoreria/Saldos'
 import VendidoPorVisita from '../pages/Tesoreria/VendidoPorVisita'
 import Roles from '../pages/Admin/Roles'
 import Usuarios from '../pages/Admin/Usuarios'
 import AdminDataPanel from '../pages/Admin/DataPanel'
 import MobileLayout from '../pages/Mobile/MobileLayout'
 import HomeMobile from '../pages/Mobile/Home'
-import InventarioMobile from '../pages/Mobile/Inventario'
-import ContadoresMobile from '../pages/Mobile/Contadores'
-import ResumenMobile from '../pages/Mobile/Resumen'
+import InventarioMobile from '../pages/Mobile/Inventario/Registro'
 import NotFound404 from '../pages/NotFound404'
 import PermissionRoute from '../components/PermissionRoute'
+
+function RedirigirAInventario() {
+  const { idMaquina } = useParams()
+  return <Navigate to={`/mobile/inventario/${idMaquina}`} replace />
+}
 
 const ProtectedRoute = ({ children }: { children?: any }) => {
   const { isAuth } = useAuth()
@@ -180,6 +184,10 @@ export const routes = createBrowserRouter([
         ),
       },
       {
+        path: 'tesoreria/saldos-digitales',
+        element: <PermissionRoute modulo="tesoreria" accion="ver"><SaldosDigitales /></PermissionRoute>,
+      },
+      {
         path: 'tesoreria/facturacion-nrq',
         element: (
           <PermissionRoute modulo="tesoreria" accion="ver">
@@ -236,11 +244,11 @@ export const routes = createBrowserRouter([
       },
       {
         path: 'contadores/:idMaquina',
-        element: <ContadoresMobile />,
+        element: <RedirigirAInventario />,
       },
       {
         path: 'resumen/:idMaquina',
-        element: <ResumenMobile />,
+        element: <RedirigirAInventario />,
       },
     ],
   },

@@ -33,6 +33,7 @@ export class MachinesController {
   }
 
   @Get(':id/mapa-mp') @Permissions('maquinas', 'ver') getMapaMP(@Param('id') id: string) { return this.srv.getMapaMP(+id); }
+  @Get(':id/ultimas-lecturas') @Permissions('maquinas', 'ver') getUltimasLecturas(@Param('id') id: string) { return this.srv.getUltimasLecturas(+id); }
   @Post(':id/mapa-mp') @Permissions('maquinas', 'crear') addMapaMP(@Param('id') id: string, @Body() dto: CreateMapaMPDto) { return this.srv.addMapaMP(+id, dto); }
   @Patch(':id/mapa-mp/:idMapa') @Permissions('maquinas', 'editar') updateMapaMP(@Param('id') id: string, @Param('idMapa') idMapa: string, @Body() dto: UpdateMapaMPDto) { return this.srv.updateMapaMP(+id, +idMapa, dto); }
   @Delete(':id/mapa-mp/:idMapa') @Permissions('maquinas', 'eliminar') removeMapaMP(@Param('id') id: string, @Param('idMapa') idMapa: string) { return this.srv.removeMapaMP(+id, +idMapa); }
