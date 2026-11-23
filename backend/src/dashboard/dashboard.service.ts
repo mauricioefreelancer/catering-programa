@@ -1,25 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { mesColombia, rangoColombia } from '../common/fecha-colombia';
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
   async gerencia() {
-    const hoy = new Date();
-    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    const { inicio: inicioMes, fin: finMes } = mesColombia();
 
     const [totalClientes, totalProductos, totalMaquinas, pedidosMes, despachosMes, ingresosMes, efectivoMes] =
       await Promise.all([
         this.prisma.clientes.count(),
         this.prisma.productos.count(),
         this.prisma.maquinasYTiendas.count(),
-        this.prisma.pedidosOperador.count({ where: { fechaHora: { gte: inicioMes, lte: finMes } } }),
-        this.prisma.despachosBodega.count({ where: { fechaHora: { gte: inicioMes, lte: finMes } } }),
-        this.prisma.ingresosBodega.count({ where: { fechaHora: { gte: inicioMes, lte: finMes } } }),
+        this.prisma.pedidosOperador.count({ where: { fechaHora: { gte: inicioMes, lt: finMes } } }),
+        this.prisma.despachosBodega.count({ where: { fechaHora: { gte: inicioMes, lt: finMes } } }),
+        this.prisma.ingresosBodega.count({ where: { fechaHora: { gte: inicioMes, lt: finMes } } }),
         this.prisma.tesoreriaEfectivoNr.aggregate({
-          where: { fechaHora: { gte: inicioMes, lte: finMes } },
+          where: { fechaHora: { gte: inicioMes, lt: finMes } },
           _sum: { efectivoRecog: true, diferenciaRec: true },
         }),
       ]);
@@ -38,7 +37,8 @@ export class DashboardService {
       JOIN public."PEDIDOS_OPERADOR" p ON d."ID_Pedido" = p."ID_Pedido"
       JOIN public."MAQUINAS_Y_TIENDAS" m ON p."ID_Maquina" = m."ID_Maquina"
       JOIN public."CLIENTES" c ON m."ID_Cliente" = c."ID_Cliente"
-      WHERE d."Fecha_Hora" >= ${inicioMes} AND d."Fecha_Hora" <= ${finMes}
+      WHERE d."Fecha_Hora" >= ${inicioMes.toISOString()}::timestamp
+        AND d."Fecha_Hora" < ${finMes.toISOString()}::timestamp
       GROUP BY c."Razon_Social"
       ORDER BY unidades DESC
       LIMIT 10
@@ -73,20 +73,19 @@ export class DashboardService {
   }
 
   async tesoreria() {
-    const hoy = new Date();
-    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    const { inicio: inicioMes, fin: finMes } = mesColombia();
 
     const [totalSaldosDigitales, saldosPorPlataforma, efectivoPorMaquina, totalFacturasNRQ] =
       await Promise.all([
         this.prisma.saldosDigitales.aggregate({
-          where: { fechaTransaccion: { gte: inicioMes, lte: finMes } },
+          where: { fechaTransaccion: { gte: inicioMes, lt: finMes } },
           _sum: { montoTransaccion: true },
         }),
         this.prisma.$queryRaw<any[]>`
           SELECT "Plataforma" as plataforma, SUM("Monto_Transaccion") as total, COUNT(*) as transacciones
           FROM public."SALDOS_DIGITALES"
-          WHERE "Fecha_Transaccion" >= ${inicioMes} AND "Fecha_Transaccion" <= ${finMes}
+          WHERE "Fecha_Transaccion" >= ${inicioMes.toISOString()}::timestamp
+            AND "Fecha_Transaccion" < ${finMes.toISOString()}::timestamp
           GROUP BY "Plataforma"
         `,
         this.prisma.$queryRaw<any[]>`
@@ -96,13 +95,14 @@ export class DashboardService {
                  SUM("Diferencia_Rec") as diferencia
           FROM public."TESORERIA_EFECTIVO_NR" t
           JOIN public."MAQUINAS_Y_TIENDAS" m ON t."ID_Maquina" = m."ID_Maquina"
-          WHERE t."Fecha_Hora" >= ${inicioMes} AND t."Fecha_Hora" <= ${finMes}
+          WHERE t."Fecha_Hora" >= ${inicioMes.toISOString()}::timestamp
+            AND t."Fecha_Hora" < ${finMes.toISOString()}::timestamp
           GROUP BY m."Serial"
           ORDER BY recogido DESC
           LIMIT 10
         `,
         this.prisma.tesoreriaFacturacionNrq.aggregate({
-          where: { fechaCreacion: { gte: inicioMes, lte: finMes } },
+          where: { fechaCreacion: { gte: inicioMes, lt: finMes } },
           _sum: { totalFacturar: true, nrqDiferencia: true },
         }),
       ]);
@@ -136,9 +136,7 @@ export class DashboardService {
   }
 
   async bodega() {
-    const hoy = new Date();
-    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    const { inicio: inicioMes, fin: finMes } = mesColombia();
 
     const [stockCritico, totalStock, ingresosBodegaMes, despachosMes, pedidosPendientes, proveedoresActivos] =
       await Promise.all([
@@ -153,7 +151,8 @@ export class DashboardService {
                  COALESCE(SUM(di."Cantidad_Recib" * di."Costo_Unitario_Compra"), 0) as valor
           FROM public."INGRESOS_BODEGA" i
           JOIN public."DETALLE_INGRESOS" di ON i."ID_Ingreso" = di."ID_Ingreso"
-          WHERE i."Fecha_Hora" >= ${inicioMes} AND i."Fecha_Hora" <= ${finMes}
+          WHERE i."Fecha_Hora" >= ${inicioMes.toISOString()}::timestamp
+            AND i."Fecha_Hora" < ${finMes.toISOString()}::timestamp
         `,
         this.prisma.$queryRaw<any[]>`
           SELECT COUNT(*) as despachos,
@@ -161,7 +160,8 @@ export class DashboardService {
                  COALESCE(SUM(d."Cant_Despachada"), 0) as unidades_despachadas
           FROM public."DESPACHOS_BODEGA" d
           JOIN public."PEDIDOS_OPERADOR" p ON d."ID_Pedido" = p."ID_Pedido"
-          WHERE d."Fecha_Hora" >= ${inicioMes} AND d."Fecha_Hora" <= ${finMes}
+          WHERE d."Fecha_Hora" >= ${inicioMes.toISOString()}::timestamp
+            AND d."Fecha_Hora" < ${finMes.toISOString()}::timestamp
         `,
         this.prisma.pedidosOperador.count({
           where: { estado: { in: ['PENDIENTE', 'PARCIAL'] } },
@@ -183,16 +183,18 @@ export class DashboardService {
         SUM(CASE WHEN tipo = 'INGRESO' THEN cant ELSE 0 END) as ingresos,
         SUM(CASE WHEN tipo = 'DESPACHO' THEN cant ELSE 0 END) as despachos
       FROM (
-        SELECT DATE(i."Fecha_Hora") as fecha, SUM(di."Cantidad_Recib") as cant, 'INGRESO'::text as tipo
+        SELECT DATE((i."Fecha_Hora" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota') as fecha, SUM(di."Cantidad_Recib") as cant, 'INGRESO'::text as tipo
         FROM public."INGRESOS_BODEGA" i
         JOIN public."DETALLE_INGRESOS" di ON i."ID_Ingreso" = di."ID_Ingreso"
-        WHERE i."Fecha_Hora" >= ${inicioMes} AND i."Fecha_Hora" <= ${finMes}
-        GROUP BY DATE(i."Fecha_Hora")
+        WHERE i."Fecha_Hora" >= ${inicioMes.toISOString()}::timestamp
+          AND i."Fecha_Hora" < ${finMes.toISOString()}::timestamp
+        GROUP BY 1
         UNION ALL
-        SELECT DATE(d."Fecha_Hora") as fecha, SUM(d."Cant_Despachada") as cant, 'DESPACHO'::text as tipo
+        SELECT DATE((d."Fecha_Hora" AT TIME ZONE 'UTC') AT TIME ZONE 'America/Bogota') as fecha, SUM(d."Cant_Despachada") as cant, 'DESPACHO'::text as tipo
         FROM public."DESPACHOS_BODEGA" d
-        WHERE d."Fecha_Hora" >= ${inicioMes} AND d."Fecha_Hora" <= ${finMes}
-        GROUP BY DATE(d."Fecha_Hora")
+        WHERE d."Fecha_Hora" >= ${inicioMes.toISOString()}::timestamp
+          AND d."Fecha_Hora" < ${finMes.toISOString()}::timestamp
+        GROUP BY 1
       ) x
       GROUP BY TO_CHAR(fecha, 'IYYY-IW')
       ORDER BY semana
@@ -240,14 +242,8 @@ export class DashboardService {
       if (!isNaN(mid)) where.idMaquina = mid;
     }
     if (query.tipoMedio) where.tipoMedio = query.tipoMedio.toUpperCase();
-    if (query.fechaDesde) {
-      const d = new Date(query.fechaDesde);
-      if (!isNaN(d.getTime())) where.fechaCambio = { ...(where.fechaCambio ?? {}), gte: d };
-    }
-    if (query.fechaHasta) {
-      const d = new Date(query.fechaHasta);
-      if (!isNaN(d.getTime())) where.fechaCambio = { ...(where.fechaCambio ?? {}), lte: d };
-    }
+    const { desde, hasta } = rangoColombia(query.fechaDesde, query.fechaHasta);
+    where.fechaCambio = { gte: desde, lt: hasta };
 
     const registros = await this.prisma.historialMediosPago.findMany({
       where,
@@ -334,14 +330,8 @@ export class DashboardService {
   // ============================================================
   async ingresosBodega(query: { fechaDesde?: string; fechaHasta?: string; usuarioId?: string }) {
     const where: any = {};
-    if (query.fechaDesde) {
-      const d = new Date(query.fechaDesde);
-      if (!isNaN(d.getTime())) where.fechaHora = { ...(where.fechaHora ?? {}), gte: d };
-    }
-    if (query.fechaHasta) {
-      const d = new Date(query.fechaHasta);
-      if (!isNaN(d.getTime())) where.fechaHora = { ...(where.fechaHora ?? {}), lte: d };
-    }
+    const { desde, hasta } = rangoColombia(query.fechaDesde, query.fechaHasta);
+    where.fechaHora = { gte: desde, lt: hasta };
     if (query.usuarioId) {
       const uid = parseInt(query.usuarioId);
       if (!isNaN(uid)) where.idUsuario = uid;

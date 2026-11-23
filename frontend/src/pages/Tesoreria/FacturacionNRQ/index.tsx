@@ -14,11 +14,13 @@ import {
   Tag,
   Form,
   Alert,
+  Popconfirm,
   Spin,
 } from 'antd'
 import { SearchOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import { apiService } from '../../../api/services/api'
+import { usePermissions } from '../../../hooks/usePermissions'
 
 const { Title } = Typography
 const { Option } = Select
@@ -92,6 +94,9 @@ const FacturacionNRQ = () => {
   const [resultados, setResultados] = useState<RegistroNRQ[]>([])
   const [consultado, setConsultado] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [generando, setGenerando] = useState(false)
+  const [filtros, setFiltros] = useState<Record<string, any> | null>(null)
+  const perm = usePermissions('tesoreria')
 
   const [clientes, setClientes] = useState<ClienteNRQ[]>([])
   const [productosDosificados, setProductosDosificados] = useState<ProductoDosificado[]>([])
@@ -205,6 +210,8 @@ const FacturacionNRQ = () => {
       return
     }
     setLoading(true)
+    setFiltros(null)
+    setResultados([])
     try {
       const params: Record<string, any> = {
         fechaInicio: dayjs(values.fechas[0]).format('YYYY-MM-DD'),
@@ -213,53 +220,30 @@ const FacturacionNRQ = () => {
       if (values.clienteId) params.idCliente = values.clienteId
       if (values.productoId) params.idProducto = values.productoId
 
-      let rawData: any[] = []
-      let encontroDatos = false
-
-      try {
-        const res: any = await apiService.get('/tesoreria/facturacion-nrq', params)
-        const lista = Array.isArray(res) ? res : res?.data ?? []
-        if (Array.isArray(lista) && lista.length > 0) {
-          rawData = lista
-          encontroDatos = true
-        }
-      } catch {
-        encontroDatos = false
-      }
-
-      if (!encontroDatos) {
-        try {
-          const dashRes: any = await apiService.get('/dashboard/tesoreria', params)
-          const charts = dashRes?.charts ?? dashRes?.data?.charts ?? []
-          if (Array.isArray(charts) && charts.length > 0) {
-            const todos: any[] = []
-            charts.forEach((ch: any) => {
-              const datos = ch?.datos ?? []
-              if (Array.isArray(datos)) todos.push(...datos)
-            })
-            if (todos.length > 0) {
-              rawData = todos
-              encontroDatos = true
-            }
-          }
-        } catch {
-          encontroDatos = false
-        }
-      }
-
-      if (!encontroDatos || rawData.length === 0) {
-        setResultados([])
-        setConsultado(true)
-        message.warning('No hay datos facturación NRQ para los filtros')
-        return
-      }
-
-      const filaMapeada = mapearResultados(rawData)
-      setResultados(filaMapeada)
+      const res = await apiService.get<{ registros: any[] }>('/tesoreria/facturacion-nrq', params)
+      const filas = res.registros ?? []
+      setResultados(mapearResultados(filas))
       setConsultado(true)
-      message.success(`${filaMapeada.length} registros encontrados`)
+      if (filas.some(f => f.incompleta)) message.warning('Hay registros sin precio o cliente. Revisa los datos antes de facturar.')
+      else if (filas.some(f => Number(f.NRQ_Diferencia) > 0)) setFiltros(params)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message ?? 'No se pudo consultar la facturación NRQ')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const generar = async () => {
+    if (!filtros) return
+    setGenerando(true)
+    try {
+      const res = await apiService.post<{ count: number }>('/tesoreria/facturacion-nrq/generar', filtros)
+      setFiltros(null)
+      message.success(`${res.count} registro(s) de facturación generados`)
+    } catch (err: any) {
+      message.error(err?.response?.data?.message ?? 'No se pudo generar la facturación NRQ')
+    } finally {
+      setGenerando(false)
     }
   }
 
@@ -317,7 +301,7 @@ const FacturacionNRQ = () => {
 
       <Spin spinning={initialLoading} tip="Cargando catálogos...">
         <Card title="🔎 Filtros de Consulta (Avanzados)" style={{ marginBottom: 16 }}>
-          <Form form={form} layout="vertical" onFinish={consultar} initialValues={{ fechas: [dayjs().startOf('month'), dayjs()] }}>
+          <Form form={form} layout="vertical" onFinish={consultar} onValuesChange={() => setFiltros(null)} initialValues={{ fechas: [dayjs().startOf('month'), dayjs()] }}>
             <Row gutter={16}>
               <Col xs={24} md={10}>
                 <Form.Item name="fechas" label="Rango de Fechas (Requerido)" rules={[{ required: true, message: 'Seleccione rango' }]}>
@@ -341,13 +325,16 @@ const FacturacionNRQ = () => {
             </Row>
             <div style={{ textAlign: 'right' }}>
               <Space>
-                <Button onClick={() => { setResultados([]); setConsultado(false); form.resetFields() }}>Limpiar</Button>
+                <Button onClick={() => { setResultados([]); setConsultado(false); setFiltros(null); form.resetFields() }}>Limpiar</Button>
                 <Button icon={<ReloadOutlined />} onClick={loadData} loading={fetching}>
                   Recargar Catálogo
                 </Button>
                 <Button type="primary" size="large" htmlType="submit" loading={loading} icon={<SearchOutlined />}>
                   Consultar
                 </Button>
+                {perm.crear && <Popconfirm title="¿Generar la facturación del período consultado?" onConfirm={generar} disabled={!filtros || generando}>
+                  <Button loading={generando} disabled={!filtros}>Generar facturación</Button>
+                </Popconfirm>}
               </Space>
             </div>
           </Form>

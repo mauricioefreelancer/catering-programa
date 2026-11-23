@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateIngresoDto, QueryIngresoDto } from './dto/inventory.dto';
 import { Prisma } from '@prisma/client';
+import { bloquearCostos, recalcularPorMateriasPrimas } from '../common/costo-receta';
+import { rangoColombia } from '../common/fecha-colombia';
 
 @Injectable()
 export class InventoryService {
@@ -12,11 +14,8 @@ export class InventoryService {
     const take = query.take ? parseInt(query.take) : 50;
     const where: any = {};
     if (query.idProveedor) where.idProveedor = parseInt(query.idProveedor);
-    if (query.fechaDesde || query.fechaHasta) {
-      where.fechaHora = {};
-      if (query.fechaDesde) where.fechaHora.gte = new Date(query.fechaDesde);
-      if (query.fechaHasta) where.fechaHora.lte = new Date(query.fechaHasta);
-    }
+    const { desde, hasta } = rangoColombia(query.fechaDesde, query.fechaHasta);
+    where.fechaHora = { gte: desde, lt: hasta };
     const [data, total] = await Promise.all([
       this.prisma.ingresosBodega.findMany({
         skip, take, where,
@@ -41,12 +40,16 @@ export class InventoryService {
     const prov = await this.prisma.proveedores.findUnique({ where: { idProveedor: dto.idProveedor } });
     if (!prov) throw new NotFoundException('Proveedor no encontrado');
 
-    for (const d of dto.detalle) {
-      const p = await this.prisma.productos.findUnique({ where: { idProducto: d.idProducto } });
-      if (!p) throw new BadRequestException(`Producto ${d.idProducto} no existe`);
-    }
-
     return this.prisma.$transaction(async (tx) => {
+      await bloquearCostos(tx);
+      const ids = [...new Set(dto.detalle.map(d => d.idProducto))].sort((a, b) => a - b);
+      const productos = await tx.productos.findMany({ where: { idProducto: { in: ids } } });
+      const porId = new Map(productos.map(p => [p.idProducto, p]));
+      for (const id of ids) {
+        const producto = porId.get(id);
+        if (!producto) throw new BadRequestException(`Producto ${id} no existe`);
+        if (producto.tipoProducto === 'DOSIFICADO') throw new BadRequestException('Los dosificados no se compran ni manejan existencias');
+      }
       // Configura el contexto de auditoría dentro de la MISMA transacción para que el
       // trigger registre el usuario correcto (con pool de conexiones el contexto del
       // middleware no llega a la conexión que ejecuta la mutación).
@@ -62,6 +65,7 @@ export class InventoryService {
         },
       });
 
+      const cantidades = new Map<number, number>();
       for (const d of dto.detalle) {
         await tx.detalleIngresos.create({
           data: {
@@ -73,32 +77,38 @@ export class InventoryService {
           },
         });
 
-        const producto = await tx.productos.findUnique({ where: { idProducto: d.idProducto } });
-        if (!producto) continue;
-        const stockAnt = producto.stockActual;
-        const costoAnt = Number(producto.costoBase);
-        const stockNuevo = stockAnt + d.cantidadRecib;
-        let costoNuevo = costoAnt;
-        if (producto.tipoProducto === 'MATERIA_PRIMA' && stockNuevo > 0) {
-          costoNuevo = (stockAnt * costoAnt + d.cantidadRecib * d.costoUnitarioCompra) / stockNuevo;
-        } else if (d.costoUnitarioCompra > 0 && costoAnt === 0) {
-          costoNuevo = d.costoUnitarioCompra;
+        cantidades.set(d.idProducto, (cantidades.get(d.idProducto) ?? 0) + d.cantidadRecib);
+      }
+      const cambiosCosto: { idProducto: number; nombreProducto: string; anterior: string; nuevo: string }[] = [];
+      const materiasPrimas: number[] = [];
+      for (const id of ids) {
+        const producto = porId.get(id)!;
+        const ultimaCompra = await tx.detalleIngresos.findFirstOrThrow({
+          where: { idProducto: id },
+          orderBy: [{ ingreso: { fechaHora: 'desc' } }, { idIngreso: 'desc' }, { idDetIngreso: 'desc' }],
+        });
+        const costo = ultimaCompra.costoUnitarioCompra;
+        if (!producto.costoBase.eq(costo)) {
+          cambiosCosto.push({ idProducto: id, nombreProducto: producto.nombreProducto, anterior: producto.costoBase.toString(), nuevo: costo.toString() });
+          if (producto.tipoProducto === 'MATERIA_PRIMA') materiasPrimas.push(id);
         }
         await tx.productos.update({
-          where: { idProducto: d.idProducto },
+          where: { idProducto: id },
           data: {
-            stockActual: stockNuevo,
-            costoBase: new Prisma.Decimal(costoNuevo),
+            stockActual: { increment: cantidades.get(id)! },
+            costoBase: costo,
+            costoTotal: costo.mul(producto.porcentajeImp.div(100).plus(1)),
           },
         });
       }
 
-      return ingreso;
+      await recalcularPorMateriasPrimas(tx, materiasPrimas);
+      return { ...ingreso, cambiosCosto };
     });
   }
 
   private async setAuditContext(tx: Prisma.TransactionClient, userId?: number | null) {
     const uid = userId ? String(userId) : '';
-    await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', '${uid}', TRUE)`);
+    await tx.$executeRaw`SELECT set_config('app.current_user_id', ${uid}, TRUE)`;
   }
 }

@@ -193,10 +193,12 @@ const Productos = () => {
           return { tipoCafe: null }
         })(),
         equivalencia: Number(values.equivalencia || 1),
-        costoBase: Number(values.costo_base || 0),
         IVA: Number(values.iva || 0),
-        costoTotal: Math.round(costoTotal * 100) / 100,
-        stockActual: Number(values.stock_actual || 0),
+        ...(!esDosificado ? {
+          costoBase: Number(values.costo_base || 0),
+          costoTotal: Math.round(costoTotal * 100) / 100,
+          stockActual: Number(values.stock_actual || 0),
+        } : {}),
         stockMin: Number(values.stock_min || 0),
         stockMax: Number(values.stock_max || 0),
       }
@@ -540,10 +542,10 @@ const Productos = () => {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="costo_base" label="Costo Base" rules={[{ required: true }]}>
-                      <InputNumber style={{ width: '100%' }} min={0} prefix="$" />
+                      <InputNumber style={{ width: '100%' }} min={0} prefix="$" readOnly={tipoSel === 'DOSIFICADO'} />
                     </Form.Item>
                     <Form.Item name="stock_actual" label="Stock Actual" rules={[{ required: true }]}>
-                      <InputNumber style={{ width: '100%' }} min={0} />
+                      <InputNumber style={{ width: '100%' }} min={0} readOnly={tipoSel === 'DOSIFICADO'} />
                     </Form.Item>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

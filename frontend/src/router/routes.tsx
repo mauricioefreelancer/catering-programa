@@ -15,6 +15,7 @@ import Despachos from '../pages/Despachos'
 import PedidosOperador from '../pages/Pedidos'
 import Efectivo from '../pages/Tesoreria/Efectivo'
 import FacturacionNRQ from '../pages/Tesoreria/FacturacionNRQ'
+import SaldosDigitales from '../pages/Tesoreria/Saldos'
 import VendidoPorVisita from '../pages/Tesoreria/VendidoPorVisita'
 import Roles from '../pages/Admin/Roles'
 import Usuarios from '../pages/Admin/Usuarios'
@@ -181,6 +182,10 @@ export const routes = createBrowserRouter([
             <VendidoPorVisita />
           </PermissionRoute>
         ),
+      },
+      {
+        path: 'tesoreria/saldos-digitales',
+        element: <PermissionRoute modulo="tesoreria" accion="ver"><SaldosDigitales /></PermissionRoute>,
       },
       {
         path: 'tesoreria/facturacion-nrq',

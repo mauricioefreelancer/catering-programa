@@ -151,7 +151,7 @@ const VendidoPorVisita = () => {
       dataIndex: 'fechaVisita',
       key: 'f',
       width: 160,
-      render: (v: string) => new Date(v).toLocaleString('es-CO'),
+      render: (v: string) => new Date(v).toLocaleString('es-CO', { timeZone: 'America/Bogota' }),
       sorter: (a: any, b: any) => new Date(a.fechaVisita).getTime() - new Date(b.fechaVisita).getTime(),
     },
     {
@@ -356,7 +356,7 @@ const VendidoPorVisita = () => {
         {detalleSel && (
           <>
             <Descriptions bordered column={1} size="small">
-              <Descriptions.Item label="Fecha">{new Date(detalleSel.fechaVisita).toLocaleString('es-CO')}</Descriptions.Item>
+              <Descriptions.Item label="Fecha">{new Date(detalleSel.fechaVisita).toLocaleString('es-CO', { timeZone: 'America/Bogota' })}</Descriptions.Item>
               <Descriptions.Item label="Máquina">{detalleSel.serial ?? `Máq #${detalleSel.idMaquina}`}</Descriptions.Item>
               <Descriptions.Item label="Cliente">{detalleSel.cliente ?? '—'}</Descriptions.Item>
               <Descriptions.Item label="Operador">{detalleSel.operador}</Descriptions.Item>
