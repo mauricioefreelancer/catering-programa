@@ -188,13 +188,14 @@ export const routes = createBrowserRouter([
         element: <PermissionRoute modulo="tesoreria" accion="ver"><SaldosDigitales /></PermissionRoute>,
       },
       {
-        path: 'tesoreria/facturacion-nrq',
+        path: 'tesoreria/facturacion-cliente',
         element: (
           <PermissionRoute modulo="tesoreria" accion="ver">
             <FacturacionNRQ />
           </PermissionRoute>
         ),
       },
+      { path: 'tesoreria/facturacion-nrq', element: <Navigate to="/tesoreria/facturacion-cliente" replace /> },
       {
         path: 'admin/roles',
         element: (

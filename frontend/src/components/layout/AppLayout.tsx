@@ -133,7 +133,7 @@ const AppLayout = () => {
     if (hasPermission('tesoreria')) {
       tesoreriaChildren.push({ key: '/tesoreria/efectivo', icon: <WalletOutlined />, label: <Link to="/tesoreria/efectivo">Efectivo / Recaudo</Link> })
       tesoreriaChildren.push({ key: '/tesoreria/vendido-por-visita', icon: <ShopOutlined />, label: <Link to="/tesoreria/vendido-por-visita">Vendido por Visita</Link> })
-      tesoreriaChildren.push({ key: '/tesoreria/facturacion-nrq', icon: <FileTextOutlined />, label: <Link to="/tesoreria/facturacion-nrq">Facturación NRQ</Link> })
+      tesoreriaChildren.push({ key: '/tesoreria/facturacion-cliente', icon: <FileTextOutlined />, label: <Link to="/tesoreria/facturacion-cliente">Facturación al cliente</Link> })
       tesoreriaChildren.push({ key: '/tesoreria/saldos-digitales', icon: <DollarOutlined />, label: <Link to="/tesoreria/saldos-digitales">Saldos digitales</Link> })
     }
     if (tesoreriaChildren.length > 0) {

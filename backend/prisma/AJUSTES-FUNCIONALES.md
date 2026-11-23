@@ -24,3 +24,9 @@ El físico de cada tolva se registra en su unidad de compra y el pedido se calcu
 Durante un ensayo, `DIRECT_URL` apuntaba a Render aunque `DATABASE_URL` apuntaba a loopback. Prisma aplicó en Render `20261124150000_negociacion_clientes` y `20261124160000_control_consumo_mp` el 23 de noviembre de 2026 a las 16:08 de Colombia. No se publicó código nuevo. La verificación posterior de solo lectura confirmó ambas migraciones completas, 35 filas en `STOCK_PROVEEDOR` y cero visitas con valor de diferencia MP.
 
 Mantener intactos los archivos de migración ya aplicados. Para ensayos locales de Prisma, asignar explícitamente **ambas** variables (`DATABASE_URL` y `DIRECT_URL`) a la misma instancia de loopback antes de ejecutar cualquier migración.
+
+## A5–A6: cortes y facturación al cliente
+
+Aplicar `20261124170000_nrq_espiral_facturacion` antes de arrancar el nuevo backend. Los cortes no se inventan para visitas antiguas. Las facturas existentes conservan sus importes; las nuevas usan el precio y porcentaje de cada lectura positiva entre el corte del mes anterior (exclusivo) y el actual (incluido), en hora de Colombia. El porcentaje agregado es efectivo sobre el valor de venta. Sin dos cortes no se genera factura para esa máquina.
+
+El nuevo endpoint es `/api/tesoreria/facturacion-cliente/generar`; el anterior queda como alias temporal. Las lecturas NRQ nuevas exigen un único mapa de origen. El `CHECK` se crea con `NOT VALID` para no borrar ni modificar lecturas antiguas cuyo botón se eliminó; las claves foráneas protegen los mapas con lecturas de nuevos borrados.

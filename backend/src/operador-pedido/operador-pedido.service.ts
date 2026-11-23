@@ -86,7 +86,7 @@ export class OperadorPedidoService {
             idMaquina: dto.idMaquina, idOperador: dto.idOperador, idCliente: maquina.idCliente,
             fechaVisita, idOffline: dto.idOffline, idUsuarioRegistro: userId ?? null,
             nrEfectivoAnterior: lecturas.nrEfectivo, nrEfectivoActual: nrActual,
-            ventaNr, reinicioContador: dto.reinicioContador ?? false,
+            ventaNr, reinicioContador: dto.reinicioContador ?? false, esCorteMes: dto.esCorteMes ?? false,
           },
         });
         const idGrupo = visita.idVisita;
@@ -190,13 +190,43 @@ export class OperadorPedidoService {
           throw new BadRequestException('Registra el físico de todas las tolvas configuradas');
         }
         const anteriorNrq = new Map(lecturas.botones.map(b => [b.idMapaNrq, b.lectura]));
-        const nrqEntradas = dto.nrqLecturas?.map(b => ({ idMapaNRQ: b.idMapaNRQ, lectura: BigInt(b.lecturaActual) }))
-          ?? dto.nrqItems?.map(b => ({ idMapaNRQ: b.idMapaNRQ, lectura: (anteriorNrq.get(b.idMapaNRQ) ?? 0n) + BigInt(b.valor) })) ?? [];
+        const nrqEntradas = dto.nrqLecturas?.map(b => ({ idMapaNRQ: b.idMapaNRQ, idMapaMP: b.idMapaMP, lectura: BigInt(b.lecturaActual) }))
+          ?? dto.nrqItems?.map(b => ({ idMapaNRQ: b.idMapaNRQ, idMapaMP: undefined, lectura: (anteriorNrq.get(b.idMapaNRQ) ?? 0n) + BigInt(b.valor) })) ?? [];
+        const exigeEspirales = maquina.tipoNegociacion === 'ESPECIAL'
+          && (maquina.lecturaNrqEspiral === 'CADA_VISITA' || dto.esCorteMes === true);
+        const previosEspiral = new Map(lecturas.nrqEspirales.map(l => [l.idMapaMp, l]));
+        const nrqPorEspiral = new Map<number, bigint | null>();
         const botonesProcesados = new Set<number>();
         const unidadesCafe = new Map<number, bigint>();
 
         for (const nrqItem of nrqEntradas) {
-          const nrq = mapaNrqById.get(nrqItem.idMapaNRQ);
+          if ((nrqItem.idMapaNRQ == null) === (nrqItem.idMapaMP == null)) {
+            throw new BadRequestException('Cada lectura NRQ debe indicar exactamente un botón o un espiral');
+          }
+          if (nrqItem.idMapaMP != null) {
+            if (!exigeEspirales) {
+              throw new BadRequestException('La visita no admite NRQ por espiral con la negociación y frecuencia configuradas');
+            }
+            const mapa = mapaMpById.get(nrqItem.idMapaMP);
+            if (!mapa || mapa.producto.tipoProducto !== 'ESTANDAR' || !espiralesRegistrados.has(mapa.idMapaMp)) {
+              throw new BadRequestException('Registra el físico del espiral estándar de la máquina antes de enviar su lectura NRQ');
+            }
+            if (nrqPorEspiral.has(mapa.idMapaMp)) throw new BadRequestException('Hay una lectura NRQ por espiral repetida');
+            const previo = previosEspiral.get(mapa.idMapaMp);
+            const anterior = previo?.lectura ?? mapa.lecturaInicial;
+            const unidades = calcular(`Espiral ${mapa.espiralCodigo}`, anterior, nrqItem.lectura);
+            const precio = precioPorProducto.get(mapa.idProducto);
+            nrqPorEspiral.set(mapa.idMapaMp,
+              previo?.idVisita != null && previo.idVisita === lecturas.visita?.idVisita &&
+              previo.idProductoAnterior === mapa.idProducto ? unidades : null);
+            await tx.lecturasNrq.create({ data: {
+              idVisita: idGrupo, idMapaMp: mapa.idMapaMp, idProdTerm: mapa.idProducto, opcionBoton: mapa.espiralCodigo,
+              lecturaAnterior: anterior, lecturaActual: nrqItem.lectura, unidades, precioUnitario: precio,
+              subtotal: precio?.mul(unidades.toString()), porcentajeCliente: mapa.porcentajeCliente,
+            } });
+            continue;
+          }
+          const nrq = mapaNrqById.get(nrqItem.idMapaNRQ!);
           if (!nrq || nrq.idMaquina !== dto.idMaquina) {
             throw new BadRequestException(`Mapa NRQ ${nrqItem.idMapaNRQ} no pertenece a la máquina`);
           }
@@ -220,6 +250,9 @@ export class OperadorPedidoService {
 
         if (dto.nrEfectivoActual != null && botonesProcesados.size !== mapaNrqById.size) {
           throw new BadRequestException('Registra la lectura de cada botón configurado');
+        }
+        if (exigeEspirales && nrqPorEspiral.size !== previosEspiral.size) {
+          throw new BadRequestException('Registra el NRQ de cada espiral estándar configurado');
         }
 const controlesMP: Prisma.InputJsonObject[] = [];
         let diferenciaMpValor: Prisma.Decimal | null = null;
@@ -301,6 +334,13 @@ const controlesMP: Prisma.InputJsonObject[] = [];
             porcentajeCliente: boton.porcentajeCliente.toString() });
         }
         const { ventaTeorica, valorFacturarCliente, diferenciaVenta, controles } = calcularVentaTeorica(ventaNr, lineasVenta);
+        const diferenciasEspiral = detalleControles.map(c => {
+          const lectura = typeof c.idMapaMp === 'number' ? nrqPorEspiral.get(c.idMapaMp) : null;
+          return lectura == null || typeof c.vendidas !== 'number' ? null : lectura - BigInt(c.vendidas);
+        });
+        const comparablesEspiral = diferenciasEspiral.filter((d): d is bigint => d != null);
+        const diferenciaUnidades = comparablesEspiral.length && comparablesEspiral.length === nrqPorEspiral.size
+          ? comparablesEspiral.reduce((total, d) => total + d, 0n) : null;
 
         await tx.ventasPorVisita.upsert({
           where: { idGrupo: idGrupo ?? 0 },
@@ -317,12 +357,14 @@ const controlesMP: Prisma.InputJsonObject[] = [];
             totalVendidoProductos: ventaTeorica,
             ventaTeoricaProductos: detalleControles.length ? ventaTeorica : null,
             diferenciaVenta,
+            diferenciaUnidades,
             diferenciaMpValor,
             valorFacturarCliente: detalleControles.length ? valorFacturarCliente : null,
             unidadesSugeridas: unidadesSugeridasVisita,
             detalle: { reposicion: detalleVisita, controlesMP, controles: detalleControles.map((linea, i) => ({
               ...linea, inconsistencia: controles[i].inconsistencia, subtotal: controles[i].subtotal?.toString() ?? null,
               cobrado: controles[i].cobrado?.toString() ?? null, facturable: controles[i].facturable?.toString() ?? null,
+              diferenciaUnidades: diferenciasEspiral[i]?.toString() ?? null,
             })) },
             firmaOrigen: 'CONTADORES',
             firmaUsuario: userId ?? null,

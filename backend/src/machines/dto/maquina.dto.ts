@@ -42,6 +42,7 @@ export class CreateMapaMPDto {
   @IsString() @IsNotEmpty() espiralCodigo: string;
   @IsOptional() @IsInt() capacidadMax?: number;
   @IsOptional() @IsBoolean() precioCero?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) lecturaInicial?: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) porcentajeCliente?: number;
 }
 
@@ -50,6 +51,7 @@ export class UpdateMapaMPDto {
   @IsOptional() @IsString() espiralCodigo?: string;
   @IsOptional() @IsInt() capacidadMax?: number;
   @IsOptional() @IsBoolean() precioCero?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) lecturaInicial?: number;
   @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) porcentajeCliente?: number;
 }
 
