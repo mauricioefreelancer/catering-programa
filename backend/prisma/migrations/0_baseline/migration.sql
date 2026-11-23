@@ -1,0 +1,723 @@
+-- CreateTable
+CREATE TABLE "ROLES_PERFILES" (
+    "ID_Rol" SERIAL NOT NULL,
+    "Nombre_Rol" VARCHAR(120) NOT NULL,
+    "Permisos_CRUD" JSONB NOT NULL,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "ROLES_PERFILES_pkey" PRIMARY KEY ("ID_Rol")
+);
+
+-- CreateTable
+CREATE TABLE "USUARIOS_SISTEMA" (
+    "ID_Usuario" SERIAL NOT NULL,
+    "ID_Rol" INTEGER NOT NULL,
+    "Nombre_Completo" VARCHAR(200) NOT NULL,
+    "Usuario_Login" VARCHAR(100) NOT NULL,
+    "Email" VARCHAR(200) NOT NULL,
+    "Password_Hash" VARCHAR(255) NOT NULL,
+    "Permisos_Excepcion" JSONB,
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Ultimo_Acceso" TIMESTAMP(3),
+
+    CONSTRAINT "USUARIOS_SISTEMA_pkey" PRIMARY KEY ("ID_Usuario")
+);
+
+-- CreateTable
+CREATE TABLE "CLIENTES" (
+    "ID_Cliente" SERIAL NOT NULL,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Fecha_Contrato" DATE NOT NULL,
+    "NIT" VARCHAR(30) NOT NULL,
+    "Razon_Social" VARCHAR(250) NOT NULL,
+    "Contacto_Nombre" VARCHAR(200),
+    "Contacto_Telefono" VARCHAR(50),
+    "Contacto_Correo" VARCHAR(200),
+    "Contacto_Direccion" VARCHAR(300),
+    "Contacto_Ciudad" VARCHAR(100),
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "CLIENTES_pkey" PRIMARY KEY ("ID_Cliente")
+);
+
+-- CreateTable
+CREATE TABLE "PROVEEDORES" (
+    "ID_Proveedor" SERIAL NOT NULL,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "NIT" VARCHAR(30) NOT NULL,
+    "Razon_Social" VARCHAR(250) NOT NULL,
+    "Asesor_Nombre" VARCHAR(200),
+    "Asesor_Telefono" VARCHAR(50),
+    "Asesor_Correo" VARCHAR(200),
+    "Condicion_Pago_Tipo" VARCHAR(20) NOT NULL DEFAULT 'CONTADO',
+    "Condicion_Pago_Dias" INTEGER NOT NULL DEFAULT 0,
+    "Banco_Nombre" VARCHAR(150),
+    "Banco_Tipo_Cuenta" VARCHAR(50),
+    "Banco_Numero_Cuenta" VARCHAR(100),
+    "Banco_Titular" VARCHAR(200),
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "PROVEEDORES_pkey" PRIMARY KEY ("ID_Proveedor")
+);
+
+-- CreateTable
+CREATE TABLE "OPERADORES" (
+    "ID_Operador" SERIAL NOT NULL,
+    "ID_Usuario" INTEGER NOT NULL,
+    "Numero_Documento" VARCHAR(50),
+    "Nombre_Completo" VARCHAR(200) NOT NULL,
+    "Telefono" VARCHAR(50),
+    "Zona_Asignada" VARCHAR(200),
+    "Fecha_Ingreso" DATE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "OPERADORES_pkey" PRIMARY KEY ("ID_Operador")
+);
+
+-- CreateTable
+CREATE TABLE "PRODUCTOS" (
+    "ID_Producto" SERIAL NOT NULL,
+    "ID_Proveedor" INTEGER,
+    "Codigo_Barras" VARCHAR(100) NOT NULL,
+    "Nombre_Producto" VARCHAR(250) NOT NULL,
+    "Tipo_Producto" VARCHAR(30) NOT NULL DEFAULT 'ESTANDAR',
+    "Categoria_Insumo" VARCHAR(80),
+    "Unidad_Compra" VARCHAR(50) NOT NULL DEFAULT 'Unidad',
+    "Unidad_Consumo" VARCHAR(50) NOT NULL DEFAULT 'Unidad',
+    "Tipo_Cafe" VARCHAR(20),
+    "Equivalencia" DECIMAL(18,4) NOT NULL DEFAULT 1.0000,
+    "Costo_Base" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Porcentaje_Imp" DECIMAL(8,4) NOT NULL DEFAULT 0,
+    "Costo_Total" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Stock_Min" INTEGER NOT NULL DEFAULT 0,
+    "Stock_Max" INTEGER NOT NULL DEFAULT 0,
+    "Stock_Actual" INTEGER NOT NULL DEFAULT 0,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "PRODUCTOS_pkey" PRIMARY KEY ("ID_Producto")
+);
+
+-- CreateTable
+CREATE TABLE "RECETAS_DOSIFICADOS" (
+    "ID_Receta" SERIAL NOT NULL,
+    "ID_Prod_Term" INTEGER NOT NULL,
+    "ID_Mat_Prima" INTEGER NOT NULL,
+    "Cantidad_Dosis" DECIMAL(18,4) NOT NULL,
+    "Unidad_Dosis" VARCHAR(50) NOT NULL,
+    "Costo_Proporcional" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "RECETAS_DOSIFICADOS_pkey" PRIMARY KEY ("ID_Receta")
+);
+
+-- CreateTable
+CREATE TABLE "PRECIOS_CLIENTE" (
+    "ID_Precio" SERIAL NOT NULL,
+    "ID_Cliente" INTEGER NOT NULL,
+    "ID_Producto" INTEGER NOT NULL,
+    "Precio_Venta" DECIMAL(18,2) NOT NULL,
+    "Margen_Actual" DECIMAL(8,4) NOT NULL DEFAULT 0,
+    "Aumento_IPC" DECIMAL(8,4) NOT NULL DEFAULT 0,
+    "Alerta_Margen" BOOLEAN NOT NULL DEFAULT false,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Fecha_Ultima_Actualizacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PRECIOS_CLIENTE_pkey" PRIMARY KEY ("ID_Precio")
+);
+
+-- CreateTable
+CREATE TABLE "MAQUINAS_Y_TIENDAS" (
+    "ID_Maquina" SERIAL NOT NULL,
+    "ID_Cliente" INTEGER,
+    "ID_Operador" INTEGER,
+    "Serial" VARCHAR(100) NOT NULL,
+    "Marca" VARCHAR(150),
+    "Tipo" VARCHAR(30) NOT NULL DEFAULT 'SNACKS',
+    "Ubicacion_Esp" VARCHAR(300),
+    "Medios_Pago" JSONB,
+    "Tarifa_Promedio_Override" DECIMAL(18,2),
+    "Base" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Ultimo_Contador_NR" BIGINT,
+    "Fecha_Ultima_Visita" TIMESTAMP(3),
+    "Fecha_Instalacion" DATE,
+    "Estado" BOOLEAN NOT NULL DEFAULT true,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MAQUINAS_Y_TIENDAS_pkey" PRIMARY KEY ("ID_Maquina")
+);
+
+-- CreateTable
+CREATE TABLE "MAPA_MATERIA_PRIMA" (
+    "ID_Mapa_MP" SERIAL NOT NULL,
+    "ID_Maquina" INTEGER NOT NULL,
+    "ID_Producto" INTEGER NOT NULL,
+    "ID_Proveedor" INTEGER,
+    "Espiral_Codigo" VARCHAR(20) NOT NULL,
+    "Capacidad_Max" INTEGER NOT NULL DEFAULT 0,
+    "Capacidad_Actual" INTEGER NOT NULL DEFAULT 0,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MAPA_MATERIA_PRIMA_pkey" PRIMARY KEY ("ID_Mapa_MP")
+);
+
+-- CreateTable
+CREATE TABLE "MAPA_CAFE_NRQ" (
+    "ID_Mapa_NRQ" SERIAL NOT NULL,
+    "ID_Maquina" INTEGER NOT NULL,
+    "ID_Prod_Term" INTEGER NOT NULL,
+    "ID_Proveedor" INTEGER,
+    "Opcion_Boton" VARCHAR(50) NOT NULL,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MAPA_CAFE_NRQ_pkey" PRIMARY KEY ("ID_Mapa_NRQ")
+);
+
+-- CreateTable
+CREATE TABLE "INGRESOS_BODEGA" (
+    "ID_Ingreso" SERIAL NOT NULL,
+    "ID_Proveedor" INTEGER NOT NULL,
+    "Fecha_Hora" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Factura_Num" VARCHAR(100) NOT NULL,
+    "Observaciones" TEXT NOT NULL,
+    "ID_Usuario" INTEGER NOT NULL,
+
+    CONSTRAINT "INGRESOS_BODEGA_pkey" PRIMARY KEY ("ID_Ingreso")
+);
+
+-- CreateTable
+CREATE TABLE "DETALLE_INGRESOS" (
+    "ID_Det_Ingreso" SERIAL NOT NULL,
+    "ID_Ingreso" INTEGER NOT NULL,
+    "ID_Producto" INTEGER NOT NULL,
+    "Cantidad_Recib" INTEGER NOT NULL,
+    "Costo_Unitario_Compra" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Fecha_Venc" DATE,
+
+    CONSTRAINT "DETALLE_INGRESOS_pkey" PRIMARY KEY ("ID_Det_Ingreso")
+);
+
+-- CreateTable
+CREATE TABLE "PEDIDOS_OPERADOR" (
+    "ID_Pedido" SERIAL NOT NULL,
+    "ID_Grupo" INTEGER,
+    "ID_Maquina" INTEGER NOT NULL,
+    "ID_Operador" INTEGER NOT NULL,
+    "ID_Producto" INTEGER NOT NULL,
+    "ID_Proveedor" INTEGER,
+    "ID_Mapa_MP" INTEGER,
+    "Fecha_Hora" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Fisico_Digitado" INTEGER NOT NULL DEFAULT 0,
+    "Cant_Sugerida" INTEGER NOT NULL DEFAULT 0,
+    "NR_Actual_Medido" BIGINT,
+    "NRQ_Actual_Lectura" BIGINT,
+    "Estado" VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+
+    CONSTRAINT "PEDIDOS_OPERADOR_pkey" PRIMARY KEY ("ID_Pedido")
+);
+
+-- CreateTable
+CREATE TABLE "DESPACHOS_BODEGA" (
+    "ID_Despacho" SERIAL NOT NULL,
+    "ID_Pedido" INTEGER NOT NULL,
+    "ID_Usuario" INTEGER NOT NULL,
+    "Fecha_Hora" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Cant_Despachada" INTEGER NOT NULL DEFAULT 0,
+    "Pendiente_Desp" INTEGER NOT NULL DEFAULT 0,
+    "Observaciones" TEXT,
+    "ID_Mapa_MP" INTEGER,
+    "Stock_Antes" INTEGER NOT NULL DEFAULT 0,
+    "Stock_Despues" INTEGER NOT NULL DEFAULT 0,
+
+    CONSTRAINT "DESPACHOS_BODEGA_pkey" PRIMARY KEY ("ID_Despacho")
+);
+
+-- CreateTable
+CREATE TABLE "VENTAS_POR_VISITA" (
+    "ID_Visita" SERIAL NOT NULL,
+    "ID_Grupo" INTEGER,
+    "ID_Maquina" INTEGER NOT NULL,
+    "ID_Cliente" INTEGER,
+    "ID_Operador" INTEGER NOT NULL,
+    "Fecha_Visita" TIMESTAMP(3) NOT NULL,
+    "NR_Anterior" BIGINT NOT NULL DEFAULT 0,
+    "NR_Actual" BIGINT NOT NULL DEFAULT 0,
+    "Total_Vendido" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Total_Despachado" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Total_Vendido_Productos" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Unidades_Sugeridas" INTEGER NOT NULL DEFAULT 0,
+    "Detalle" JSONB,
+    "Firma_Fecha" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Firma_Usuario" INTEGER,
+    "Firma_Origen" VARCHAR(20) NOT NULL DEFAULT 'REGISTRO',
+
+    CONSTRAINT "VENTAS_POR_VISITA_pkey" PRIMARY KEY ("ID_Visita")
+);
+
+-- CreateTable
+CREATE TABLE "TESORERIA_EFECTIVO_NR" (
+    "ID_Recaudo" SERIAL NOT NULL,
+    "ID_Grupo" INTEGER,
+    "ID_Maquina" INTEGER NOT NULL,
+    "ID_Operador" INTEGER NOT NULL,
+    "ID_Usuario" INTEGER NOT NULL,
+    "Fecha_Hora" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "NR_Anterior" BIGINT NOT NULL DEFAULT 0,
+    "NR_Actual" BIGINT NOT NULL DEFAULT 0,
+    "Diferencia_NR" BIGINT NOT NULL DEFAULT 0,
+    "Tarifa_Aplicada" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Efectivo_Teorico" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Efectivo_Recog" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Efectivo_Billetes" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Efectivo_Monedas" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Diferencia_Rec" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Veos_Recog" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Datafono_Recog" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Cupos_Recog" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Medios_No_Efectivo" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Efectivo_Esperado" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Total_Vendido" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Estado" VARCHAR(20) NOT NULL DEFAULT 'CERRADO',
+
+    CONSTRAINT "TESORERIA_EFECTIVO_NR_pkey" PRIMARY KEY ("ID_Recaudo")
+);
+
+-- CreateTable
+CREATE TABLE "TESORERIA_FACTURACION_NRQ" (
+    "ID_Fact_NRQ" SERIAL NOT NULL,
+    "ID_Maquina" INTEGER NOT NULL,
+    "ID_Cliente" INTEGER NOT NULL,
+    "ID_Prod_Term" INTEGER NOT NULL,
+    "Fecha_Inicio" DATE NOT NULL,
+    "Fecha_Fin" DATE NOT NULL,
+    "NRQ_Inicial" BIGINT NOT NULL DEFAULT 0,
+    "NRQ_Final" BIGINT NOT NULL DEFAULT 0,
+    "NRQ_Diferencia" BIGINT NOT NULL DEFAULT 0,
+    "Precio_Unitario_Venta" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Total_Facturar" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "ID_Usuario" INTEGER NOT NULL,
+
+    CONSTRAINT "TESORERIA_FACTURACION_NRQ_pkey" PRIMARY KEY ("ID_Fact_NRQ")
+);
+
+-- CreateTable
+CREATE TABLE "SALDOS_DIGITALES" (
+    "ID_Saldo" SERIAL NOT NULL,
+    "ID_Maquina" INTEGER NOT NULL,
+    "Plataforma" VARCHAR(50) NOT NULL,
+    "Monto_Transaccion" DECIMAL(18,2) NOT NULL,
+    "Fecha_Transaccion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Referencia" VARCHAR(200),
+    "ID_Usuario" INTEGER NOT NULL,
+
+    CONSTRAINT "SALDOS_DIGITALES_pkey" PRIMARY KEY ("ID_Saldo")
+);
+
+-- CreateTable
+CREATE TABLE "AUDITORIA_LOG" (
+    "ID_Log" BIGSERIAL NOT NULL,
+    "ID_Usuario" INTEGER,
+    "Fecha_Hora" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Modulo_Afectado" VARCHAR(100) NOT NULL,
+    "Accion" VARCHAR(50) NOT NULL,
+    "Tabla_Afectada" VARCHAR(100),
+    "ID_Registro_Afectado" TEXT,
+    "Detalle_Cambios" JSONB,
+    "IP_Origen" VARCHAR(50),
+
+    CONSTRAINT "AUDITORIA_LOG_pkey" PRIMARY KEY ("ID_Log")
+);
+
+-- CreateTable
+CREATE TABLE "STOCK_PROVEEDOR" (
+    "ID_Stock_Proveedor" SERIAL NOT NULL,
+    "ID_Producto" INTEGER NOT NULL,
+    "ID_Proveedor" INTEGER NOT NULL,
+    "Stock_Actual" INTEGER NOT NULL DEFAULT 0,
+    "Costo_Compra" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "Fecha_Creacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "Fecha_Actualizacion" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "STOCK_PROVEEDOR_pkey" PRIMARY KEY ("ID_Stock_Proveedor")
+);
+
+-- CreateTable
+CREATE TABLE "HISTORIAL_MEDIOS_PAGO" (
+    "ID_Historial" SERIAL NOT NULL,
+    "ID_Maquina" INTEGER NOT NULL,
+    "Serial_Maquina" VARCHAR(100) NOT NULL,
+    "Tipo_Medio" VARCHAR(50) NOT NULL,
+    "Serial_Dispositivo" VARCHAR(100),
+    "Accion" VARCHAR(20) NOT NULL,
+    "Valor_Anterior" JSONB,
+    "Valor_Nuevo" JSONB,
+    "ID_Usuario" INTEGER,
+    "Fecha_Cambio" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "HISTORIAL_MEDIOS_PAGO_pkey" PRIMARY KEY ("ID_Historial")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ROLES_PERFILES_Nombre_Rol_key" ON "ROLES_PERFILES"("Nombre_Rol");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "USUARIOS_SISTEMA_Usuario_Login_key" ON "USUARIOS_SISTEMA"("Usuario_Login");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "USUARIOS_SISTEMA_Email_key" ON "USUARIOS_SISTEMA"("Email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CLIENTES_NIT_key" ON "CLIENTES"("NIT");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PROVEEDORES_NIT_key" ON "PROVEEDORES"("NIT");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OPERADORES_ID_Usuario_key" ON "OPERADORES"("ID_Usuario");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PRODUCTOS_Codigo_Barras_key" ON "PRODUCTOS"("Codigo_Barras");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "uq_receta_unica" ON "RECETAS_DOSIFICADOS"("ID_Prod_Term", "ID_Mat_Prima");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "uq_precio_cliente_producto" ON "PRECIOS_CLIENTE"("ID_Cliente", "ID_Producto");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MAQUINAS_Y_TIENDAS_Serial_key" ON "MAQUINAS_Y_TIENDAS"("Serial");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "uq_espiral_maquina" ON "MAPA_MATERIA_PRIMA"("ID_Maquina", "Espiral_Codigo");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "uq_nrq_boton_maquina" ON "MAPA_CAFE_NRQ"("ID_Maquina", "Opcion_Boton");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "VENTAS_POR_VISITA_ID_Grupo_key" ON "VENTAS_POR_VISITA"("ID_Grupo");
+
+-- CreateIndex
+CREATE INDEX "VENTAS_POR_VISITA_ID_Maquina_Fecha_Visita_idx" ON "VENTAS_POR_VISITA"("ID_Maquina", "Fecha_Visita");
+
+-- CreateIndex
+CREATE INDEX "VENTAS_POR_VISITA_ID_Cliente_idx" ON "VENTAS_POR_VISITA"("ID_Cliente");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "uq_recaudo_maquina_fecha" ON "TESORERIA_EFECTIVO_NR"("ID_Maquina", "Fecha_Hora");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "uq_stock_producto_proveedor" ON "STOCK_PROVEEDOR"("ID_Producto", "ID_Proveedor");
+
+-- CreateIndex
+CREATE INDEX "idx_historial_maquina_fecha" ON "HISTORIAL_MEDIOS_PAGO"("ID_Maquina", "Fecha_Cambio");
+
+-- CreateIndex
+CREATE INDEX "idx_historial_serial_fecha" ON "HISTORIAL_MEDIOS_PAGO"("Serial_Dispositivo", "Fecha_Cambio");
+
+-- AddForeignKey
+ALTER TABLE "USUARIOS_SISTEMA" ADD CONSTRAINT "USUARIOS_SISTEMA_ID_Rol_fkey" FOREIGN KEY ("ID_Rol") REFERENCES "ROLES_PERFILES"("ID_Rol") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OPERADORES" ADD CONSTRAINT "OPERADORES_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PRODUCTOS" ADD CONSTRAINT "PRODUCTOS_ID_Proveedor_fkey" FOREIGN KEY ("ID_Proveedor") REFERENCES "PROVEEDORES"("ID_Proveedor") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RECETAS_DOSIFICADOS" ADD CONSTRAINT "RECETAS_DOSIFICADOS_ID_Prod_Term_fkey" FOREIGN KEY ("ID_Prod_Term") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RECETAS_DOSIFICADOS" ADD CONSTRAINT "RECETAS_DOSIFICADOS_ID_Mat_Prima_fkey" FOREIGN KEY ("ID_Mat_Prima") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PRECIOS_CLIENTE" ADD CONSTRAINT "PRECIOS_CLIENTE_ID_Cliente_fkey" FOREIGN KEY ("ID_Cliente") REFERENCES "CLIENTES"("ID_Cliente") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PRECIOS_CLIENTE" ADD CONSTRAINT "PRECIOS_CLIENTE_ID_Producto_fkey" FOREIGN KEY ("ID_Producto") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAQUINAS_Y_TIENDAS" ADD CONSTRAINT "MAQUINAS_Y_TIENDAS_ID_Cliente_fkey" FOREIGN KEY ("ID_Cliente") REFERENCES "CLIENTES"("ID_Cliente") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAQUINAS_Y_TIENDAS" ADD CONSTRAINT "MAQUINAS_Y_TIENDAS_ID_Operador_fkey" FOREIGN KEY ("ID_Operador") REFERENCES "OPERADORES"("ID_Operador") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAPA_MATERIA_PRIMA" ADD CONSTRAINT "MAPA_MATERIA_PRIMA_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAPA_MATERIA_PRIMA" ADD CONSTRAINT "MAPA_MATERIA_PRIMA_ID_Producto_fkey" FOREIGN KEY ("ID_Producto") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAPA_MATERIA_PRIMA" ADD CONSTRAINT "MAPA_MATERIA_PRIMA_ID_Proveedor_fkey" FOREIGN KEY ("ID_Proveedor") REFERENCES "PROVEEDORES"("ID_Proveedor") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAPA_CAFE_NRQ" ADD CONSTRAINT "MAPA_CAFE_NRQ_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAPA_CAFE_NRQ" ADD CONSTRAINT "MAPA_CAFE_NRQ_ID_Prod_Term_fkey" FOREIGN KEY ("ID_Prod_Term") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MAPA_CAFE_NRQ" ADD CONSTRAINT "MAPA_CAFE_NRQ_ID_Proveedor_fkey" FOREIGN KEY ("ID_Proveedor") REFERENCES "PROVEEDORES"("ID_Proveedor") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "INGRESOS_BODEGA" ADD CONSTRAINT "INGRESOS_BODEGA_ID_Proveedor_fkey" FOREIGN KEY ("ID_Proveedor") REFERENCES "PROVEEDORES"("ID_Proveedor") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "INGRESOS_BODEGA" ADD CONSTRAINT "INGRESOS_BODEGA_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DETALLE_INGRESOS" ADD CONSTRAINT "DETALLE_INGRESOS_ID_Ingreso_fkey" FOREIGN KEY ("ID_Ingreso") REFERENCES "INGRESOS_BODEGA"("ID_Ingreso") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DETALLE_INGRESOS" ADD CONSTRAINT "DETALLE_INGRESOS_ID_Producto_fkey" FOREIGN KEY ("ID_Producto") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PEDIDOS_OPERADOR" ADD CONSTRAINT "PEDIDOS_OPERADOR_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PEDIDOS_OPERADOR" ADD CONSTRAINT "PEDIDOS_OPERADOR_ID_Operador_fkey" FOREIGN KEY ("ID_Operador") REFERENCES "OPERADORES"("ID_Operador") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PEDIDOS_OPERADOR" ADD CONSTRAINT "PEDIDOS_OPERADOR_ID_Producto_fkey" FOREIGN KEY ("ID_Producto") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PEDIDOS_OPERADOR" ADD CONSTRAINT "PEDIDOS_OPERADOR_ID_Proveedor_fkey" FOREIGN KEY ("ID_Proveedor") REFERENCES "PROVEEDORES"("ID_Proveedor") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PEDIDOS_OPERADOR" ADD CONSTRAINT "PEDIDOS_OPERADOR_ID_Mapa_MP_fkey" FOREIGN KEY ("ID_Mapa_MP") REFERENCES "MAPA_MATERIA_PRIMA"("ID_Mapa_MP") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DESPACHOS_BODEGA" ADD CONSTRAINT "DESPACHOS_BODEGA_ID_Pedido_fkey" FOREIGN KEY ("ID_Pedido") REFERENCES "PEDIDOS_OPERADOR"("ID_Pedido") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DESPACHOS_BODEGA" ADD CONSTRAINT "DESPACHOS_BODEGA_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DESPACHOS_BODEGA" ADD CONSTRAINT "DESPACHOS_BODEGA_ID_Mapa_MP_fkey" FOREIGN KEY ("ID_Mapa_MP") REFERENCES "MAPA_MATERIA_PRIMA"("ID_Mapa_MP") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VENTAS_POR_VISITA" ADD CONSTRAINT "VENTAS_POR_VISITA_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VENTAS_POR_VISITA" ADD CONSTRAINT "VENTAS_POR_VISITA_ID_Cliente_fkey" FOREIGN KEY ("ID_Cliente") REFERENCES "CLIENTES"("ID_Cliente") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VENTAS_POR_VISITA" ADD CONSTRAINT "VENTAS_POR_VISITA_ID_Operador_fkey" FOREIGN KEY ("ID_Operador") REFERENCES "OPERADORES"("ID_Operador") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_EFECTIVO_NR" ADD CONSTRAINT "TESORERIA_EFECTIVO_NR_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_EFECTIVO_NR" ADD CONSTRAINT "TESORERIA_EFECTIVO_NR_ID_Operador_fkey" FOREIGN KEY ("ID_Operador") REFERENCES "OPERADORES"("ID_Operador") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_EFECTIVO_NR" ADD CONSTRAINT "TESORERIA_EFECTIVO_NR_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_FACTURACION_NRQ" ADD CONSTRAINT "TESORERIA_FACTURACION_NRQ_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_FACTURACION_NRQ" ADD CONSTRAINT "TESORERIA_FACTURACION_NRQ_ID_Cliente_fkey" FOREIGN KEY ("ID_Cliente") REFERENCES "CLIENTES"("ID_Cliente") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_FACTURACION_NRQ" ADD CONSTRAINT "TESORERIA_FACTURACION_NRQ_ID_Prod_Term_fkey" FOREIGN KEY ("ID_Prod_Term") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TESORERIA_FACTURACION_NRQ" ADD CONSTRAINT "TESORERIA_FACTURACION_NRQ_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SALDOS_DIGITALES" ADD CONSTRAINT "SALDOS_DIGITALES_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SALDOS_DIGITALES" ADD CONSTRAINT "SALDOS_DIGITALES_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AUDITORIA_LOG" ADD CONSTRAINT "AUDITORIA_LOG_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "STOCK_PROVEEDOR" ADD CONSTRAINT "STOCK_PROVEEDOR_ID_Producto_fkey" FOREIGN KEY ("ID_Producto") REFERENCES "PRODUCTOS"("ID_Producto") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "STOCK_PROVEEDOR" ADD CONSTRAINT "STOCK_PROVEEDOR_ID_Proveedor_fkey" FOREIGN KEY ("ID_Proveedor") REFERENCES "PROVEEDORES"("ID_Proveedor") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "HISTORIAL_MEDIOS_PAGO" ADD CONSTRAINT "HISTORIAL_MEDIOS_PAGO_ID_Maquina_fkey" FOREIGN KEY ("ID_Maquina") REFERENCES "MAQUINAS_Y_TIENDAS"("ID_Maquina") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "HISTORIAL_MEDIOS_PAGO" ADD CONSTRAINT "HISTORIAL_MEDIOS_PAGO_ID_Usuario_fkey" FOREIGN KEY ("ID_Usuario") REFERENCES "USUARIOS_SISTEMA"("ID_Usuario") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Objetos de auditoria no modelados por Prisma.
+-- Lee app.current_user_id / app.client_ip (seteados por el AuditMiddleware)
+-- y escribe el cambio en AUDITORIA_LOG.
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.fn_audit_trigger_generico()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog, pg_temp
+AS $$
+DECLARE
+    v_modulo       TEXT;
+    v_tabla        TEXT;
+    v_id_registro  TEXT;
+    v_campo_pk     TEXT;
+    v_old_row      JSONB;
+    v_new_row      JSONB;
+    v_detalle      JSONB;
+    v_usuario_id   INTEGER;
+    v_ip           TEXT;
+BEGIN
+    v_tabla    := TG_TABLE_NAME;
+    v_modulo   := CASE v_tabla
+        WHEN 'CLIENTES' THEN 'Clientes'
+        WHEN 'PROVEEDORES' THEN 'Proveedores'
+        WHEN 'PRODUCTOS' THEN 'Productos'
+        WHEN 'RECETAS_DOSIFICADOS' THEN 'Productos::Recetas'
+        WHEN 'PRECIOS_CLIENTE' THEN 'Precios'
+        WHEN 'OPERADORES' THEN 'Operadores'
+        WHEN 'MAQUINAS_Y_TIENDAS' THEN 'Maquinas'
+        WHEN 'MAPA_MATERIA_PRIMA' THEN 'Maquinas::MapaMP'
+        WHEN 'MAPA_CAFE_NRQ' THEN 'Maquinas::MapaNRQ'
+        WHEN 'INGRESOS_BODEGA' THEN 'Inventario::Ingresos'
+        WHEN 'DETALLE_INGRESOS' THEN 'Inventario::Detalle'
+        WHEN 'PEDIDOS_OPERADOR' THEN 'Inventario::PedidosOperador'
+        WHEN 'DESPACHOS_BODEGA' THEN 'Inventario::Despachos'
+        WHEN 'TESORERIA_EFECTIVO_NR' THEN 'Tesoreria::EfectivoNR'
+        WHEN 'TESORERIA_FACTURACION_NRQ' THEN 'Tesoreria::FacturacionNRQ'
+        WHEN 'SALDOS_DIGITALES' THEN 'Tesoreria::SaldosDigitales'
+        WHEN 'USUARIOS_SISTEMA' THEN 'Admin::Usuarios'
+        WHEN 'ROLES_PERFILES' THEN 'Admin::Roles'
+        ELSE 'General'
+    END;
+
+    v_campo_pk := CASE v_tabla
+        WHEN 'CLIENTES' THEN 'ID_Cliente'
+        WHEN 'PROVEEDORES' THEN 'ID_Proveedor'
+        WHEN 'PRODUCTOS' THEN 'ID_Producto'
+        WHEN 'RECETAS_DOSIFICADOS' THEN 'ID_Receta'
+        WHEN 'PRECIOS_CLIENTE' THEN 'ID_Precio'
+        WHEN 'OPERADORES' THEN 'ID_Operador'
+        WHEN 'MAQUINAS_Y_TIENDAS' THEN 'ID_Maquina'
+        WHEN 'MAPA_MATERIA_PRIMA' THEN 'ID_Mapa_MP'
+        WHEN 'MAPA_CAFE_NRQ' THEN 'ID_Mapa_NRQ'
+        WHEN 'INGRESOS_BODEGA' THEN 'ID_Ingreso'
+        WHEN 'DETALLE_INGRESOS' THEN 'ID_Det_Ingreso'
+        WHEN 'PEDIDOS_OPERADOR' THEN 'ID_Pedido'
+        WHEN 'DESPACHOS_BODEGA' THEN 'ID_Despacho'
+        WHEN 'TESORERIA_EFECTIVO_NR' THEN 'ID_Recaudo'
+        WHEN 'TESORERIA_FACTURACION_NRQ' THEN 'ID_Fact_NRQ'
+        WHEN 'SALDOS_DIGITALES' THEN 'ID_Saldo'
+        WHEN 'USUARIOS_SISTEMA' THEN 'ID_Usuario'
+        WHEN 'ROLES_PERFILES' THEN 'ID_Rol'
+        ELSE NULL
+    END;
+
+    -- to_jsonb() es obligatorio (nunca ::jsonb sobre rowtype)
+    v_old_row := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END;
+    v_new_row := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END;
+
+    IF (v_campo_pk IS NOT NULL) THEN
+        IF (TG_OP = 'DELETE') THEN
+            v_id_registro := v_old_row ->> v_campo_pk;
+        ELSE
+            v_id_registro := v_new_row ->> v_campo_pk;
+        END IF;
+    ELSE
+        v_id_registro := 'N/A';
+    END IF;
+
+    v_detalle := jsonb_build_object(
+        'operacion', TG_OP,
+        'antes',     v_old_row,
+        'despues',   v_new_row
+    );
+
+    BEGIN
+        v_usuario_id := NULLIF(current_setting('app.current_user_id', TRUE), '')::INTEGER;
+    EXCEPTION WHEN OTHERS THEN
+        v_usuario_id := NULL;
+    END;
+
+    BEGIN
+        v_ip := NULLIF(current_setting('app.client_ip', TRUE), '');
+    EXCEPTION WHEN OTHERS THEN
+        v_ip := inet_client_addr()::TEXT;
+    END;
+
+    INSERT INTO public."AUDITORIA_LOG" (
+        "ID_Usuario", "Modulo_Afectado", "Accion", "Tabla_Afectada",
+        "ID_Registro_Afectado", "Detalle_Cambios", "IP_Origen"
+    ) VALUES (
+        v_usuario_id, v_modulo, TG_OP, v_tabla, v_id_registro, v_detalle, v_ip
+    );
+
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END;
+$$;
+
+-- --------------------------------------------------------------------------
+-- 3. TRIGGERS POR TABLA (AFTER INSERT OR UPDATE OR DELETE)
+-- --------------------------------------------------------------------------
+DROP TRIGGER IF EXISTS trg_audit_clientes ON "CLIENTES";
+CREATE TRIGGER trg_audit_clientes AFTER INSERT OR UPDATE OR DELETE ON "CLIENTES" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_proveedores ON "PROVEEDORES";
+CREATE TRIGGER trg_audit_proveedores AFTER INSERT OR UPDATE OR DELETE ON "PROVEEDORES" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_productos ON "PRODUCTOS";
+CREATE TRIGGER trg_audit_productos AFTER INSERT OR UPDATE OR DELETE ON "PRODUCTOS" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_recetas ON "RECETAS_DOSIFICADOS";
+CREATE TRIGGER trg_audit_recetas AFTER INSERT OR UPDATE OR DELETE ON "RECETAS_DOSIFICADOS" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_precios ON "PRECIOS_CLIENTE";
+CREATE TRIGGER trg_audit_precios AFTER INSERT OR UPDATE OR DELETE ON "PRECIOS_CLIENTE" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_operadores ON "OPERADORES";
+CREATE TRIGGER trg_audit_operadores AFTER INSERT OR UPDATE OR DELETE ON "OPERADORES" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_maquinas ON "MAQUINAS_Y_TIENDAS";
+CREATE TRIGGER trg_audit_maquinas AFTER INSERT OR UPDATE OR DELETE ON "MAQUINAS_Y_TIENDAS" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_mapa_mp ON "MAPA_MATERIA_PRIMA";
+CREATE TRIGGER trg_audit_mapa_mp AFTER INSERT OR UPDATE OR DELETE ON "MAPA_MATERIA_PRIMA" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_mapa_nrq ON "MAPA_CAFE_NRQ";
+CREATE TRIGGER trg_audit_mapa_nrq AFTER INSERT OR UPDATE OR DELETE ON "MAPA_CAFE_NRQ" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_ingresos ON "INGRESOS_BODEGA";
+CREATE TRIGGER trg_audit_ingresos AFTER INSERT OR UPDATE OR DELETE ON "INGRESOS_BODEGA" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_det_ingresos ON "DETALLE_INGRESOS";
+CREATE TRIGGER trg_audit_det_ingresos AFTER INSERT OR UPDATE OR DELETE ON "DETALLE_INGRESOS" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_pedidos ON "PEDIDOS_OPERADOR";
+CREATE TRIGGER trg_audit_pedidos AFTER INSERT OR UPDATE OR DELETE ON "PEDIDOS_OPERADOR" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_despachos ON "DESPACHOS_BODEGA";
+CREATE TRIGGER trg_audit_despachos AFTER INSERT OR UPDATE OR DELETE ON "DESPACHOS_BODEGA" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_tes_efectivo ON "TESORERIA_EFECTIVO_NR";
+CREATE TRIGGER trg_audit_tes_efectivo AFTER INSERT OR UPDATE OR DELETE ON "TESORERIA_EFECTIVO_NR" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_tes_fact ON "TESORERIA_FACTURACION_NRQ";
+CREATE TRIGGER trg_audit_tes_fact AFTER INSERT OR UPDATE OR DELETE ON "TESORERIA_FACTURACION_NRQ" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_saldos ON "SALDOS_DIGITALES";
+CREATE TRIGGER trg_audit_saldos AFTER INSERT OR UPDATE OR DELETE ON "SALDOS_DIGITALES" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_usuarios ON "USUARIOS_SISTEMA";
+CREATE TRIGGER trg_audit_usuarios AFTER INSERT OR UPDATE OR DELETE ON "USUARIOS_SISTEMA" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+DROP TRIGGER IF EXISTS trg_audit_roles ON "ROLES_PERFILES";
+CREATE TRIGGER trg_audit_roles AFTER INSERT OR UPDATE OR DELETE ON "ROLES_PERFILES" FOR EACH ROW EXECUTE FUNCTION public.fn_audit_trigger_generico();
+
+-- --------------------------------------------------------------------------
+-- 4. RLS: Permitir SELECT global sobre AUDITORIA_LOG (idempotente)
+-- --------------------------------------------------------------------------
+DROP POLICY IF EXISTS audit_log_select_all ON "AUDITORIA_LOG";
+CREATE POLICY audit_log_select_all ON "AUDITORIA_LOG" FOR SELECT USING (true);

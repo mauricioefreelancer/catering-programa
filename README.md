@@ -7,15 +7,14 @@ Sistema ERP logístico y financiero especializado en máquinas vending, dispensa
 ```
 Catering programa/
 ├── backend/          # NestJS + Prisma (API RESTful · despliegue Render)
-├── frontend/         # React 18 + Vite + Ant Design 5 (Web + PWA Móvil · despliegue Netlify)
-└── supabase/
-    └── migrations/ # Scripts DDL SQL PostgreSQL (16 tablas + Triggers)
+│   └── prisma/migrations/ # Migraciones PostgreSQL activas
+└── frontend/         # React 18 + Vite + Ant Design 5 (Web + PWA Móvil · despliegue Netlify)
 ```
 
 | Capa            | Tecnología                              |
 | ---------------- | --------------------------------------- |
 | Base de Datos    | PostgreSQL 15+ (nativo Windows)       |
-| Backend API      | NestJS 11 + TypeScript + Prisma 6 + JWT |
+| Backend API      | NestJS 11 + TypeScript + Prisma 5 + JWT |
 | ORM              | Prisma Client                           |
 | Frontend Web     | React 18 + Vite + TypeScript + Ant Design 5 |
 | State / Cache    | Zustand + TanStack Query                |
@@ -43,23 +42,18 @@ Catering programa/
 
 ## Setup Paso a Paso (Local Development)
 
-### 1. Base de Datos · Ejecutar Scripts SQL
-Abrir pgAdmin → Query Tool → abrir y ejecutar en orden:
-
-```
-1) supabase/migrations/001_init_schema.sql     → 16 tablas
-2) supabase/migrations/002_trigger_recalc_recetas.sql → Trigger receta costos
-3) supabase/migrations/003_audit_log.sql     → Log Auditoría inalterable
-```
+### 1. Base de Datos
+Crear una base PostgreSQL local y vacía. Prisma aplicará el esquema y la auditoría desde `backend/prisma/migrations/`. Las migraciones de `backend/prisma/migrations_legacy/` son solo de referencia.
 
 ### 2. Configurar Backend
 ```powershell
 cd backend
-copy .env .env.local   # y editar credenciales PostgreSQL
+Copy-Item .env.example .env   # solo si todavía no existe .env
 ```
 Editar `backend/.env`:
 ```env
 DATABASE_URL="postgresql://postgres:TU_CONTRASEÑA_PG@localhost:5432/catering_db?schema=public"
+DIRECT_URL="postgresql://postgres:TU_CONTRASEÑA_PG@localhost:5432/catering_db?schema=public"
 JWT_SECRET="clave_segura_de_32_caracteres_minimo"
 JWT_EXPIRES_IN="7d"
 PORT=3000
@@ -69,10 +63,10 @@ UMBRAL_MARGEN=30
 
 Luego:
 ```powershell
-cd backend
-npm install
-npx prisma generate   # (después de haber ejecutado scripts SQL 1-3)
-npx prisma db seed  # Datos demo
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+npx prisma db seed  # Solo en la base local
 npm run start:dev  # API en http://localhost:3000/api
 ```
 
@@ -83,16 +77,15 @@ Usuario demo: `admin@example.com` · Clave: `Admin123*`
 cd frontend
 copy .env.example .env
 ```
-Editar `frontend/.env` (mantener para local:
+Editar `frontend/.env` para desarrollo local:
 ```env
-VITE_API_URL="http://localhost:3000/api
+VITE_API_URL="http://localhost:3000/api"
 VITE_APP_TITLE="ERP Vending & Catering"
 ```
 
 Luego:
 ```powershell
-cd frontend
-npm install
+npm ci
 npm run dev  # Web en http://localhost:5173
 ```
 
@@ -103,15 +96,20 @@ Módulo operador móvil PWA: `http://localhost:5173/mobile`
 ## Despliegue
 
 ### Backend → Render
-- **Build Command**: `cd backend && npm ci && npx prisma migrate deploy && npm run build`
-- **Start Command**: `cd backend && npm run start:prod`
-- **Variables**: `DATABASE_URL`, `JWT_SECRET`, `TARIFA_PROMEDIO_DEFAULT`, `UMBRAL_MARGEN`
+- **Root Directory**: `backend`. Configuración versionada en `backend/render.yaml`; si el servicio se gestiona desde el panel de Render, replica allí estos comandos.
+- **Build Command**: `npm ci && npx prisma generate && npm run build`
+- **Pre-Deploy Command**: `npx prisma migrate deploy`
+- **Start Command**: `npm run start:prod`
+- **Variables**: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `TARIFA_PROMEDIO_DEFAULT`, `UMBRAL_MARGEN`
+- **Base ya existente**: antes de activar este despliegue, seguir la [guía de adopción del baseline](backend/prisma/BASELINE.md). No aplicar `0_baseline` sobre una base con tablas existentes.
 
 ### Frontend → Netlify
-- **Build Command**: `cd frontend && npm ci && npm run build`
-- **Publish**: `frontend/dist`
-- **SPA Redirects (netlify.toml) redirects rules: `/*  /index.html  200`
-- **Variable**: `VITE_API_URL=https://tu-backend.onrender.com/api`
+- Usar el único `netlify.toml` de la raíz del repositorio. Quitar de Netlify cualquier configuración anterior que cambie el directorio del archivo de configuración o el directorio del paquete.
+- El archivo define la base `frontend`, la publicación desde `dist` y la redirección SPA. Mantener `VITE_API_URL` con el sufijo `/api`.
+
+### Nuevas migraciones
+
+En una base de desarrollo, ejecutar `npx prisma migrate dev --create-only --name <nombre>` desde `backend`. Revisar el SQL, añadir el backfill cuando corresponda y probar `migrate deploy` en una base vacía antes de publicar.
 
 ---
 
@@ -126,7 +124,7 @@ Módulo operador móvil PWA: `http://localhost:5173/mobile`
 ---
 
 ## Flujos Clave
-1. Compra Materia Prima → Trigger auto recalcula Costo Recetas
+1. Compra de materia prima → Ingreso a bodega
 2. Operador digita Inventario físico → Sugerido (informativo)
 3. Bodega aprueba Despacho → Descuenta stock
 4. Tesorería Cuadra caja Diferencia
