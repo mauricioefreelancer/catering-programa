@@ -344,6 +344,7 @@ export class TreasuryService {
             idGrupo: true,
             idProducto: true,
             cantSugerida: true,
+            estado: true,
             despachosBodega: { select: { cantDespachada: true } },
           },
         })
@@ -383,14 +384,16 @@ export class TreasuryService {
           : costoBasePorProducto.get(p.idProducto) ?? 0;
       const sugerido = Number(p.cantSugerida) || 0;
       const despachadoReal = p.despachosBodega.reduce((acc: number, d) => acc + d.cantDespachada, 0);
-      const pendiente = Math.max(0, sugerido - despachadoReal);
+      const pendiente = p.estado === 'PENDIENTE' || p.estado === 'PARCIAL'
+        ? Math.max(0, sugerido - despachadoReal) : 0;
 
       totalSugeridoPorVisita.set(p.idGrupo, (totalSugeridoPorVisita.get(p.idGrupo) ?? 0) + sugerido * precio);
       totalDespachadoPorVisita.set(p.idGrupo, (totalDespachadoPorVisita.get(p.idGrupo) ?? 0) + despachadoReal * precio);
       totalPendientePorVisita.set(p.idGrupo, (totalPendientePorVisita.get(p.idGrupo) ?? 0) + pendiente * precio);
       // Total vendido por productos = lo efectivamente cubierto (sugerido - pendiente),
       // es decir lo que sí se considera vendido porque se repuso. El pendiente NO es venta.
-      totalVendidoProductosPorVisita.set(p.idGrupo, (totalVendidoProductosPorVisita.get(p.idGrupo) ?? 0) + (sugerido - pendiente) * precio);
+      const cubierto = Math.min(sugerido, despachadoReal);
+      totalVendidoProductosPorVisita.set(p.idGrupo, (totalVendidoProductosPorVisita.get(p.idGrupo) ?? 0) + cubierto * precio);
       totalCantidadPorVisita.set(p.idGrupo, (totalCantidadPorVisita.get(p.idGrupo) ?? 0) + sugerido);
 
       // Desglose por producto: despachado real y pendiente por reponer.
@@ -401,9 +404,9 @@ export class TreasuryService {
       pendMap.set(p.idProducto, (pendMap.get(p.idProducto) ?? 0) + pendiente);
       pendientePorProductoVisita.set(p.idGrupo, pendMap);
 
-      // Subtotal VENDIDO por producto = (sugerido − pendiente) × precio; NO cuenta el pendiente.
+      // Valor legado del informe; calcular sobre despachos y no sobre el pendiente operativo.
       const vendMap = vendidoPorProductoVisita.get(p.idGrupo) ?? {};
-      vendMap[p.idProducto] = (vendMap[p.idProducto] ?? 0) + (sugerido - pendiente) * precio;
+      vendMap[p.idProducto] = (vendMap[p.idProducto] ?? 0) + cubierto * precio;
       vendidoPorProductoVisita.set(p.idGrupo, vendMap);
     }
 
@@ -418,7 +421,8 @@ export class TreasuryService {
           : costoBasePorProducto.get(p.idProducto) ?? 0;
       const sugerido = Number(p.cantSugerida) || 0;
       const despachadoReal = p.despachosBodega.reduce((acc: number, d) => acc + d.cantDespachada, 0);
-      const pendiente = Math.max(0, sugerido - despachadoReal);
+      const pendiente = p.estado === 'PENDIENTE' || p.estado === 'PARCIAL'
+        ? Math.max(0, sugerido - despachadoReal) : 0;
       const arr = detallePorVisita.get(p.idGrupo) ?? [];
       arr.push({
         idProducto: p.idProducto,
@@ -427,7 +431,7 @@ export class TreasuryService {
         pendiente,
         precio,
         subtotal: despachadoReal * precio,
-        subtotalVendido: (sugerido - pendiente) * precio,
+        subtotalVendido: Math.min(sugerido, despachadoReal) * precio,
       });
       detallePorVisita.set(p.idGrupo, arr);
     }

@@ -41,6 +41,7 @@ model UsuariosSistema {
   saldosDigitales SaldosDigitales[]
   auditoriaLog   AuditoriaLog[]
   historialMediosPago HistorialMediosPago[]
+  visitasRegistradas Visitas[]
 
   @@map("USUARIOS_SISTEMA")
 }
@@ -62,6 +63,7 @@ model Clientes {
   maquinasYTiendas  MaquinasYTiendas[]
   tesoreriaFacturacionNrq TesoreriaFacturacionNrq[]
   ventasPorVisita VentasPorVisita[]
+  visitas Visitas[]
 
   @@map("CLIENTES")
 }
@@ -107,6 +109,7 @@ model Operadores {
   pedidosOperador  PedidosOperador[]
   ventasPorVisita  VentasPorVisita[]
   tesoreriaEfectivoNr TesoreriaEfectivoNr[]
+  visitas Visitas[]
 
   @@map("OPERADORES")
 }
@@ -206,6 +209,7 @@ model MaquinasYTiendas {
   saldosDigitales SaldosDigitales[]
   historialMediosPago HistorialMediosPago[]
   ventasPorVisita VentasPorVisita[]
+  visitas Visitas[]
 
   @@map("MAQUINAS_Y_TIENDAS")
 }
@@ -275,6 +279,32 @@ model DetalleIngresos {
   @@map("DETALLE_INGRESOS")
 }
 
+model Visitas {
+  idVisita          Int      @id @default(autoincrement()) @map("ID_Visita")
+  idMaquina         Int      @map("ID_Maquina")
+  idOperador        Int      @map("ID_Operador")
+  idCliente         Int?     @map("ID_Cliente")
+  fechaVisita       DateTime @map("Fecha_Visita")
+  estado            String   @default("REGISTRADA") @map("Estado") @db.VarChar(20)
+  nrEfectivoAnterior BigInt? @map("NR_Efectivo_Anterior")
+  nrEfectivoActual  BigInt?  @map("NR_Efectivo_Actual")
+  idOffline         String?  @unique @map("Id_Offline") @db.VarChar(64)
+  observaciones     String?  @map("Observaciones") @db.Text
+  fechaCreacion     DateTime @default(now()) @map("Fecha_Creacion")
+  idUsuarioRegistro Int?     @map("ID_Usuario_Registro")
+
+  maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict)
+  operador Operadores      @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict)
+  cliente  Clientes?       @relation(fields: [idCliente], references: [idCliente], onDelete: SetNull)
+  usuario  UsuariosSistema? @relation(fields: [idUsuarioRegistro], references: [idUsuario], onDelete: SetNull)
+  pedidos  PedidosOperador[]
+  ventas   VentasPorVisita?
+  recaudo  TesoreriaEfectivoNr?
+
+  @@index([idMaquina, fechaVisita])
+  @@map("VISITAS")
+}
+
 model PedidosOperador {
   idPedido          Int                       @id @default(autoincrement()) @map("ID_Pedido")
   idGrupo           Int?                      @map("ID_Grupo")
@@ -289,7 +319,13 @@ model PedidosOperador {
   nrActualMedido BigInt?                   @map("NR_Actual_Medido")
   nrqActualLectura BigInt?                 @map("NRQ_Actual_Lectura")
   estado            String                    @default("PENDIENTE") @map("Estado") @db.VarChar(20)
+  idPedidoReemplazado Int?                  @map("ID_Pedido_Reemplazado")
+  fechaFaltanteOriginal DateTime?           @map("Fecha_Faltante_Original")
+  pendienteCongelado Int?                  @map("Pendiente_Congelado")
 
+  visita       Visitas? @relation(fields: [idGrupo], references: [idVisita], onDelete: Restrict)
+  reemplaza    PedidosOperador? @relation("HistorialReposicion", fields: [idPedidoReemplazado], references: [idPedido], onDelete: Restrict)
+  reemplazos   PedidosOperador[] @relation("HistorialReposicion")
   maquina      MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   operador     Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
   producto     Productos @relation(fields: [idProducto], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
@@ -297,6 +333,8 @@ model PedidosOperador {
   mapaMp       MapaMateriaPrima? @relation(fields: [idMapaMp], references: [idMapaMp], onDelete: SetNull, onUpdate: Cascade)
   despachosBodega DespachosBodega[]
 
+  @@index([idGrupo])
+  @@index([idMaquina, idMapaMp, estado])
   @@map("PEDIDOS_OPERADOR")
 }
 
@@ -339,6 +377,7 @@ model VentasPorVisita {
   firmaUsuario    Int?                      @map("Firma_Usuario")
   firmaOrigen     String                    @default("REGISTRO") @map("Firma_Origen") @db.VarChar(20)
 
+  visita    Visitas? @relation(fields: [idGrupo], references: [idVisita], onDelete: Restrict)
   maquina   MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   cliente   Clientes?        @relation(fields: [idCliente], references: [idCliente], onDelete: SetNull, onUpdate: Cascade)
   operador  Operadores       @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
@@ -350,7 +389,7 @@ model VentasPorVisita {
 
 model TesoreriaEfectivoNr {
   idRecaudo       Int                       @id @default(autoincrement()) @map("ID_Recaudo")
-  idGrupo         Int?                      @map("ID_Grupo")
+  idGrupo         Int?                      @unique @map("ID_Grupo")
   idMaquina      Int                       @map("ID_Maquina")
   idOperador     Int                       @map("ID_Operador")
   idUsuario      Int                       @map("ID_Usuario")
@@ -372,6 +411,7 @@ model TesoreriaEfectivoNr {
   totalVendido  Decimal                   @default(0) @map("Total_Vendido") @db.Decimal(18, 2)
   estado         String                    @default("CERRADO") @map("Estado") @db.VarChar(20)
 
+  visita   Visitas? @relation(fields: [idGrupo], references: [idVisita], onDelete: Restrict)
   maquina  MaquinasYTiendas @relation(fields: [idMaquina], references: [idMaquina], onDelete: Restrict, onUpdate: Cascade)
   operador Operadores @relation(fields: [idOperador], references: [idOperador], onDelete: Restrict, onUpdate: Cascade)
   usuario  UsuariosSistema @relation(fields: [idUsuario], references: [idUsuario], onDelete: Restrict, onUpdate: Cascade)

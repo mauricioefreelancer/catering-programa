@@ -37,13 +37,16 @@ import { apiService } from '../../api/services/api'
 const { Title } = Typography
 const { Option } = Select
 
-type EstadoPedido = 'PENDIENTE' | 'PARCIAL' | 'APROBADO' | 'RECHAZADO'
+const ESTADOS = ['PENDIENTE', 'PARCIAL', 'APROBADO', 'RECHAZADO', 'REEMPLAZADO', 'NO_REPONER'] as const
+type EstadoPedido = typeof ESTADOS[number]
 
 const estadoColor: Record<EstadoPedido, string> = {
   PENDIENTE: 'orange',
   PARCIAL: 'blue',
   APROBADO: 'green',
   RECHAZADO: 'red',
+  REEMPLAZADO: 'default',
+  NO_REPONER: 'volcano',
 }
 
 const estadoIcon: Record<EstadoPedido, any> = {
@@ -51,6 +54,8 @@ const estadoIcon: Record<EstadoPedido, any> = {
   PARCIAL: MinusCircleOutlined,
   APROBADO: CheckCircleOutlined,
   RECHAZADO: CloseCircleOutlined,
+  REEMPLAZADO: MinusCircleOutlined,
+  NO_REPONER: CloseCircleOutlined,
 }
 
 const normalizar = (raw: any) => ({
@@ -82,6 +87,8 @@ const normalizar = (raw: any) => ({
     raw['NR_Actual_Medido'] ??
     null,
   estado: (raw.estado ?? raw.Estado ?? 'PENDIENTE') as EstadoPedido,
+  idPedidoReemplazado: raw.idPedidoReemplazado ?? null,
+  pendienteCongelado: raw.pendienteCongelado ?? null,
   observaciones: raw.observaciones ?? raw.Observaciones ?? raw['Observaciones'] ?? null,
   _maquina: raw.maquina ?? raw._maquina ?? null,
   _operador: raw.operador ?? raw._operador ?? null,
@@ -218,7 +225,11 @@ const PedidosOperador = () => {
     const set = new Set(grupo.items.map((it: any) => it.estado))
     if (set.size === 1) return grupo.items[0].estado
     if (set.has('RECHAZADO')) return 'RECHAZADO'
-    if (set.has('PENDIENTE') && set.has('APROBADO')) return 'PARCIAL'
+    if (!set.has('PENDIENTE') && !set.has('PARCIAL')) {
+      if (set.has('APROBADO')) return 'APROBADO'
+      if (set.has('NO_REPONER')) return 'NO_REPONER'
+      return 'REEMPLAZADO'
+    }
     return 'PARCIAL'
   }
 
@@ -228,7 +239,7 @@ const PedidosOperador = () => {
         acc[estadoGrupo(g)] = (acc[estadoGrupo(g)] ?? 0) + 1
         acc.total += 1
         acc.fisicos += g.items.reduce((a: number, it: any) => a + it.fisicoDigitado, 0)
-        acc.sugeridas += g.items.reduce((a: number, it: any) => a + it.cantSugerida, 0)
+        acc.sugeridas += g.items.reduce((a: number, it: any) => a + (it.estado === 'REEMPLAZADO' ? 0 : it.cantSugerida), 0)
         return acc
       },
       { total: 0, PENDIENTE: 0, PARCIAL: 0, APROBADO: 0, RECHAZADO: 0, fisicos: 0, sugeridas: 0 } as Record<string, number>,
@@ -325,7 +336,7 @@ const PedidosOperador = () => {
       width: 120,
       align: 'center' as const,
       render: (_: any, g: any) => {
-        const totalUnidades = g.items.reduce((a: number, it: any) => a + (it.cantSugerida || 0), 0)
+        const totalUnidades = g.items.reduce((a: number, it: any) => a + (it.estado === 'REEMPLAZADO' ? 0 : it.cantSugerida || 0), 0)
         return (
           <Tooltip title="Haz clic en Ver más para el desglose producto por producto">
             <Space direction="vertical" size={0} align="center">
@@ -355,7 +366,7 @@ const PedidosOperador = () => {
       key: 'estado',
       width: 130,
       align: 'center' as const,
-      filters: (['PENDIENTE', 'PARCIAL', 'APROBADO', 'RECHAZADO'] as EstadoPedido[]).map((e) => ({
+      filters: ESTADOS.map((e) => ({
         text: e,
         value: e,
       })),
@@ -453,6 +464,20 @@ const PedidosOperador = () => {
       },
     },
     {
+      title: 'Pendiente',
+      key: 'pendiente',
+      render: (_: any, r: any) => {
+        if (r.estado === 'REEMPLAZADO') return `${r.pendienteCongelado ?? 0} u. (histórico)`
+        if (r.estado !== 'PENDIENTE' && r.estado !== 'PARCIAL') return '—'
+        return `${Math.max(0, r.cantSugerida - totalDespachado(r))} u.`
+      },
+    },
+    {
+      title: 'Reemplaza',
+      dataIndex: 'idPedidoReemplazado',
+      render: (id: number | null) => id == null ? '—' : `#${id}`,
+    },
+    {
       title: 'Estado',
       dataIndex: 'estado',
       key: 'estado',
@@ -517,6 +542,8 @@ const PedidosOperador = () => {
             <Option value="PARCIAL">🔵 Parcial</Option>
             <Option value="APROBADO">🟢 Aprobado</Option>
             <Option value="RECHAZADO">🔴 Rechazado</Option>
+            <Option value="REEMPLAZADO">Reemplazado</Option>
+            <Option value="NO_REPONER">No reponer</Option>
           </Select>
           <Select
             allowClear
