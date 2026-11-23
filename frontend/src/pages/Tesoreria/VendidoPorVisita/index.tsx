@@ -57,6 +57,12 @@ interface VisitaVendido {
   totalVendido: number
   totalDespachado: number
   totalVendidoProductos?: number
+  diferenciaVenta?: number | null
+  diferenciaUnidades?: number | null
+  unidadesNrProducto?: number | null
+  valorFacturarCliente?: number | null
+  alertaVenta?: boolean
+  controlesEspiral?: { idMapaMp: number; espiral: string; vendidas: number | null; precioCero: boolean; inconsistencia: string | null }[]
   totalSugerido: number
   totalPendiente: number
   unidadesSugeridas: number
@@ -359,10 +365,28 @@ const VendidoPorVisita = () => {
               <Descriptions.Item label="NR Actual">{detalleSel.nrActual.toLocaleString('es-CO')}</Descriptions.Item>
               <Descriptions.Item label="Total Vendido ($)">{fmt(detalleSel.totalVendido)}</Descriptions.Item>
               <Descriptions.Item label="Vendido Productos ($)">{fmt(detalleSel.totalVendidoProductos)}</Descriptions.Item>
+              <Descriptions.Item label="NR producto (unidades)">{detalleSel.unidadesNrProducto ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="Diferencia de unidades">{detalleSel.diferenciaUnidades ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="Diferencia NR vs. venta teórica">
+                {detalleSel.diferenciaVenta == null ? '—' : <Tag color={detalleSel.alertaVenta ? 'red' : 'default'}>{fmt(detalleSel.diferenciaVenta)}</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Facturar al cliente">{detalleSel.valorFacturarCliente == null ? '—' : fmt(detalleSel.valorFacturarCliente)}</Descriptions.Item>
               <Descriptions.Item label="Sugerido ($)">{fmt(detalleSel.totalSugerido)}</Descriptions.Item>
               <Descriptions.Item label="Despachado ($)">{fmt(detalleSel.totalDespachado)}</Descriptions.Item>
               <Descriptions.Item label="Pendiente ($)">{fmt(detalleSel.totalPendiente)}</Descriptions.Item>
             </Descriptions>
+            {!!detalleSel.controlesEspiral?.length && <Table
+              size="small"
+              pagination={false}
+              rowKey="idMapaMp"
+              dataSource={detalleSel.controlesEspiral}
+              columns={[
+                { title: 'Espiral', dataIndex: 'espiral' },
+                { title: 'Unidades vendidas', dataIndex: 'vendidas', render: (v: number | null) => v ?? '—' },
+                { title: 'Precio cero', dataIndex: 'precioCero', render: (v: boolean) => v ? 'Sí' : 'No' },
+                { title: 'Control', dataIndex: 'inconsistencia', render: (v: string | null) => v?.replaceAll('_', ' ') ?? '—' },
+              ]}
+            />}
 
             <Card size="small" type="inner" title="Desglose por producto" style={{ marginTop: 16 }}>
               <Table

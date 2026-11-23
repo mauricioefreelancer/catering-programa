@@ -5,6 +5,8 @@ import {
   CreateMapaMPDto, UpdateMapaMPDto, CreateMapaNRQDto, UpdateMapaNRQDto, QueryMaquinaDto,
 } from './dto/maquina.dto';
 import { Prisma } from '@prisma/client';
+import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
+import { umbralDiferenciaVenta } from '../common/contadores';
 
 function tipoCanonico(tipo?: string): string | undefined {
   if (!tipo) return tipo;
@@ -127,6 +129,29 @@ export class MachinesService {
     return this.prisma.maquinasYTiendas.update({ where: { idMaquina: id }, data: dto });
   }
 
+  async getUltimasLecturas(id: number) {
+    return this.prisma.$transaction(async tx => {
+      const maquina = await tx.maquinasYTiendas.findUnique({
+        where: { idMaquina: id },
+        select: { idCliente: true, mapaMateriaPrima: { select: { idProducto: true } } },
+      });
+      if (!maquina) throw new NotFoundException('Máquina no encontrada');
+      const { visita, ...lecturas } = await ultimasLecturas(tx, id);
+      const [espirales, precios] = await Promise.all([
+        baseEspirales(tx, visita?.idVisita),
+        maquina.idCliente == null ? [] : tx.preciosCliente.findMany({
+          where: { idCliente: maquina.idCliente, idProducto: { in: maquina.mapaMateriaPrima.map(m => m.idProducto) } },
+          select: { idProducto: true, precioVenta: true },
+        }),
+      ]);
+      return {
+        ultimaVisitaId: visita?.idVisita ?? 0, ...lecturas, espirales,
+        precios: precios.map(p => ({ idProducto: p.idProducto, precio: p.precioVenta.toNumber() })),
+        umbralDiferenciaVenta: umbralDiferenciaVenta(process.env.UMBRAL_DIFERENCIA_VENTA_COP),
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
   async getMapaMP(id: number) {
     await this.findOne(id);
     return this.prisma.mapaMateriaPrima.findMany({ where: { idMaquina: id }, include: { producto: true }, orderBy: { espiralCodigo: 'asc' } });
@@ -135,7 +160,7 @@ export class MachinesService {
   async addMapaMP(id: number, dto: CreateMapaMPDto) {
     await this.findOne(id);
     return this.prisma.mapaMateriaPrima.create({
-      data: { idMaquina: id, idProducto: dto.idProducto, espiralCodigo: dto.espiralCodigo, capacidadMax: dto.capacidadMax ?? 0 },
+      data: { idMaquina: id, idProducto: dto.idProducto, espiralCodigo: dto.espiralCodigo, capacidadMax: dto.capacidadMax ?? 0, precioCero: dto.precioCero },
     });
   }
 
@@ -161,7 +186,7 @@ export class MachinesService {
     const maq = await this.findOne(id);
     if (maq.tipo !== 'CAFE') throw new BadRequestException('La máquina debe ser de tipo CAFE');
     return this.prisma.mapaCafeNrq.create({
-      data: { idMaquina: id, idProdTerm: dto.idProdTerm, opcionBoton: dto.opcionBoton },
+      data: { idMaquina: id, idProdTerm: dto.idProdTerm, opcionBoton: dto.opcionBoton, lecturaInicial: dto.lecturaInicial },
     });
   }
 
@@ -340,6 +365,7 @@ export class MachinesService {
           idProducto,
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
+          precioCero: typeof e.precioCero === 'boolean' ? e.precioCero : undefined,
         },
         create: {
           idMaquina: id,
@@ -347,6 +373,7 @@ export class MachinesService {
           espiralCodigo: String(e.espiral),
           capacidadMax: Number(e.capacidad_max ?? e.capacidadMax ?? 0),
           capacidadActual: Number(e.cantidad_actual ?? e.capacidadActual ?? 0),
+          precioCero: e.precioCero === true,
         },
       });
     }
@@ -365,6 +392,10 @@ export class MachinesService {
     for (const b of botones) {
       if (!b?.boton || b?.boton === '') continue;
       const idProdTerm = Number(b.productoId ?? b.idProdTerm);
+      const lecturaInicial = b.lecturaInicial == null ? undefined : Number(b.lecturaInicial);
+      if (lecturaInicial != null && (!Number.isSafeInteger(lecturaInicial) || lecturaInicial < 0)) {
+        throw new BadRequestException(`Lectura inicial inválida para botón ${b.boton}`);
+      }
       if (!idProdTerm) throw new BadRequestException('Cada botón debe tener un producto asignado');
       const prodTerm = await this.prisma.productos.findFirst({
         where: { idProducto: idProdTerm },
@@ -377,8 +408,8 @@ export class MachinesService {
       }
       await this.prisma.mapaCafeNrq.upsert({
         where: { idMaquina_opcionBoton: { idMaquina: id, opcionBoton: String(b.boton) } },
-        update: { idProdTerm },
-        create: { idMaquina: id, idProdTerm, opcionBoton: String(b.boton) },
+        update: { idProdTerm, lecturaInicial },
+        create: { idMaquina: id, idProdTerm, opcionBoton: String(b.boton), lecturaInicial },
       });
     }
     // Eliminar botones que ya no están en el mapa

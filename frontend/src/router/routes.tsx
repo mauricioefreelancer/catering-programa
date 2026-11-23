@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { createBrowserRouter, Navigate, Outlet, useLocation, useParams } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import AppLayout from '../components/layout/AppLayout'
 import Login from '../pages/Login'
@@ -21,11 +21,14 @@ import Usuarios from '../pages/Admin/Usuarios'
 import AdminDataPanel from '../pages/Admin/DataPanel'
 import MobileLayout from '../pages/Mobile/MobileLayout'
 import HomeMobile from '../pages/Mobile/Home'
-import InventarioMobile from '../pages/Mobile/Inventario'
-import ContadoresMobile from '../pages/Mobile/Contadores'
-import ResumenMobile from '../pages/Mobile/Resumen'
+import InventarioMobile from '../pages/Mobile/Inventario/Registro'
 import NotFound404 from '../pages/NotFound404'
 import PermissionRoute from '../components/PermissionRoute'
+
+function RedirigirAInventario() {
+  const { idMaquina } = useParams()
+  return <Navigate to={`/mobile/inventario/${idMaquina}`} replace />
+}
 
 const ProtectedRoute = ({ children }: { children?: any }) => {
   const { isAuth } = useAuth()
@@ -236,11 +239,11 @@ export const routes = createBrowserRouter([
       },
       {
         path: 'contadores/:idMaquina',
-        element: <ContadoresMobile />,
+        element: <RedirigirAInventario />,
       },
       {
         path: 'resumen/:idMaquina',
-        element: <ResumenMobile />,
+        element: <RedirigirAInventario />,
       },
     ],
   },

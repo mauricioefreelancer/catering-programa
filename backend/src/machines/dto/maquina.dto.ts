@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsObject } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsObject, Max, Min } from 'class-validator';
 
 export class CreateMaquinaDto {
   @IsOptional() @IsInt() idCliente?: number;
@@ -37,22 +37,26 @@ export class CreateMapaMPDto {
   @IsInt() @IsNotEmpty() idProducto: number;
   @IsString() @IsNotEmpty() espiralCodigo: string;
   @IsOptional() @IsInt() capacidadMax?: number;
+  @IsOptional() @IsBoolean() precioCero?: boolean;
 }
 
 export class UpdateMapaMPDto {
   @IsOptional() @IsInt() idProducto?: number;
   @IsOptional() @IsString() espiralCodigo?: string;
   @IsOptional() @IsInt() capacidadMax?: number;
+  @IsOptional() @IsBoolean() precioCero?: boolean;
 }
 
 export class CreateMapaNRQDto {
   @IsInt() @IsNotEmpty() idProdTerm: number;
   @IsString() @IsNotEmpty() opcionBoton: string;
+  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) lecturaInicial?: number;
 }
 
 export class UpdateMapaNRQDto {
   @IsOptional() @IsInt() idProdTerm?: number;
   @IsOptional() @IsString() opcionBoton?: string;
+  @IsOptional() @IsInt() @Min(0) @Max(Number.MAX_SAFE_INTEGER) lecturaInicial?: number;
 }
 
 export class QueryMaquinaDto {
