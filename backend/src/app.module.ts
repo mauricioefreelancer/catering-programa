@@ -20,6 +20,7 @@ import { AdminModule } from './admin/admin.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditMiddleware } from './common/audit.middleware';
 
+import { RecetasCafeModule } from './recetas-cafe/recetas-cafe.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -37,6 +38,7 @@ import { AuditMiddleware } from './common/audit.middleware';
     ProductsModule,
     PreciosClienteModule,
     MachinesModule,
+    RecetasCafeModule,
     InventoryModule,
     OperadorPedidoModule,
     DespachosModule,

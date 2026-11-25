@@ -7,6 +7,7 @@ import Dashboard from '../pages/Dashboard'
 import Clientes from '../pages/Clientes'
 import Proveedores from '../pages/Proveedores'
 import Productos from '../pages/Productos'
+import RecetasEstandar from '../pages/Productos/RecetasEstandar'
 import Precios from '../pages/Precios'
 import Operadores from '../pages/Operadores'
 import Maquinas from '../pages/Maquinas'
@@ -113,6 +114,14 @@ export const routes = createBrowserRouter([
         element: (
           <PermissionRoute modulo="productos" accion="ver">
             <Productos />
+          </PermissionRoute>
+        ),
+      },
+      {
+        path: 'productos/recetas-cafe',
+        element: (
+          <PermissionRoute modulo="productos" accion="ver">
+            <RecetasEstandar />
           </PermissionRoute>
         ),
       },

@@ -3,6 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductoDto, UpdateProductoDto, CreateRecetaDto, QueryProductoDto } from './dto/producto.dto';
 import { Prisma } from '@prisma/client';
 import { bloquearCostos, recalcularPorMateriasPrimas, recalcularReceta } from '../common/costo-receta';
+import { esCategoriaInsumo, nombreCategoria, tipoCafeDeCategoria } from '../common/receta-cafe';
+
+const RECETAS_EN_ESTANDAR = 'Las recetas se configuran en Productos → Recetas estándar (por categoría de insumo)';
 
 const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const;
 
@@ -30,20 +33,19 @@ function normalizeProductoInput(dto: CreateProductoDto | UpdateProductoDto) {
   if (codigoBarras !== undefined) result.codigoBarras = String(codigoBarras).slice(0, 100);
   if (tipoProducto !== undefined) result.tipoProducto = tipoProducto;
   // Categoría de insumo (café, vaso, mezclador...): campo independiente del tipo técnico
+  if (dto.categoriaInsumo === null || dto.categoria_insumo === null) result.categoriaInsumo = null;
   const categoriaInsumo = firstNonEmpty(dto.categoriaInsumo, dto.categoria_insumo);
-  if (categoriaInsumo !== undefined && categoriaInsumo !== null) {
-    result.categoriaInsumo = String(categoriaInsumo).slice(0, 80) || null;
+  if (categoriaInsumo !== undefined) {
+    const clave = String(categoriaInsumo).trim().toUpperCase();
+    if (!esCategoriaInsumo(clave)) throw new BadRequestException(`Categoría de insumo inválida: ${categoriaInsumo}`);
+    result.categoriaInsumo = clave;
   }
   const uc = firstNonEmpty(dto.unidadCompra, dto.unidad_compra, dto.unidad_medida);
   if (uc !== undefined) result.unidadCompra = String(uc).slice(0, 50);
   const ucons = firstNonEmpty(dto.unidadConsumo, dto.unidad_consumo, dto.unidad_medida);
   if (ucons !== undefined) result.unidadConsumo = String(ucons).slice(0, 50);
-  const tipoCafeRaw = firstNonEmpty(dto.tipoCafe, dto.tipo_cafe, dto.tipoCafeId);
-  if (tipoCafeRaw !== undefined) {
-    const up = String(tipoCafeRaw).trim().toUpperCase();
-    if (['SOLUBLE', 'GRANO'].includes(up)) result.tipoCafe = up;
-    else if (tipoCafeRaw === null || up === '' || up === 'NINGUNO' || up === 'NO') result.tipoCafe = null;
-  }
+  // El tipo de café sale de la categoría de insumo; no se digita aparte.
+  if (result.categoriaInsumo !== undefined) result.tipoCafe = tipoCafeDeCategoria(result.categoriaInsumo);
   const equiv = firstNonEmpty(dto.equivalencia);
   if (equiv !== undefined && !isNaN(Number(equiv))) result.equivalencia = Number(equiv);
   const costoBase = firstNonEmpty(dto.costoBase, dto.costo_base, dto.costo_unitario);
@@ -96,7 +98,7 @@ export class ProductsService {
   async findOne(id: number) {
     const p = await this.prisma.productos.findUnique({
       where: { idProducto: id },
-      include: { recetasProdTerm: true, recetasMatPrima: true },
+      include: { recetasEstandar: { orderBy: [{ varianteCafe: 'asc' }, { categoriaInsumo: 'asc' }] } },
     });
     if (!p) throw new NotFoundException('Producto no encontrado');
     return p;
@@ -128,7 +130,14 @@ export class ProductsService {
     data.stockMin = data.stockMin ?? 0;
     data.stockMax = data.stockMax ?? 0;
     data.stockActual = data.stockActual ?? 0;
-    return this.prisma.productos.create({ data });
+    if (data.tipoProducto !== 'MATERIA_PRIMA') { data.categoriaInsumo = null; data.tipoCafe = null; }
+    validarMateriaPrima(data.tipoProducto, data.categoriaInsumo, data.equivalencia);
+    return this.prisma.$transaction(async tx => {
+      await bloquearCostos(tx);
+      const creado = await tx.productos.create({ data });
+      if (creado.tipoProducto === 'MATERIA_PRIMA') await recalcularPorMateriasPrimas(tx, [creado.idProducto]);
+      return creado;
+    });
   }
 
   async update(id: number, dto: UpdateProductoDto) {
@@ -148,9 +157,17 @@ export class ProductsService {
           await tx.recetasDosificados.count({ where: { idMatPrima: id } })) {
         throw new BadRequestException('El ingrediente pertenece a una receta activa');
       }
+      if (tipo !== 'MATERIA_PRIMA') { data.categoriaInsumo = null; data.tipoCafe = null; }
+      validarMateriaPrima(tipo, data.categoriaInsumo !== undefined ? data.categoriaInsumo : previo.categoriaInsumo,
+        Number(data.equivalencia ?? previo.equivalencia));
+      if (previo.tipoProducto === 'MATERIA_PRIMA' && previo.categoriaInsumo && data.categoriaInsumo !== undefined &&
+          data.categoriaInsumo !== previo.categoriaInsumo &&
+          await tx.mapaMateriaPrima.count({ where: { idProducto: id, maquina: { tipo: { in: ['CAFE', 'COMBINADA'] } } } })) {
+        throw new BadRequestException('El insumo está asignado a tolvas de cafeteras: quítelo de ellas antes de cambiar su categoría');
+      }
       const actualizado = await tx.productos.update({ where: { idProducto: id }, data });
-      if (tipo === 'MATERIA_PRIMA' && (data.costoBase != null || data.equivalencia != null)) {
-        await recalcularPorMateriasPrimas(tx, [id]);
+      if (previo.tipoProducto === 'MATERIA_PRIMA' || tipo === 'MATERIA_PRIMA') {
+        await recalcularPorMateriasPrimas(tx, [id], previo.categoriaInsumo ? [previo.categoriaInsumo] : []);
       }
       if (tipo === 'DOSIFICADO' && data.porcentajeImp != null) {
         await recalcularReceta(tx, id);
@@ -168,107 +185,27 @@ export class ProductsService {
     return this.prisma.productos.delete({ where: { idProducto: id } });
   }
 
-  async addReceta(idProducto: number, dto: CreateRecetaDto) {
-    return this.prisma.$transaction(async tx => {
-    await bloquearCostos(tx);
-    const producto = await tx.productos.findUnique({ where: { idProducto } });
-    if (!producto) throw new NotFoundException('Producto no encontrado');
-    if (producto.tipoProducto !== 'DOSIFICADO') {
-      throw new BadRequestException('Solo los productos DOSIFICADOS pueden tener recetas');
-    }
-    const mp = await tx.productos.findUnique({ where: { idProducto: dto.idMatPrima } });
-    if (!mp || mp.tipoProducto !== 'MATERIA_PRIMA') {
-      throw new BadRequestException('El ingrediente debe ser una MATERIA_PRIMA (Manual 1.3: insumo empaque grande / consumo fracción)');
-    }
-    const linea = await tx.recetasDosificados.upsert({
-      where: {
-        idProdTerm_idMatPrima: { idProdTerm: idProducto, idMatPrima: dto.idMatPrima },
-      },
-      update: {
-        cantidadDosis: new Prisma.Decimal(dto.cantidadDosis),
-        unidadDosis: dto.unidadDosis,
-      },
-      create: {
-        idProdTerm: idProducto,
-        idMatPrima: dto.idMatPrima,
-        cantidadDosis: new Prisma.Decimal(dto.cantidadDosis),
-        unidadDosis: dto.unidadDosis,
-      },
-    });
-    await recalcularReceta(tx, idProducto);
-    return tx.recetasDosificados.findUniqueOrThrow({ where: { idReceta: linea.idReceta } });
-    });
+  async addReceta(_idProducto: number, _dto: CreateRecetaDto): Promise<never> {
+    throw new BadRequestException(RECETAS_EN_ESTANDAR);
   }
 
   async syncReceta(
-    idProducto: number,
-    items: Array<{ idMatPrima: number; cantidadDosis: number; unidadDosis?: string }>,
-  ) {
-    return this.prisma.$transaction(async tx => {
-    await bloquearCostos(tx);
-    const producto = await tx.productos.findUnique({ where: { idProducto } });
-    if (!producto) throw new NotFoundException('Producto no encontrado');
-    if (producto.tipoProducto !== 'DOSIFICADO') {
-      throw new BadRequestException('Solo los productos DOSIFICADOS pueden tener recetas');
-    }
-    // validar que todos los ingredientes sean Materia Prima
-    const idsMatPrima = items.map((i) => i.idMatPrima);
-    const mps = idsMatPrima.length
-      ? await tx.productos.findMany({
-          where: { idProducto: { in: idsMatPrima } },
-          select: { idProducto: true, tipoProducto: true },
-        })
-      : [];
-    for (const mpId of idsMatPrima) {
-      const mp = mps.find((m) => m.idProducto === mpId);
-      if (!mp || mp.tipoProducto !== 'MATERIA_PRIMA') {
-        throw new BadRequestException(`El ingrediente ${mpId} debe ser una MATERIA_PRIMA`);
-      }
-    }
-    // eliminar recetas del producto que ya no están en la lista enviada
-    await tx.recetasDosificados.deleteMany({
-      where: {
-        idProdTerm: idProducto,
-        idMatPrima: { notIn: idsMatPrima.length ? idsMatPrima : [-1] },
-      },
-    });
-    // upsert cada ingrediente de la lista
-    const results: any[] = [];
-    for (const item of items) {
-      results.push(
-        await tx.recetasDosificados.upsert({
-          where: {
-            idProdTerm_idMatPrima: { idProdTerm: idProducto, idMatPrima: item.idMatPrima },
-          },
-          update: {
-            cantidadDosis: new Prisma.Decimal(item.cantidadDosis),
-            unidadDosis: String(item.unidadDosis || 'Und').slice(0, 50),
-          },
-          create: {
-            idProdTerm: idProducto,
-            idMatPrima: item.idMatPrima,
-            cantidadDosis: new Prisma.Decimal(item.cantidadDosis),
-            unidadDosis: String(item.unidadDosis || 'Und').slice(0, 50),
-          },
-        }),
-      );
-    }
-    await recalcularReceta(tx, idProducto);
-    return { ok: true, guardados: results.length, items: await tx.recetasDosificados.findMany({ where: { idProdTerm: idProducto } }) };
-    });
+    _idProducto: number,
+    _items: Array<{ idMatPrima: number; cantidadDosis: number; unidadDosis?: string }>,
+  ): Promise<never> {
+    throw new BadRequestException(RECETAS_EN_ESTANDAR);
   }
 
-  async removeReceta(idProducto: number, idReceta: number) {
-    return this.prisma.$transaction(async tx => {
-    await bloquearCostos(tx);
-    const receta = await tx.recetasDosificados.findUnique({ where: { idReceta } });
-    if (!receta || receta.idProdTerm !== idProducto) {
-      throw new NotFoundException('Receta no encontrada');
-    }
-    const eliminada = await tx.recetasDosificados.delete({ where: { idReceta } });
-    await recalcularReceta(tx, idProducto);
-    return eliminada;
-    });
+  async removeReceta(_idProducto: number, _idReceta: number): Promise<never> {
+    throw new BadRequestException(RECETAS_EN_ESTANDAR);
+  }
+}
+
+function validarMateriaPrima(tipo: string, categoria: string | null | undefined, equivalencia: number) {
+  if (tipo !== 'MATERIA_PRIMA') return;
+  if (!categoria) throw new BadRequestException('La materia prima debe tener una categoría de insumo (café grano, leche, vaso...)');
+  if (!(equivalencia > 0)) {
+    throw new BadRequestException(`La equivalencia de ${nombreCategoria(categoria)} debe ser mayor que 0 (gramos o unidades por empaque)`);
   }
 }
 

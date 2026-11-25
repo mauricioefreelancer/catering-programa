@@ -1,5 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { esVarianteCafe, VarianteCafe } from '../common/receta-cafe';
+import { reconstruirRecetaBoton } from '../recetas-cafe/receta-boton.db';
+import { RecetasCafeService } from '../recetas-cafe/recetas-cafe.service';
 import {
   CreateMaquinaDto, UpdateMaquinaDto, AsignarMaquinaDto,
   CreateMapaMPDto, UpdateMapaMPDto, CreateMapaNRQDto, UpdateMapaNRQDto, QueryMaquinaDto,
@@ -31,7 +34,7 @@ function tipoCanonico(tipo?: string): string | undefined {
 
 @Injectable()
 export class MachinesService {
-  constructor(private prisma: PrismaService, private parametros: ParametrosService) {}
+  constructor(private prisma: PrismaService, private parametros: ParametrosService, private recetas: RecetasCafeService) {}
 
   async findAll(query: QueryMaquinaDto) {
     const skip = query.skip ? parseInt(query.skip) : 0;
@@ -249,134 +252,7 @@ export class MachinesService {
   async rendimiento(id: number) {
     const m = await this.findOne(id);
     this.validarMapaCafe(m.tipo);
-
-    // Precio de venta del dosificado según el cliente asignado a la máquina
-    const preciosCliente = m.idCliente
-      ? await this.prisma.preciosCliente.findMany({ where: { idCliente: m.idCliente } })
-      : [];
-    const precioDe = (idProducto: number) => {
-      const pc = preciosCliente.find((p) => p.idProducto === idProducto);
-      return pc ? Number(pc.precioVenta) : undefined;
-    };
-
-    // Materias Primas en las espirales de la máquina
-    const espirales: any[] = await this.prisma.mapaMateriaPrima.findMany({
-      where: { idMaquina: id },
-      include: { producto: { include: { proveedor: true } } },
-      orderBy: { espiralCodigo: 'asc' },
-    });
-
-    // Botones / productos dosificados con su receta
-    const botones: any[] = await this.prisma.mapaCafeNrq.findMany({
-      where: { idMaquina: id },
-      include: {
-        productoTerminado: {
-          include: { recetasProdTerm: { include: { materiaPrima: true } } },
-        },
-      },
-      orderBy: { opcionBoton: 'asc' },
-    });
-
-    // MPI: unidades disponibles por Materia Prima (empaques * equivalencia),
-    // costo por unidad de consumo y proveedor, para calcular el costo por taza.
-    const mpIndex = new Map<number, any>();
-    for (const e of espirales) {
-      const prod: any = e.producto as any;
-      if (!prod) continue;
-      const idP = e.idProducto;
-      const equiv = Number(prod.equivalencia ?? 1) || 1;
-      const unidades = (e.capacidadActual ?? 0) * equiv;
-      // Costo por unidad consumida = costoTotal del empaque / equivalencia
-      const costoTotal = Number(prod.costoTotal ?? prod.costo_total ?? 0);
-      const costoPorUnidad = equiv > 0 ? costoTotal / equiv : 0;
-      const prev = mpIndex.get(idP);
-      if (prev) {
-        prev.empaques += e.capacidadActual ?? 0;
-        prev.unidadesDisponibles += unidades;
-      } else {
-        mpIndex.set(idP, {
-          idProducto: idP,
-          nombre: prod.nombreProducto ?? '',
-          unidad: prod.unidadConsumo ?? prod.unidad_consumo ?? 'und',
-          equivalencia: equiv,
-          empaques: e.capacidadActual ?? 0,
-          espiral: e.espiralCodigo,
-          unidadesDisponibles: unidades,
-          costoTotal: costoTotal,
-          costoPorUnidad: costoPorUnidad,
-          proveedor: prod.proveedor?.razonSocial ?? prod.proveedor?.razon_social ?? '',
-          tipoCafe: prod.tipoCafe ?? prod.tipo_cafe ?? null,
-        });
-      }
-    }
-
-    // Dosificados → cuántas tazas por cada MP, factor limitante y costo por taza
-    const dosificados = (botones as any[]).map((b) => {
-      const dt: any = b.productoTerminado as any;
-      const recetas: any[] = Array.isArray(dt?.recetasProdTerm) ? dt.recetasProdTerm : [];
-      const ingredientes = recetas.map((r: any) => {
-        const mpInfo = mpIndex.get(r.idMatPrima);
-        const dosis = Number(r.cantidadDosis ?? 0);
-        const unidades = mpInfo?.unidadesDisponibles ?? 0;
-        const tazasMP = dosis > 0 ? Math.floor(unidades / dosis) : 0;
-        const costoIng = (mpInfo?.costoPorUnidad ?? 0) * dosis;
-        const tipoCafe = mpInfo?.tipoCafe ?? r.materiaPrima?.tipoCafe ?? null;
-        const dosisSugerida = tipoCafe === 'SOLUBLE' ? 2 : tipoCafe === 'GRANO' ? 8 : null;
-        return {
-          idMatPrima: r.idMatPrima,
-          nombre: mpInfo?.nombre ?? r.materiaPrima?.nombreProducto ?? '',
-          unidad: mpInfo?.unidad ?? r.unidadDosis ?? 'und',
-          empaques: mpInfo?.empaques ?? 0,
-          equivalencia: mpInfo?.equivalencia ?? 1,
-          unidadesDisponibles: unidades,
-          dosis,
-          tipoCafe,
-          dosisSugerida,
-          tazasPosibles: Math.max(0, tazasMP),
-          costoPorTaza: Math.round(costoIng * 100) / 100,
-        };
-      });
-      const tazasTotal = ingredientes.length
-        ? Math.min(...ingredientes.map((i: any) => i.tazasPosibles))
-        : 0;
-      const limitante = ingredientes.find((i: any) => i.tazasPosibles === tazasTotal)?.nombre;
-      const costoPorTaza = Math.round(ingredientes.reduce((acc: number, i: any) => acc + (i.costoPorTaza ?? 0), 0) * 100) / 100;
-      const precioVenta = precioDe(b.idProdTerm);
-      return {
-        idMapaNrq: b.idMapaNrq,
-        boton: b.opcionBoton,
-        idProducto: b.idProdTerm,
-        nombre: dt?.nombreProducto ?? '',
-        ingredientes,
-        tazasPosibles: Math.max(0, tazasTotal),
-        limitante,
-        costoPorTaza,
-        precioVenta,
-        margen: precioVenta != null && precioVenta > 0
-          ? Math.round(((precioVenta - costoPorTaza) / precioVenta) * 10000) / 100
-          : undefined,
-      };
-    });
-
-    // Resumen por MP: cuánto consume por servicio la suma de todos los botones
-    const materiasPrimas = Array.from(mpIndex.values()).map((mp) => {
-      let dosisTotal = 0;
-      for (const d of dosificados) {
-        const ing = d.ingredientes.find((i: any) => i.idMatPrima === mp.idProducto);
-        if (ing) dosisTotal += ing.dosis;
-      }
-      return {
-        ...mp,
-        dosisPorServicioTotal: dosisTotal,
-        serviciosPosibles: dosisTotal > 0 ? Math.max(0, Math.floor(mp.unidadesDisponibles / dosisTotal)) : 0,
-      };
-    });
-
-    return {
-      maquina: { id, serial: m.serial },
-      materiasPrimas,
-      dosificados,
-    };
+    return this.recetas.vistaCafetera(id);
   }
 
   // ============================================================
@@ -386,7 +262,7 @@ export class MachinesService {
   // Reemplazan el mapa completo con upsert por clave única.
   // ============================================================
   async saveMapaEspirales(id: number, espirales: any[]) {
-    await this.findOne(id); // valida que la máquina exista
+    const maquina = await this.findOne(id); // valida que la máquina exista
     if (!Array.isArray(espirales)) throw new BadRequestException('espirales debe ser un arreglo');
     const codigos = espirales.map((e) => String(e.espiral)).filter((c) => !!c);
     if (await this.prisma.mapaMateriaPrima.count({ where: { idMaquina: id, espiralCodigo: { notIn: codigos }, lecturasNrq: { some: {} } } })) {
@@ -396,6 +272,7 @@ export class MachinesService {
       if (!e?.espiral || e?.espiral === '') continue;
       const idProducto = Number(e.productoId ?? e.idProducto);
       if (!idProducto) throw new BadRequestException('Cada espiral debe tener un producto asignado');
+      await this.validarProductoTolva(maquina.tipo, String(e.espiral), idProducto);
       const lecturaInicial = e.lecturaInicial == null ? undefined : Number(e.lecturaInicial);
       if (lecturaInicial != null && (!Number.isSafeInteger(lecturaInicial) || lecturaInicial < 0)) {
         throw new BadRequestException(`Lectura inicial inválida para espiral ${e.espiral}`);
@@ -435,6 +312,10 @@ export class MachinesService {
     if (await this.prisma.mapaCafeNrq.count({ where: { idMaquina: id, opcionBoton: { notIn: opciones }, lecturas: { some: {} } } })) {
       throw new ConflictException('No se pueden eliminar botones con lecturas históricas');
     }
+    const previos = new Map((await this.prisma.mapaCafeNrq.findMany({
+      where: { idMaquina: id }, include: { receta: { select: { idRecetaBoton: true } } },
+    })).map(b => [b.opcionBoton, b]));
+    const porArmar: { boton: { idMapaNrq: number; idMaquina: number; idProdTerm: number }; variante: VarianteCafe | null }[] = [];
     for (const b of botones) {
       if (!b?.boton || b?.boton === '') continue;
       const idProdTerm = Number(b.productoId ?? b.idProdTerm);
@@ -453,17 +334,48 @@ export class MachinesService {
         throw new BadRequestException(`El botón ${b?.boton} debe ser un producto DOSIFICADO (receta café). '${prodTerm.tipoProducto}' no es válido.`);
       }
       const porcentajeCliente = porcentajeValido(b.porcentajeCliente);
-      await this.prisma.mapaCafeNrq.upsert({
+      const variante = b.varianteCafe == null || b.varianteCafe === '' ? null : String(b.varianteCafe);
+      if (variante != null && !esVarianteCafe(variante)) {
+        throw new BadRequestException(`Variante de café inválida en el botón ${b.boton}`);
+      }
+      const previo = previos.get(String(b.boton));
+      const guardado = await this.prisma.mapaCafeNrq.upsert({
         where: { idMaquina_opcionBoton: { idMaquina: id, opcionBoton: String(b.boton) } },
         update: { idProdTerm, lecturaInicial, porcentajeCliente },
         create: { idMaquina: id, idProdTerm, opcionBoton: String(b.boton), lecturaInicial, porcentajeCliente },
       });
+      // Botón nuevo, con otro producto, otra variante o sin receta: se arma desde la estándar.
+      if (!previo || previo.idProdTerm !== idProdTerm || (variante && variante !== previo.varianteCafe) || !previo.receta.length) {
+        porArmar.push({ boton: guardado, variante: (variante as VarianteCafe | null) });
+      }
     }
     // Eliminar botones que ya no están en el mapa
     await this.prisma.mapaCafeNrq.deleteMany({
       where: { idMaquina: id, opcionBoton: { notIn: opciones } },
     });
+    if (porArmar.length) {
+      await this.prisma.$transaction(async tx => {
+        for (const { boton, variante } of porArmar) await reconstruirRecetaBoton(tx, boton, variante);
+      });
+    }
     return this.getMapaNRQ(id);
+  }
+
+  /** Una cafetera solo lleva materia prima con categoría; una combinada, además, productos estándar. */
+  private async validarProductoTolva(tipoMaquina: string, codigo: string, idProducto: number) {
+    const producto = await this.prisma.productos.findUnique({
+      where: { idProducto }, select: { tipoProducto: true, categoriaInsumo: true, nombreProducto: true },
+    });
+    if (!producto) throw new BadRequestException(`El producto de ${codigo} no existe`);
+    if (producto.tipoProducto === 'DOSIFICADO') {
+      throw new BadRequestException(`${producto.nombreProducto} es un producto terminado: va en un botón, no en una tolva`);
+    }
+    if (tipoMaquina === 'CAFE' && producto.tipoProducto !== 'MATERIA_PRIMA') {
+      throw new BadRequestException(`La cafetera solo recibe materia prima; ${producto.nombreProducto} no lo es`);
+    }
+    if (producto.tipoProducto === 'MATERIA_PRIMA' && !producto.categoriaInsumo) {
+      throw new BadRequestException(`Asigna la categoría de insumo a ${producto.nombreProducto} en Productos antes de usarlo en una tolva`);
+    }
   }
 
   private validarMapaCafe(tipo: string) {

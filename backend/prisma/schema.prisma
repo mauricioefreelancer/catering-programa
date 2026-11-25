@@ -150,6 +150,7 @@ model Productos {
   proveedor       Proveedores?            @relation(fields: [idProveedor], references: [idProveedor], onDelete: Restrict, onUpdate: Cascade)
   recetasProdTerm RecetasDosificados[] @relation("ProductoTerminado")
   recetasMatPrima RecetasDosificados[] @relation("MateriaPrima")
+  recetasEstandar RecetasEstandar[]
   preciosCliente  PreciosCliente[]
   mapaMateriaPrima MapaMateriaPrima[]
   mapaCafeNrq     MapaCafeNrq[]
@@ -176,6 +177,36 @@ model RecetasDosificados {
 
   @@unique([idProdTerm, idMatPrima], map: "uq_receta_unica")
   @@map("RECETAS_DOSIFICADOS")
+}
+
+/// Dosificación estándar de la empresa por producto terminado, variante de café y categoría de insumo.
+model RecetasEstandar {
+  idRecetaEstandar   Int      @id @default(autoincrement()) @map("ID_Receta_Estandar")
+  idProdTerm         Int      @map("ID_Prod_Term")
+  varianteCafe       String   @map("Variante_Cafe") @db.VarChar(20)
+  categoriaInsumo    String   @map("Categoria_Insumo") @db.VarChar(40)
+  cantidadDosis      Decimal  @map("Cantidad_Dosis") @db.Decimal(18, 4)
+  fechaActualizacion DateTime @default(now()) @map("Fecha_Actualizacion")
+
+  productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([idProdTerm, varianteCafe, categoriaInsumo], map: "uq_receta_estandar")
+  @@map("RECETAS_ESTANDAR")
+}
+
+/// Receta que usa un botón en su máquina: copia ajustable de la estándar.
+model RecetaBoton {
+  idRecetaBoton      Int      @id @default(autoincrement()) @map("ID_Receta_Boton")
+  idMapaNrq          Int      @map("ID_Mapa_NRQ")
+  categoriaInsumo    String   @map("Categoria_Insumo") @db.VarChar(40)
+  cantidadDosis      Decimal  @map("Cantidad_Dosis") @db.Decimal(18, 4)
+  personalizada      Boolean  @default(false) @map("Personalizada")
+  fechaActualizacion DateTime @default(now()) @map("Fecha_Actualizacion")
+
+  boton MapaCafeNrq @relation(fields: [idMapaNrq], references: [idMapaNrq], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([idMapaNrq, categoriaInsumo], map: "uq_receta_boton")
+  @@map("RECETA_BOTON")
 }
 
 model PreciosCliente {
@@ -265,6 +296,7 @@ model MapaCafeNrq {
   idProdTerm     Int                       @map("ID_Prod_Term")
   idProveedor    Int?                      @map("ID_Proveedor")
   opcionBoton    String                    @map("Opcion_Boton") @db.VarChar(50)
+  varianteCafe   String?                   @map("Variante_Cafe") @db.VarChar(20)
   lecturaInicial BigInt                    @default(0) @map("Lectura_Inicial")
   porcentajeCliente Decimal                @default(0) @map("Porcentaje_Cliente") @db.Decimal(5, 2)
   fechaCreacion  DateTime                  @default(now()) @map("Fecha_Creacion")
@@ -273,6 +305,7 @@ model MapaCafeNrq {
   productoTerminado Productos @relation(fields: [idProdTerm], references: [idProducto], onDelete: Restrict, onUpdate: Cascade)
   proveedor Proveedores?  @relation(fields: [idProveedor], references: [idProveedor], onDelete: SetNull, onUpdate: Cascade)
   lecturas  LecturasNrq[]
+  receta    RecetaBoton[]
 
   @@unique([idMaquina, opcionBoton], map: "uq_nrq_boton_maquina")
   @@map("MAPA_CAFE_NRQ")

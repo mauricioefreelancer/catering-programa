@@ -16,7 +16,9 @@ import {
   Card,
   Switch,
   Spin,
+  Alert,
 } from 'antd'
+import { Link } from 'react-router-dom'
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, MinusCircleOutlined, PlusSquareOutlined, ReloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -59,7 +61,7 @@ const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const
 const CATEGORIAS_INSUMO: { value: string; color: string; label: string }[] = [
   { value: 'LECHE_POLVO', color: 'blue', label: '🥛 Leche en polvo' },
   { value: 'AROMATICA_FRUTOS_ROJOS', color: 'magenta', label: '🌿 Aromática frutos rojos' },
-  { value: 'AROMATICA_HIERBA_BUENA', color: 'green', label: '🌿 Aromática hierba buena' },
+  { value: 'AROMATICA_YERBABUENA', color: 'green', label: '🌿 Aromática yerbabuena' },
   { value: 'CHOCOLATE', color: 'purple', label: '🍫 Chocolate' },
   { value: 'VASO', color: 'cyan', label: '🥤 Vaso' },
   { value: 'MEZCLADOR', color: 'geekblue', label: '🥄 Mezclador' },
@@ -180,18 +182,11 @@ const Productos = () => {
         nombre: values.nombre,
         // los DOSIFICADOS se editan como está, sin re-guardar type de forma destructiva
         ...(editing?.tipo !== 'DOSIFICADO' ? { Tipo_Producto: values.tipo || 'ESTANDAR' } : {}),
-        categoriaInsumo: values.categoria_insumo || null,
+        categoriaInsumo: (editing?.tipo !== 'DOSIFICADO' ? values.tipo : 'DOSIFICADO') === 'MATERIA_PRIMA' ? values.categoria_insumo || null : null,
         unidadCompra: values.unidad_compra,
         unidadConsumo: values.unidad_consumo,
         // El tipo de café se deriva de la categoría elegida (soluble/grano).
         // Si el producto tiene un tipoCafe previo y no se eligió una categoría de café, se conserva para no perder información.
-        ...(() => {
-          const tc = tipoCafeDeCategoria(values.categoria_insumo)
-          if (tc) return { tipoCafe: tc }
-          const previo = (editing?.tipo_cafe || '').trim().toUpperCase()
-          if (previo === 'SOLUBLE' || previo === 'GRANO') return { tipoCafe: previo }
-          return { tipoCafe: null }
-        })(),
         equivalencia: Number(values.equivalencia || 1),
         IVA: Number(values.iva || 0),
         ...(!esDosificado ? {
@@ -202,23 +197,10 @@ const Productos = () => {
         stockMin: Number(values.stock_min || 0),
         stockMax: Number(values.stock_max || 0),
       }
-      const recetaPayload = esDosificado
-        ? (receta || []).map((r: Ingrediente) => ({
-            idProductoIngrediente: Number(r.productoId),
-            cantidad: Number(r.cantidad),
-          }))
-        : undefined
 
       if (editing) {
         try {
           await patch(`/productos/${editing.id}`, payloadBackend)
-          if (esDosificado && recetaPayload) {
-            try {
-              await post(`/productos/${editing.id}/recetas`, { receta: recetaPayload })
-            } catch (errReceta: any) {
-              message.warning('Producto actualizado, pero error guardando receta: ' + (errReceta?.response?.data?.message || errReceta?.message || errReceta))
-            }
-          }
           message.success('Producto actualizado')
         } catch (e: any) {
           message.error('Error actualizando producto: ' + (e?.response?.data?.message || e?.message || e))
@@ -226,8 +208,8 @@ const Productos = () => {
         }
       } else {
         try {
-          const resp: any = await post('/productos', payloadBackend)
-          message.success('Producto creado')
+          await post('/productos', payloadBackend)
+          message.success(esDosificado ? 'Producto terminado creado. Define su receta en Recetas café.' : 'Producto creado')
         } catch (e: any) {
           message.error('Error creando producto: ' + (e?.response?.data?.message || e?.message || e))
           return
@@ -261,7 +243,7 @@ const Productos = () => {
       setData(data.map((c) => (c.id === p.id ? { ...c, tipo: nuevoTipo } : c)))
       message.success(checked ? 'Marcado como Insumo (Materia Prima)' : 'Volvió a Estándar')
     } catch (e: any) {
-      message.error('Error actualizando tipo: ' + (e?.message || e))
+      message.error(e?.response?.data?.message || 'Error actualizando tipo: ' + (e?.message || e))
     }
   }
 
@@ -270,25 +252,8 @@ const Productos = () => {
     setTipoSel(p.tipo)
     setOpen(true)
     detectarVariantes(p.codigo_barras, p.id)
-    if (p.tipo === 'DOSIFICADO') {
-      setTabKey('RECETA')
-      try {
-        const full: any = await get(`/productos/${p.id}`)
-        const recetas: any[] = (full as any)?.recetasProdTerm || []
-        const ing: Ingrediente[] = recetas.map((r: any, i: number) => ({
-          id: i + 1,
-          productoId: Number(r.idMatPrima),
-          cantidad: Number(r.cantidadDosis),
-          nombre: data.find((m) => m.id === Number(r.idMatPrima))?.nombre,
-        }))
-        setReceta(ing)
-      } catch (e) {
-        setReceta([])
-      }
-    } else {
-      setTabKey('GENERAL')
-      setReceta([])
-    }
+    setTabKey('GENERAL')
+    setReceta([])
   }
 
   const openCreate = () => {
@@ -454,25 +419,26 @@ const Productos = () => {
               children: (
                 <>
                   {editing?.tipo === 'DOSIFICADO' ? (
-                    <Form.Item label="Clasificación del producto" extra="Producto DOSIFICADO pre-parametrizado (bebida de café). El tipo no se puede cambiar; edite su receta en la pestaña 🧪 Receta (Ingredientes).">
-                      <Tag color="orange">🟧 DOSIFICADO · Receta (pre-parametrizado)</Tag>
+                    <Form.Item label="Clasificación del producto" extra="Producto terminado de cafetera. El tipo no se puede cambiar; su receta se edita en Recetas café.">
+                      <Tag color="orange">🟧 Producto terminado (dosificado)</Tag>
                     </Form.Item>
                   ) : (
-                    <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Un solo formulario. Aquí defines cómo se usará el producto. Los DOSIFICADOS ya están parametrizados y se asignan en las máquinas de café.">
+                    <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Estándar: snacks y bebidas en espiral. Materia prima: insumo de cafetera (va en una tolva). Producto terminado: lo que dispensa un botón de la cafetera.">
                       <Radio.Group onChange={(e: any) => setTipoSel(e.target.value)}>
                         <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
-                        <Radio.Button value="MATERIA_PRIMA">🟣 Materia Prima (insumo)</Radio.Button>
+                        <Radio.Button value="MATERIA_PRIMA">🟣 Materia prima (insumo)</Radio.Button>
+                        {!editing && <Radio.Button value="DOSIFICADO">🟧 Producto terminado (café)</Radio.Button>}
                       </Radio.Group>
                     </Form.Item>
                   )}
                   {tipoSel === 'MATERIA_PRIMA' && (
                     <Tag color="purple" style={{ marginBottom: 12 }}>
-                      🟣 INSUMO: Este producto actuará como ingrediente en recetas DOSIFICADAS.
+                      🟣 INSUMO: elige su categoría. Las recetas usan la categoría, no la marca.
                     </Tag>
                   )}
                   {tipoSel === 'DOSIFICADO' && (
                     <Tag color="orange" style={{ marginBottom: 12 }}>
-                      🧪 RECETA: Pase a la pestaña "Receta (Ingredientes)" para elegir qué Materias Primas (gramos por servicio) componen este producto.
+                      🧪 Su costo sale de la receta estándar (Productos → Recetas café). No maneja stock.
                     </Tag>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -510,10 +476,11 @@ const Productos = () => {
                     </div>
                   )}
                   <Form.Item name="nombre" label="Nombre" rules={[{ required: true }]}><Input /></Form.Item>
-                  <Form.Item
+                  {tipoSel === 'MATERIA_PRIMA' && <Form.Item
                     name="categoria_insumo"
-                    label="Categoría de Insumo"
-                    extra="Catálogo cerrado. El tipo de café (soluble/grano) se selecciona aquí, no por separado."
+                    label="Categoría de insumo"
+                    rules={[{ required: true, message: 'Elige la categoría del insumo' }]}
+                    extra="Obligatoria. Define con qué tolva se cumple la receta. El tipo de café (grano o soluble) sale de aquí."
                   >
                     <Select
                       allowClear
@@ -527,13 +494,14 @@ const Productos = () => {
                         </Option>
                       ))}
                     </Select>
-                  </Form.Item>
+                  </Form.Item>}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true }]}><Input placeholder="Ej: UND / Gramo / ml" /></Form.Item>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="equivalencia" label="Equivalencia (und x empaque)" rules={[{ required: true }]}>
+                    <Form.Item name="equivalencia" label={tipoSel === 'MATERIA_PRIMA' ? 'Equivalencia (g o und por empaque)' : 'Equivalencia (und x empaque)'} rules={[{ required: true }]}
+                      extra={tipoSel === 'MATERIA_PRIMA' ? 'Ej: bolsa de café 1 kg = 1000; paquete de vasos x50 = 50; mezcladores x1000 = 1000' : undefined}>
                       <InputNumber style={{ width: '100%' }} min={1} />
                     </Form.Item>
                     <Form.Item name="iva" label="IVA (decimal)" rules={[{ required: true }]}>
@@ -563,93 +531,18 @@ const Productos = () => {
               ? [
                   {
                     key: 'RECETA',
-                    label: '🧪 Receta (Ingredientes)',
+                    label: '🧪 Receta',
                     children: (
-                      <Card
-                        size="small"
-                        title={`Ingredientes (SOLO Materia Prima) · ${materiasPrimas.length} MP disponibles`}
-                        extra={
-                          <Button type="primary" size="small" icon={<PlusSquareOutlined />} onClick={addIngrediente}>
-                            Agregar Insumo
-                          </Button>
-                        }
-                      >
-                        {materiasPrimas.length === 0 && (
-                          <Tag color="warning" style={{ marginBottom: 10, display: 'inline-block' }}>
-                            ⚠️ NO hay Materias Primas. Vaya a la tabla, columna "Insumo MP" → marque el Switch de los productos que serán ingredientes.
-                          </Tag>
-                        )}
-                        {receta.length === 0 ? (
-                          <Tag type="warning">Sin ingredientes. Agregue Materias Primas (Café kg, Azúcar kg, Leche, etc).</Tag>
-                        ) : (
-                          <Space direction="vertical" style={{ width: '100%' }}>
-                            {receta.map((ing, i) => {
-                              const mp = materiasPrimas.find((m) => m.id === ing.productoId)
-                              const unidad = mp?.unidad_consumo?.toUpperCase() || 'g'
-                              const esEmpaque = ['UND', 'EMPAQUE', 'CAJA', 'BOLSA', 'PAQUETE', 'ROLLO', 'UNIDAD'].includes(unidad)
-                              return (
-                                <div key={ing.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                  <Select
-                                    style={{ flex: 1 }}
-                                    value={ing.productoId}
-                                    placeholder="Seleccione un Insumo MP..."
-                                    onChange={(v: any) => {
-                                      const nr = [...receta]
-                                      const mpx = materiasPrimas.find((m) => m.id === v)
-                                      nr[i].productoId = v
-                                      nr[i].nombre = mpx?.nombre
-                                      setReceta(nr)
-                                    }}
-                                    optionRender={(opt: any) => {
-                                      const mpx = materiasPrimas.find((m) => m.id === opt.value)
-                                      if (!mpx) return <span>{opt.label}</span>
-                                      return (
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                          <span>🟣 {mpx.nombre}</span>
-                                          <Tag color={esEmpaque ? 'geekblue' : 'purple'} style={{ marginLeft: 8 }}>
-                                            {mpx.unidad_compra} · /{mpx.unidad_consumo}
-                                          </Tag>
-                                        </div>
-                                      )
-                                    }}
-                                  >
-                                    {materiasPrimas.map((m) => (
-                                      <Option key={m.id} value={m.id}>🟣 {m.nombre} ({m.unidad_consumo}) · Compra: {m.unidad_compra}</Option>
-                                    ))}
-                                  </Select>
-                                  <InputNumber
-                                    min={esEmpaque ? 1 : 0.01}
-                                    step={esEmpaque ? 1 : 0.5}
-                                    precision={esEmpaque ? 0 : 2}
-                                    value={ing.cantidad}
-                                    onChange={(v: any) => {
-                                      const nr = [...receta]
-                                      nr[i].cantidad = Number(v)
-                                      setReceta(nr)
-                                    }}
-                                    addonBefore={
-                                      mp ? (
-                                        <Tag color={esEmpaque ? 'geekblue' : 'purple'}>
-                                          {esEmpaque ? '📦' : '⚖️'} {mp.unidad_consumo}
-                                        </Tag>
-                                      ) : 'Unidad'
-                                    }
-                                    addonAfter={
-                                      mp
-                                        ? esEmpaque
-                                          ? 'und/empaque'
-                                          : 'fracción (g/ml/cc)'
-                                        : ''
-                                    }
-                                    style={{ width: 240 }}
-                                  />
-                                  <Button danger icon={<MinusCircleOutlined />} onClick={() => removeIngrediente(ing.id)} />
-                                </div>
-                              )
-                            })}
-                          </Space>
-                        )}
-                      </Card>
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="La receta se define en Productos → Recetas café"
+                        description={<>
+                          Allí se digita la dosis de cada insumo por variante (café en grano, café soluble o sin café),
+                          como la tabla de dosificación de la empresa. Cada máquina copia esa receta en sus botones y la puede ajustar.
+                          <div style={{ marginTop: 8 }}><Link to="/productos/recetas-cafe">Ir a Recetas café</Link></div>
+                        </>}
+                      />
                     ),
                   },
                 ]

@@ -23,6 +23,7 @@ import {
   OrderedListOutlined,
   CloseOutlined,
   MobileOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
@@ -109,6 +110,7 @@ const AppLayout = () => {
     }
     if (hasPermission('productos')) {
       items.push({ key: '/productos', icon: <ShoppingCartOutlined />, label: <Link to="/productos">Productos</Link> })
+      items.push({ key: '/productos/recetas-cafe', icon: <ExperimentOutlined />, label: <Link to="/productos/recetas-cafe">Recetas café</Link> })
     }
     if (hasPermission('precios')) {
       items.push({ key: '/precios', icon: <TagOutlined />, label: <Link to="/precios">Precios</Link> })

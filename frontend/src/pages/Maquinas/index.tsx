@@ -22,6 +22,7 @@ import {
 } from 'antd'
 import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, DesktopOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons'
 import ModalDrawer from '../../components/common/ModalDrawer'
+import CafeteraRecetas from './CafeteraRecetas'
 import { usePermissions } from '../../hooks/usePermissions'
 import { apiService } from '../../api/services/api'
 import { jsPDF } from 'jspdf'
@@ -209,6 +210,7 @@ const Maquinas = () => {
   const [clientes, setClientes] = useState<any[]>([])
   const [operadores, setOperadores] = useState<any[]>([])
   const [productos, setProductos] = useState<any[]>([])
+  const [recetasVersion, setRecetasVersion] = useState(0)
   const [fetching, setFetching] = useState(true)
   const [initialLoading, setInitialLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -316,14 +318,9 @@ const Maquinas = () => {
     setOpen(false)
   }
 
-  const loadRendimiento = async (id: number) => {
-    try {
-      const rd: any = await apiService.get(`/maquinas/${id}/rendimiento`)
-      const rdata = rd?.data ?? rd ?? {}
-      setRend({ materiasPrimas: rdata.materiasPrimas ?? [], dosificados: rdata.dosificados ?? [], maquina: rdata.maquina })
-    } catch {
-      setRend({ materiasPrimas: [], dosificados: [] })
-    }
+  // Las recetas por botón se recargan al guardar insumos o botones.
+  const loadRendimiento = async (_id: number) => {
+    setRecetasVersion((v) => v + 1)
   }
 
   const openEdit = async (m: Maquina) => {
@@ -1083,7 +1080,7 @@ const Maquinas = () => {
                 ? [
                     {
                       key: 'NRQ',
-                    label: `🔘 Mapa NRQ (Botones Café) ${totalBotones > 0 ? `· ${totalBotones}` : ''}`,
+                    label: `🔘 Botones y recetas ${totalBotones > 0 ? `· ${totalBotones}` : ''}`,
                     children: (
                       <>
                       <Card
@@ -1146,147 +1143,7 @@ const Maquinas = () => {
                           ]}
                         />
                       </Card>
-                      <Card
-                        size="small"
-                        title="📈 Rendimiento de Producción (tazas servibles según los insumos asignados)"
-                        type="inner"
-                        style={{ marginTop: 12 }}
-                        extra={
-                          rend ? <Tag color="green">Actualizado</Tag> : <Tag color="default">Requiere guardar</Tag>
-                        }
-                      >
-                        {rend && rend.dosificados.length > 0 ? (
-                          <Table
-                            size="small"
-                            rowKey="idMapaNrq"
-                            dataSource={rend.dosificados}
-                            pagination={false}
-                            columns={[
-                              {
-                                title: 'Botón',
-                                dataIndex: 'boton',
-                                width: 90,
-                                render: (v: string) => <Tag color="purple" style={{ fontFamily: 'monospace' }}>{v}</Tag>,
-                              },
-                              {
-                                title: 'Dosificado',
-                                dataIndex: 'nombre',
-                                render: (v: string) => (v ? <strong>{v}</strong> : <Tag color="default">Sin asignar</Tag>),
-                              },
-                              {
-                                title: 'Tazas posibles',
-                                dataIndex: 'tazasPosibles',
-                                width: 130,
-                                align: 'right',
-                                render: (v: number) => <b style={{ color: '#1677ff' }}>{v.toLocaleString('es-CO')} 🥤</b>,
-                              },
-                              {
-                                title: 'Factor limitante',
-                                key: 'limitante',
-                                render: (_, r) =>
-                                  r.limitante ? <Tag color="gold">Falta: {r.limitante}</Tag> : <Tag color="green">Sin restricción</Tag>,
-                              },
-                              {
-                                title: 'Ingredientes por servicio',
-                                key: 'ing',
-                                render: (_, r) => (
-                                  <Space wrap size={4}>
-                                    {r.ingredientes && r.ingredientes.length > 0
-                                      ? r.ingredientes.map((ing: any, i: number) => (
-                                          <Tag key={i} color={ing.tazasPosibles === 0 ? 'red' : ing.tipoCafe ? 'geekblue' : 'blue'} title={`$ ${(ing.costoPorTaza ?? 0).toLocaleString('es-CO')}/taza`}>
-                                            {ing.dosis} {ing.unidad} {ing.nombre}
-                                            {ing.tipoCafe ? ` (${ing.tipoCafe === 'SOLUBLE' ? 'soluble·2g' : 'grano·8g'})` : ''}
-                                            {ing.tazasPosibles === 0 ? ' (sin MP)' : ''}
-                                          </Tag>
-                                        ))
-                                      : <Tag color="default">Sin receta</Tag>}
-                                  </Space>
-                                ),
-                              },
-                              {
-                                title: 'Costo / taza',
-                                dataIndex: 'costoPorTaza',
-                                width: 110,
-                                align: 'right',
-                                render: (v: number) => (v != null && !isNaN(v) ? <span>$ {v.toLocaleString('es-CO')}</span> : <Tag color="default">N/D</Tag>),
-                              },
-                              {
-                                title: 'Precio venta',
-                                dataIndex: 'precioVenta',
-                                width: 110,
-                                align: 'right',
-                                render: (v: number) => (v != null && !isNaN(v) ? <b style={{ color: '#1677ff' }}>$ {v.toLocaleString('es-CO')}</b> : <Tag color="gold">Sin precio</Tag>),
-                              },
-                              {
-                                title: 'Margen',
-                                dataIndex: 'margen',
-                                width: 100,
-                                align: 'right',
-                                render: (v: number) =>
-                                  v != null && !isNaN(v) ? <Tag color={v < 20 ? 'red' : v < 35 ? 'gold' : 'green'}>{v.toFixed(1)}%</Tag> : <Tag color="default">—</Tag>,
-                              },
-                            ]}
-                          />
-                        ) : (
-                          <Tag style={{ display: 'block' }}>Asigne los botones y guarde (o ajuste la cantidad actual de los insumos en "Mapa de Insumos") para ver el cálculo de tazas.</Tag>
-                        )}
-                      </Card>
-                      <Card
-                        size="small"
-                        title="🗂️ Resumen de Insumos (cantidad → unidades → consumo de los botones)"
-                        type="inner"
-                        style={{ marginTop: 12 }}
-                      >
-                        {rend && rend.materiasPrimas.length > 0 ? (
-                          <Table
-                            size="small"
-                            rowKey="idProducto"
-                            dataSource={rend.materiasPrimas}
-                            pagination={false}
-                            columns={[
-                              {
-                                title: 'Materia Prima',
-                                dataIndex: 'nombre',
-                                render: (v: string) => <strong>{v || '—'}</strong>,
-                              },
-                              { title: 'Proveedor', dataIndex: 'proveedor', width: 150, render: (v: string) => (v ? <Tag color="cyan">{v}</Tag> : <span style={{ color: '#999' }}>Sin proveedor</span>) },
-                              { title: 'Empaques', dataIndex: 'empaques', width: 90, align: 'right', render: (v: number) => <span>{v}</span> },
-                              { title: 'Und/empaque', dataIndex: 'equivalencia', width: 100, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v}</span> },
-                              { title: 'Unidades disp.', dataIndex: 'unidadesDisponibles', width: 110, align: 'right', render: (v: number) => <span>{v?.toLocaleString?.('es-CO') ?? v} {rend?.materiasPrimas?.[0]?.unidad || ''}</span> },
-                              {
-                                title: 'Dosis/servicio (suma botones)',
-                                dataIndex: 'dosisPorServicioTotal',
-                                width: 150,
-                                align: 'right',
-                                render: (v: number) => <span>{v || 0}</span>,
-                              },
-                              {
-                                title: 'Servicios posibles',
-                                dataIndex: 'serviciosPosibles',
-                                width: 130,
-                                align: 'right',
-                                render: (v: number) => <b style={{ color: '#1677ff' }}>{v?.toLocaleString?.('es-CO') ?? v} 🥤</b>,
-                              },
-                              {
-                                title: 'Despacho',
-                                key: 'despacho',
-                                width: 120,
-                                align: 'center',
-                                render: (_, r) =>
-                                  r.serviciosPosibles > 20 ? (
-                                    <Tag color="green">OK</Tag>
-                                  ) : r.serviciosPosibles > 0 ? (
-                                    <Tag color="gold">Próximo a reponer</Tag>
-                                  ) : (
-                                    <Tag color="red">Despachar MP</Tag>
-                                  ),
-                              },
-                            ]}
-                          />
-                        ) : (
-                          <Tag style={{ display: 'block' }}>No hay insumos asignados en esta máquina café. Asigne los productos en "Capacidad Actual" del Mapa de Insumos para calcular el despacho.</Tag>
-                        )}
-                      </Card>
+                      {editing && <CafeteraRecetas idMaquina={editing.id} version={recetasVersion} puedeEditar={perm.editar} />}
                       </>
                     ),
                   },
@@ -1344,12 +1201,20 @@ const Maquinas = () => {
                 placeholder={editing?.tipo === 'CAFE' ? 'Seleccione el insumo para esta máquina' : 'Seleccione el producto para esta espiral'}
                 optionFilterProp="label"
               >
-                {productos.map((p: any) => {
+                {productos.filter((p: any) => {
+                  // Cafetera: solo materia prima con categoría. Snacks: productos estándar. Combinada: ambos.
+                  const t = String(p?.tipoProducto ?? '').toUpperCase()
+                  if (t === 'DOSIFICADO') return false
+                  if (editing?.tipo === 'CAFE') return t === 'MATERIA_PRIMA' && !!p.categoriaInsumo
+                  if (editing?.tipo === 'COMBINADA') return t === 'ESTANDAR' || (t === 'MATERIA_PRIMA' && !!p.categoriaInsumo)
+                  return t === 'ESTANDAR'
+                }).map((p: any) => {
                   const prov = nombreProveedorProducto(p)
                   const nm = p.nombreProducto ?? p.nombre ?? ''
                   return (
                     <Option key={p.idProducto ?? p.id} value={p.idProducto ?? p.id} label={`${nm}${prov ? ` · ${prov}` : ''}`}>
                       <span>{nm}</span>
+                      {p.categoriaInsumo ? <Tag color="purple" style={{ marginLeft: 8 }}>{String(p.categoriaInsumo).replace(/_/g, ' ').toLowerCase()}</Tag> : null}
                       {prov ? <Tag color="cyan" style={{ marginLeft: 8 }}>{prov}</Tag> : null}
                     </Option>
                   )

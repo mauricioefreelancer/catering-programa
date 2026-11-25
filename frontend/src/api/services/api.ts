@@ -15,9 +15,14 @@ export const patch = async <T = any>(url: string, data?: any): Promise<T> => {
   return res.data
 }
 
+export const put = async <T = any>(url: string, data?: any): Promise<T> => {
+  const res = await api.put<T>(url, data)
+  return res.data
+}
+
 export const remove = async <T = any>(url: string): Promise<T> => {
   const res = await api.delete<T>(url)
   return res.data
 }
 
-export const apiService = { get, post, patch, remove }
+export const apiService = { get, post, patch, put, remove }

@@ -47,10 +47,6 @@ const Login = () => {
     }
   }
 
-  const fillDemo = () => {
-    form.setFieldsValue({ email: 'admin@example.com', password: 'Admin123*' })
-  }
-
   return (
     <div
       style={{
@@ -120,9 +116,6 @@ const Login = () => {
           </Form.Item>
           <Button size="large" block icon={<MobileOutlined />} onClick={() => window.open('/operador', '_blank')} style={{ marginBottom: 8 }}>
             Ingresar como Operador
-          </Button>
-          <Button size="small" type="link" onClick={fillDemo} block>
-            (Demo) Llenar credenciales de prueba
           </Button>
         </Form>
 

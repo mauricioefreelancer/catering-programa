@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePedidoOperadorDto } from './dto/operador-pedido.dto';
 import { EstadoPedido, PEDIDOS_ABIERTOS, pendientePedido, sugeridoPorEspiral } from '../common/reposicion';
 import { diferenciaContador, vendidasPorEspiral } from '../common/contadores';
-import { calcularConsumoMateriaPrima } from '../common/consumo-materia-prima';
+import { calcularConsumoCategoria, nombreCategoria, unidadCategoria } from '../common/receta-cafe';
 import { evaluarTolerancia, ParametrosService } from '../admin/parametros.service';
 import { baseEspirales, ultimasLecturas } from '../common/ultimas-lecturas';
 import { calcularVentaTeorica, LineaVenta } from '../common/venta-teorica';
@@ -51,7 +51,7 @@ export class OperadorPedidoService {
       where: { idMaquina: dto.idMaquina },
       include: {
         mapaMateriaPrima: { include: { producto: true } },
-        mapaCafeNrq: { include: { productoTerminado: true } },
+        mapaCafeNrq: { include: { productoTerminado: true, receta: true } },
       },
     });
     if (!maquina) throw new NotFoundException('Máquina no encontrada');
@@ -194,6 +194,7 @@ export class OperadorPedidoService {
         const nrqPorEspiral = new Map<number, bigint | null>();
         const botonesProcesados = new Set<number>();
         const unidadesCafe = new Map<number, bigint>();
+        const unidadesPorBoton = new Map<number, bigint>();
 
         for (const nrqItem of nrqEntradas) {
           if ((nrqItem.idMapaNRQ == null) === (nrqItem.idMapaMP == null)) {
@@ -232,6 +233,7 @@ export class OperadorPedidoService {
           const unidades = calcular(`Botón ${nrq.opcionBoton}`, anterior, nrqItem.lectura);
           const idProdTerm = nrq.idProdTerm;
           unidadesCafe.set(idProdTerm, (unidadesCafe.get(idProdTerm) ?? 0n) + unidades);
+          unidadesPorBoton.set(nrq.idMapaNrq, unidades);
           const precio = precioPorProducto.get(idProdTerm);
           lineasVenta.push({ unidades, precio: precio ?? null, porcentajeCliente: nrq.porcentajeCliente });
           detalleControles.push({ idMapaNrq: nrq.idMapaNrq, boton: nrq.opcionBoton,
@@ -253,37 +255,39 @@ export class OperadorPedidoService {
 const controlesMP: Prisma.InputJsonObject[] = [];
         let diferenciaMpValor: Prisma.Decimal | null = null;
         if (mapaNrqById.size) {
-          const recetas = await tx.recetasDosificados.findMany({
-            where: { idProdTerm: { in: maquina.mapaCafeNrq.map(b => b.idProdTerm) } },
-            include: { materiaPrima: true },
-          });
-          const productosMP = new Map([
-            ...tolvas.map(t => [t.idProducto, t.producto] as const),
-            ...recetas.map(r => [r.idMatPrima, r.materiaPrima] as const),
-          ]);
+          // Control por categoría de insumo: teórico con la receta de cada botón (la dosis
+          // usada queda guardada en la visita) contra lo consumido de las tolvas.
+          const nrqCompleto = botonesProcesados.size === mapaNrqById.size;
           const fisicosActuales = new Map(pedidosCreados.map(p => [p.idMapaMp, p.fisicoDigitado]));
+          const categorias = new Set<string>([
+            ...tolvas.map(t => t.producto.categoriaInsumo).filter((c): c is string => !!c),
+            ...maquina.mapaCafeNrq.flatMap(b => b.receta.map(r => r.categoriaInsumo)),
+          ]);
           let total = new Prisma.Decimal(0);
-          let completo = productosMP.size > 0 && botonesProcesados.size === mapaNrqById.size;
-          for (const [idProducto, mp] of productosMP) {
-            const fisicos = tolvas.filter(t => t.idProducto === idProducto).map(t => {
+          let completo = categorias.size > 0 && nrqCompleto;
+          for (const categoria of [...categorias].sort()) {
+            const tolvasCategoria = tolvas.filter(t => t.producto.categoriaInsumo === categoria).map(t => {
               const anterior = anteriorPorEspiral.get(t.idMapaMp);
+              const mismo = anterior?.idProducto === t.idProducto;
               return {
-                idMapaMp: t.idMapaMp,
-                fisicoAnterior: anterior?.idProducto === idProducto ? anterior.fisicoDigitado : null,
-                despachado: anterior?.idProducto === idProducto ? anterior.despachado : 0,
-                fisicoActual: fisicosActuales.get(t.idMapaMp)!,
+                idMapaMp: t.idMapaMp, idProducto: t.idProducto, producto: t.producto.nombreProducto,
+                fisicoAnterior: mismo ? anterior!.fisicoDigitado : null, despachado: mismo ? anterior!.despachado : 0,
+                fisicoActual: fisicosActuales.get(t.idMapaMp)!, equivalencia: t.producto.equivalencia, costoBase: t.producto.costoBase,
               };
             });
-            const dosis = recetas.filter(r => r.idMatPrima === idProducto).map(r => ({
-              unidades: botonesProcesados.size === mapaNrqById.size ? unidadesCafe.get(r.idProdTerm) ?? null : null,
-              cantidadDosis: r.cantidadDosis,
-            }));
-            const control = calcularConsumoMateriaPrima(dosis, fisicos, mp.equivalencia, mp.costoBase);
+            const dosis = maquina.mapaCafeNrq.flatMap(b => b.receta.filter(r => r.categoriaInsumo === categoria).map(r => ({
+              idMapaNrq: b.idMapaNrq, boton: b.opcionBoton,
+              unidades: nrqCompleto ? unidadesPorBoton.get(b.idMapaNrq) ?? null : null, cantidadDosis: r.cantidadDosis,
+            })));
+            const control = calcularConsumoCategoria(dosis, tolvasCategoria);
             if (control.valorDiferencia == null) completo = false;
             else total = total.plus(control.valorDiferencia);
             controlesMP.push({
-              idProducto, nombre: mp.nombreProducto, unidadCompra: mp.unidadCompra, unidadConsumo: mp.unidadConsumo,
-              equivalencia: mp.equivalencia.toString(), costoBase: mp.costoBase.toString(), tolvas: fisicos,
+              categoria, nombre: nombreCategoria(categoria), unidad: unidadCategoria(categoria),
+              dosis: dosis.map(d => ({ idMapaNrq: d.idMapaNrq, boton: d.boton, unidades: d.unidades?.toString() ?? null,
+                dosis: d.cantidadDosis.toString() })),
+              tolvas: tolvasCategoria.map(t => ({ ...t, equivalencia: t.equivalencia.toString(), costoBase: t.costoBase.toString() })),
+              costoUnitario: control.costoUnitario?.toString() ?? null,
               consumoTeorico: control.consumoTeorico?.toString() ?? null, consumoReal: control.consumoReal?.toString() ?? null,
               diferencia: control.diferencia?.toString() ?? null, valorDiferencia: control.valorDiferencia?.toString() ?? null,
               inconsistencia: control.inconsistencia,
