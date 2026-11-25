@@ -65,12 +65,15 @@ Luego:
 ```powershell
 npm ci
 npx prisma generate
-npx prisma migrate deploy
-npx prisma db seed  # Solo en la base local
+npm run db:migrate  # migrate deploy protegido por scripts/verificar-entorno.js
+npm run db:seed     # carga demo, solo en la base local
 npm run start:dev  # API en http://localhost:3000/api
 ```
 
-Usuario demo: `admin@example.com` · Clave: `Admin123*`
+Usuario demo (solo base local): `admin@example.com` · Clave: `Admin123*`. En Render no existe.
+
+#### Protección de la base de producción
+`backend/scripts/verificar-entorno.js` aborta si `NODE_ENV` no es `production` y `DATABASE_URL` o `DIRECT_URL` apuntan a un host distinto de `localhost`. Lo usan `npm run db:migrate`, `npm run db:seed` y `npx prisma db seed`. Nunca ejecutes `npx prisma migrate deploy` directo con las variables de Render en tu equipo: las migraciones de Render las aplica solo su Pre-Deploy.
 
 ### 3. Configurar Frontend
 ```powershell
@@ -102,6 +105,8 @@ Módulo operador móvil PWA: `http://localhost:5173/mobile`
 - **Start Command**: `npm run start:prod`
 - **Variables**: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `TARIFA_PROMEDIO_DEFAULT`, `UMBRAL_MARGEN`
 - **Alertas de visita**: Administración → Parámetros permite editar las tolerancias de venta y materia prima, inicialmente de $10.000 COP cada una. Cada visita guarda el umbral aplicado y su resultado; un cambio no recalcula las alertas anteriores.
+- **Pre-Deploy**: confirma en el log de cada despliegue `==> Starting pre-deploy: npx prisma migrate deploy`. El Build no debe contener `migrate deploy`.
+- **Limpieza de datos de prueba (solo fase de construcción)**: `backend/scripts/reset-datos-prueba.js` vacía todas las tablas excepto usuarios, roles, parámetros y migraciones, crea el perfil y usuario administrador `Engenitix` y elimina el usuario demo. Se ejecuta como job de Render con `CONFIRMAR_RESET=BORRAR-DATOS-DE-PRUEBA` y `ADMIN_CLAVE_INICIAL`. No usar con datos reales.
 - **Base ya existente**: antes de activar este despliegue, seguir la [guía de adopción del baseline](backend/prisma/BASELINE.md). No aplicar `0_baseline` sobre una base con tablas existentes.
 
 ### Frontend → Netlify
