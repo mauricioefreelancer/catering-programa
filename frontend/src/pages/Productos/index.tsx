@@ -23,6 +23,7 @@ import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, MinusCircle
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
 import { get, post, patch, remove } from '../../api/services/api'
+import { AYUDA_EQUIVALENCIA, CATEGORIAS_INSUMO, ETIQUETA_EQUIVALENCIA, UNIDADES_COMPRA, UNIDADES_CONSUMO, unidadConsumoDeCategoria } from '../../constants/productos'
 
 const { Title } = Typography
 const { Option } = Select
@@ -58,17 +59,6 @@ const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const
 
 // Categorías de insumo disponibles (catálogo cerrado). Sólo estas opciones.
 // CAFE_SOLUBLE y CAFE_GRANO reemplazan al campo "Tipo de Café": la dosis se calcula según la categoría.
-const CATEGORIAS_INSUMO: { value: string; color: string; label: string }[] = [
-  { value: 'LECHE_POLVO', color: 'blue', label: '🥛 Leche en polvo' },
-  { value: 'AROMATICA_FRUTOS_ROJOS', color: 'magenta', label: '🌿 Aromática frutos rojos' },
-  { value: 'AROMATICA_YERBABUENA', color: 'green', label: '🌿 Aromática yerbabuena' },
-  { value: 'CHOCOLATE', color: 'purple', label: '🍫 Chocolate' },
-  { value: 'VASO', color: 'cyan', label: '🥤 Vaso' },
-  { value: 'MEZCLADOR', color: 'geekblue', label: '🥄 Mezclador' },
-  { value: 'AZUCAR', color: 'gold', label: '🍬 Azúcar' },
-  { value: 'CAFE_SOLUBLE', color: 'brown', label: '☕ Café soluble' },
-  { value: 'CAFE_GRANO', color: 'orange', label: '☕ Café grano' },
-]
 const catColor = (c?: string | null): string => {
   const cUp = (c || '').trim().toUpperCase()
   const match = CATEGORIAS_INSUMO.find((o) => o.value === cUp)
@@ -86,6 +76,31 @@ const tipoCafeDeCategoria = (categoria?: string | null): 'SOLUBLE' | 'GRANO' | n
   if (cUp === 'CAFE_SOLUBLE') return 'SOLUBLE'
   if (cUp === 'CAFE_GRANO') return 'GRANO'
   return null
+}
+
+// Categoría de insumo: al elegirla fija la unidad de consumo (g o und) del formulario.
+function SelectCategoriaInsumo({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
+  const form = Form.useFormInstance()
+  return (
+    <Select
+      allowClear
+      value={value}
+      placeholder="Seleccione la categoría del insumo"
+      style={{ width: '100%' }}
+      optionLabelProp="label"
+      onChange={(c: string) => {
+        onChange?.(c)
+        const unidad = unidadConsumoDeCategoria(c)
+        if (unidad) form.setFieldsValue({ unidad_consumo: unidad })
+      }}
+    >
+      {CATEGORIAS_INSUMO.map((o) => (
+        <Option key={o.value} value={o.value} label={o.label}>
+          <Tag color={o.color} style={{ marginRight: 8 }}>{o.label}</Tag>
+        </Option>
+      ))}
+    </Select>
+  )
 }
 
 const Productos = () => {
@@ -387,7 +402,7 @@ const Productos = () => {
 
   const initialVals: any = editing
     ? editing
-    : { idProveedor: null, tipo: 'ESTANDAR', unidad_compra: 'UND', unidad_consumo: 'UND', equivalencia: 1, iva: 0.19, costo_base: 0, stock_actual: 0, stock_min: 0, stock_max: 100 }
+    : { idProveedor: null, tipo: 'ESTANDAR', unidad_compra: 'Unidad', unidad_consumo: 'Unidad', equivalencia: 1, iva: 0.19, costo_base: 0, stock_actual: 0, stock_min: 0, stock_max: 100 }
 
   return (
     <div>
@@ -482,26 +497,19 @@ const Productos = () => {
                     rules={[{ required: true, message: 'Elige la categoría del insumo' }]}
                     extra="Obligatoria. Define con qué tolva se cumple la receta. El tipo de café (grano o soluble) sale de aquí."
                   >
-                    <Select
-                      allowClear
-                      placeholder="Seleccione la categoría del insumo"
-                      style={{ width: '100%' }}
-                      optionLabelProp="label"
-                    >
-                      {CATEGORIAS_INSUMO.map((o) => (
-                        <Option key={o.value} value={o.value} label={o.label}>
-                          <Tag color={o.color} style={{ marginRight: 8 }}>{o.label}</Tag>
-                        </Option>
-                      ))}
-                    </Select>
+<SelectCategoriaInsumo />
                   </Form.Item>}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true }]}><Input placeholder="Ej: CAJA 24 / KILO / BOLSA" /></Form.Item>
-                    <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true }]}><Input placeholder="Ej: UND / Gramo / ml" /></Form.Item>
+                    <Form.Item name="unidad_compra" label="Unidad de compra (empaque)" rules={[{ required: true, message: 'Elige la unidad de compra' }]}>
+                      <Select showSearch placeholder="Seleccione el empaque" options={UNIDADES_COMPRA} />
+                    </Form.Item>
+                    <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Elige la unidad de consumo' }]}
+                      extra={tipoSel === 'MATERIA_PRIMA' ? 'Se ajusta sola según la categoría del insumo' : undefined}>
+                      <Select placeholder="Seleccione la fracción" options={UNIDADES_CONSUMO} />
+                    </Form.Item>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="equivalencia" label={tipoSel === 'MATERIA_PRIMA' ? 'Equivalencia (g o und por empaque)' : 'Equivalencia (und x empaque)'} rules={[{ required: true }]}
-                      extra={tipoSel === 'MATERIA_PRIMA' ? 'Ej: bolsa de café 1 kg = 1000; paquete de vasos x50 = 50; mezcladores x1000 = 1000' : undefined}>
+                    <Form.Item name="equivalencia" label={ETIQUETA_EQUIVALENCIA} rules={[{ required: true }]} extra={AYUDA_EQUIVALENCIA}>
                       <InputNumber style={{ width: '100%' }} min={1} />
                     </Form.Item>
                     <Form.Item name="iva" label="IVA (decimal)" rules={[{ required: true }]}>

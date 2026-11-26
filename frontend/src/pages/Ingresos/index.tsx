@@ -1,3 +1,4 @@
+import { AYUDA_EQUIVALENCIA, CATEGORIAS_INSUMO, ETIQUETA_EQUIVALENCIA, UNIDADES_COMPRA, UNIDADES_CONSUMO, unidadConsumoDeCategoria } from '../../constants/productos'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Form,
@@ -33,17 +34,6 @@ const { TextArea } = Input
 
 // Categorías de insumo disponibles (catálogo cerrado). Sólo estas opciones.
 // CAFE_SOLUBLE y CAFE_GRANO reemplazan al campo "Tipo de Café".
-const CATEGORIAS_INSUMO = [
-  { value: 'LECHE_POLVO', label: '🥛 Leche en polvo' },
-  { value: 'AROMATICA_FRUTOS_ROJOS', label: '🌿 Aromática frutos rojos' },
-  { value: 'AROMATICA_HIERBA_BUENA', label: '🌿 Aromática hierba buena' },
-  { value: 'CHOCOLATE', label: '🍫 Chocolate' },
-  { value: 'VASO', label: '🥤 Vaso' },
-  { value: 'MEZCLADOR', label: '🥄 Mezclador' },
-  { value: 'AZUCAR', label: '🍬 Azúcar' },
-  { value: 'CAFE_SOLUBLE', label: '☕ Café soluble' },
-  { value: 'CAFE_GRANO', label: '☕ Café grano' },
-]
 // El tipo de café se deriva de la categoría (dosis en máquinas: soluble=2gr, grano=8gr).
 const tipoCafeDeCategoria = (categoria?: string | null): 'SOLUBLE' | 'GRANO' | null => {
   const cUp = (categoria || '').trim().toUpperCase()
@@ -520,7 +510,7 @@ const Ingresos = () => {
         width={680}
         destroyOnClose
       >
-        <Form form={formNuevo} layout="vertical" initialValues={{ tipo: 'ESTANDAR', equivalencia: 1, iva: 0 }}>
+        <Form form={formNuevo} layout="vertical" initialValues={{ tipo: 'ESTANDAR', equivalencia: 1, iva: 0, unidad_compra: 'Unidad', unidad_consumo: 'Unidad' }}>
           <Form.Item name="tipo" label="Clasificación del producto" extra="Se creará con la misma lógica de la sección Productos. Los DOSIFICADOS no se crean desde aquí (vienen parametrizados).">
             <Radio.Group onChange={(e: any) => setTipoNuevo(e.target.value)}>
               <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
@@ -542,32 +532,37 @@ const Ingresos = () => {
           <Form.Item name="nombre" label="Nombre" rules={[{ required: true, message: 'Nombre requerido' }]}>
             <Input />
           </Form.Item>
-          <Form.Item
+          {tipoNuevo === 'MATERIA_PRIMA' && <Form.Item
             name="categoria_insumo"
-            label="Categoría de Insumo"
-            extra="Catálogo cerrado. El tipo de café (soluble/grano) se selecciona aquí, no por separado."
+            label="Categoría de insumo"
+            rules={[{ required: true, message: 'Elige la categoría del insumo' }]}
+            extra="Obligatoria para materia prima. El tipo de café (grano o soluble) sale de aquí."
           >
             <Select
               allowClear
               placeholder="Seleccione la categoría del insumo"
               style={{ width: '100%' }}
               optionLabelProp="label"
+              onChange={(c: string) => {
+                const unidad = unidadConsumoDeCategoria(c)
+                if (unidad) formNuevo.setFieldsValue({ unidad_consumo: unidad })
+              }}
             >
               {CATEGORIAS_INSUMO.map((o) => (
                 <Option key={o.value} value={o.value} label={o.label}>{o.label}</Option>
               ))}
             </Select>
-          </Form.Item>
+          </Form.Item>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Form.Item name="unidad_compra" label="Unidad Compra (Empaque)" rules={[{ required: true, message: 'Requerido' }]}>
-              <Input placeholder="Ej: CAJA 24 / KILO / BOLSA" />
+            <Form.Item name="unidad_compra" label="Unidad de compra (empaque)" rules={[{ required: true, message: 'Requerido' }]}>
+              <Select showSearch placeholder="Seleccione el empaque" options={UNIDADES_COMPRA} />
             </Form.Item>
-            <Form.Item name="unidad_consumo" label="Unidad Consumo (Fracción)" rules={[{ required: true, message: 'Requerido' }]}>
-              <Input placeholder="Ej: UND / Gramo / ml" />
+            <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Requerido' }]}>
+              <Select placeholder="Seleccione la fracción" options={UNIDADES_CONSUMO} />
             </Form.Item>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Form.Item name="equivalencia" label="Equivalencia (und x empaque)" rules={[{ required: true }]}>
+            <Form.Item name="equivalencia" label={ETIQUETA_EQUIVALENCIA} rules={[{ required: true }]} extra={AYUDA_EQUIVALENCIA}>
               <InputNumber style={{ width: '100%' }} min={1} />
             </Form.Item>
             <Form.Item name="iva" label="IVA (decimal)" rules={[{ required: true }]}>

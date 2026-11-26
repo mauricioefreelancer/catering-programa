@@ -31,7 +31,7 @@ describe('Receta de café', () => {
   it('marca como personalizada la dosis distinta de la estándar', () => {
     expect(esPersonalizada('CAFE_GRANO', dec(8), capuccinoGrano)).toBe(false);
     expect(esPersonalizada('CAFE_GRANO', dec(7), capuccinoGrano)).toBe(true);
-    expect(esPersonalizada('AROMATICA_YERBABUENA', dec(7), capuccinoGrano)).toBe(true);
+    expect(esPersonalizada('AROMATICA', dec(10), capuccinoGrano)).toBe(true);
   });
 
   it('sugiere la variante según los cafés de la máquina', () => {
