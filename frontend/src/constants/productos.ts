@@ -21,7 +21,7 @@ export const UNIDADES_COMPRA = [
 export const UNIDADES_CONSUMO = ['Unidad', 'Gramo', 'Mililitro'].map((u) => ({ value: u, label: u }))
 
 export const ETIQUETA_EQUIVALENCIA = 'Escriba el valor en gramos o unidades que contenga el empaque a despachar'
-export const AYUDA_EQUIVALENCIA = 'Ej: bolsa de café de 1 kg = 1000 · paquete de 50 vasos = 50 · caja de 24 snacks = 24'
+export const AYUDA_EQUIVALENCIA = 'Ej: bolsa de café de 1 kg = 1000 · paquete de 50 vasos = 50 · paquete de mezcladores = 1000'
 
 export const unidadConsumoDeCategoria = (categoria?: string | null) =>
   CATEGORIAS_INSUMO.find((c) => c.value === categoria)?.unidadConsumo

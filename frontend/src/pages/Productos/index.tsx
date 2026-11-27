@@ -143,8 +143,8 @@ const Productos = () => {
         tipo: normalizeTipo(p.tipoProducto ?? p.Tipo_Producto ?? p.tipo),
         categoria_insumo: (p.categoriaInsumo ?? p.categoria_insumo ?? null) || null,
         tipo_cafe: (p.tipoCafe ?? p.tipo_cafe ?? null) || null,
-        unidad_compra: p.unidadCompra || p.unidad_compra || 'UND',
-        unidad_consumo: p.unidadConsumo || p.unidad_consumo || 'UND',
+        unidad_compra: p.unidadCompra || p.unidad_compra || 'Unidad',
+        unidad_consumo: p.unidadConsumo || p.unidad_consumo || 'Unidad',
         equivalencia: Number(p.equivalencia || 1),
         costo_base: Number(p.costoBase || p.costo_base || 0),
         iva: Number(p.porcentajeImp || p.IVA || p.iva || 0),
@@ -198,11 +198,10 @@ const Productos = () => {
         // los DOSIFICADOS se editan como está, sin re-guardar type de forma destructiva
         ...(editing?.tipo !== 'DOSIFICADO' ? { Tipo_Producto: values.tipo || 'ESTANDAR' } : {}),
         categoriaInsumo: (editing?.tipo !== 'DOSIFICADO' ? values.tipo : 'DOSIFICADO') === 'MATERIA_PRIMA' ? values.categoria_insumo || null : null,
-        unidadCompra: values.unidad_compra,
-        unidadConsumo: values.unidad_consumo,
-        // El tipo de café se deriva de la categoría elegida (soluble/grano).
-        // Si el producto tiene un tipoCafe previo y no se eligió una categoría de café, se conserva para no perder información.
-        equivalencia: Number(values.equivalencia || 1),
+        // Empaque, fracción y equivalencia solo aplican a la materia prima; el resto se maneja por unidades.
+        ...((editing?.tipo !== 'DOSIFICADO' ? values.tipo : 'DOSIFICADO') === 'MATERIA_PRIMA'
+          ? { unidadCompra: values.unidad_compra, unidadConsumo: values.unidad_consumo, equivalencia: Number(values.equivalencia || 1) }
+          : { unidadCompra: 'Unidad', unidadConsumo: 'Unidad', equivalencia: 1 }),
         IVA: Number(values.iva || 0),
         ...(!esDosificado ? {
           costoBase: Number(values.costo_base || 0),
@@ -499,19 +498,19 @@ const Productos = () => {
                   >
 <SelectCategoriaInsumo />
                   </Form.Item>}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {tipoSel === 'MATERIA_PRIMA' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad de compra (empaque)" rules={[{ required: true, message: 'Elige la unidad de compra' }]}>
                       <Select showSearch placeholder="Seleccione el empaque" options={UNIDADES_COMPRA} />
                     </Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Elige la unidad de consumo' }]}
-                      extra={tipoSel === 'MATERIA_PRIMA' ? 'Se ajusta sola según la categoría del insumo' : undefined}>
+                      extra="Se ajusta sola según la categoría del insumo">
                       <Select placeholder="Seleccione la fracción" options={UNIDADES_CONSUMO} />
                     </Form.Item>
-                  </div>
+                  </div>}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <Form.Item name="equivalencia" label={ETIQUETA_EQUIVALENCIA} rules={[{ required: true }]} extra={AYUDA_EQUIVALENCIA}>
+                    {tipoSel === 'MATERIA_PRIMA' && <Form.Item name="equivalencia" label={ETIQUETA_EQUIVALENCIA} rules={[{ required: true }]} extra={AYUDA_EQUIVALENCIA}>
                       <InputNumber style={{ width: '100%' }} min={1} />
-                    </Form.Item>
+                    </Form.Item>}
                     <Form.Item name="iva" label="IVA (decimal)" rules={[{ required: true }]}>
                       <InputNumber style={{ width: '100%' }} min={0} max={1} step={0.01} />
                     </Form.Item>

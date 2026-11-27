@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { bloquearCostos, recalcularPorMateriasPrimas, recalcularReceta } from '../common/costo-receta';
 import { esCategoriaInsumo, nombreCategoria, tipoCafeDeCategoria } from '../common/receta-cafe';
 
+const SIN_EMPAQUE = { categoriaInsumo: null, tipoCafe: null, unidadCompra: 'Unidad', unidadConsumo: 'Unidad', equivalencia: 1 };
 const RECETAS_EN_ESTANDAR = 'Las recetas se configuran en Productos → Recetas estándar (por categoría de insumo)';
 
 const TIPOS_VALIDOS = ['ESTANDAR', 'MATERIA_PRIMA', 'DOSIFICADO'] as const;
@@ -130,7 +131,8 @@ export class ProductsService {
     data.stockMin = data.stockMin ?? 0;
     data.stockMax = data.stockMax ?? 0;
     data.stockActual = data.stockActual ?? 0;
-    if (data.tipoProducto !== 'MATERIA_PRIMA') { data.categoriaInsumo = null; data.tipoCafe = null; }
+    // Empaque, fracción y equivalencia solo aplican a la materia prima; el resto se maneja por unidades.
+    if (data.tipoProducto !== 'MATERIA_PRIMA') Object.assign(data, SIN_EMPAQUE);
     validarMateriaPrima(data.tipoProducto, data.categoriaInsumo, data.equivalencia);
     return this.prisma.$transaction(async tx => {
       await bloquearCostos(tx);
@@ -157,7 +159,7 @@ export class ProductsService {
           await tx.recetasDosificados.count({ where: { idMatPrima: id } })) {
         throw new BadRequestException('El ingrediente pertenece a una receta activa');
       }
-      if (tipo !== 'MATERIA_PRIMA') { data.categoriaInsumo = null; data.tipoCafe = null; }
+      if (tipo !== 'MATERIA_PRIMA') Object.assign(data, SIN_EMPAQUE);
       validarMateriaPrima(tipo, data.categoriaInsumo !== undefined ? data.categoriaInsumo : previo.categoriaInsumo,
         Number(data.equivalencia ?? previo.equivalencia));
       if (previo.tipoProducto === 'MATERIA_PRIMA' && previo.categoriaInsumo && data.categoriaInsumo !== undefined &&

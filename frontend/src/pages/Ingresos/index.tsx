@@ -175,9 +175,10 @@ const Ingresos = () => {
         // El tipo de café se deriva de la categoría elegida (soluble/grano)
         tipoCafe: tipoCafeDeCategoria(values.categoria_insumo),
         Tipo_Producto: tipoNuevo,
-        unidadCompra: values.unidad_compra,
-        unidadConsumo: values.unidad_consumo,
-        equivalencia: Number(values.equivalencia || 1),
+        // Empaque, fracción y equivalencia solo aplican a la materia prima; el resto se maneja por unidades.
+        ...(tipoNuevo === 'MATERIA_PRIMA'
+          ? { unidadCompra: values.unidad_compra, unidadConsumo: values.unidad_consumo, equivalencia: Number(values.equivalencia || 1) }
+          : { unidadCompra: 'Unidad', unidadConsumo: 'Unidad', equivalencia: 1 }),
         costoBase,
         IVA: iva,
         costoTotal: Math.round(costoBase * (1 + iva) * 100) / 100,
@@ -553,18 +554,18 @@ const Ingresos = () => {
               ))}
             </Select>
           </Form.Item>}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {tipoNuevo === 'MATERIA_PRIMA' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Form.Item name="unidad_compra" label="Unidad de compra (empaque)" rules={[{ required: true, message: 'Requerido' }]}>
               <Select showSearch placeholder="Seleccione el empaque" options={UNIDADES_COMPRA} />
             </Form.Item>
             <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Requerido' }]}>
               <Select placeholder="Seleccione la fracción" options={UNIDADES_CONSUMO} />
             </Form.Item>
-          </div>
+          </div>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Form.Item name="equivalencia" label={ETIQUETA_EQUIVALENCIA} rules={[{ required: true }]} extra={AYUDA_EQUIVALENCIA}>
+            {tipoNuevo === 'MATERIA_PRIMA' && <Form.Item name="equivalencia" label={ETIQUETA_EQUIVALENCIA} rules={[{ required: true }]} extra={AYUDA_EQUIVALENCIA}>
               <InputNumber style={{ width: '100%' }} min={1} />
-            </Form.Item>
+            </Form.Item>}
             <Form.Item name="iva" label="IVA (decimal)" rules={[{ required: true }]}>
               <InputNumber style={{ width: '100%' }} min={0} max={1} step={0.01} />
             </Form.Item>
