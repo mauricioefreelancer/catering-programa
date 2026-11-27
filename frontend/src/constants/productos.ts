@@ -12,13 +12,24 @@ export const CATEGORIAS_INSUMO: { value: string; color: string; label: string; u
   { value: 'AZUCAR', color: 'gold', label: '🍬 Azúcar', unidadConsumo: 'Gramo' },
 ]
 
-/** Presentación en que se compra y se despacha el producto. */
+/**
+ * Materia prima: se compra y despacha en bolsa (se consume en gramos) o en paquete
+ * (se consume por unidades). No se manejan líquidos.
+ */
 export const UNIDADES_COMPRA = [
-  'Unidad', 'Caja', 'Paquete', 'Bolsa', 'Display', 'Bulto', 'Kilo', 'Libra', 'Frasco', 'Lata', 'Botella', 'Galón',
-].map((u) => ({ value: u, label: u }))
+  { value: 'Bolsa', label: 'Bolsa (se consume en gramos)', consumo: 'Gramo' },
+  { value: 'Paquete', label: 'Paquete (se consume por unidades)', consumo: 'Unidad' },
+]
 
-/** Fracción en que se consume (la dosis de la receta o la unidad vendida). */
-export const UNIDADES_CONSUMO = ['Unidad', 'Gramo', 'Mililitro'].map((u) => ({ value: u, label: u }))
+export const UNIDADES_CONSUMO = ['Gramo', 'Unidad'].map((u) => ({ value: u, label: u }))
+
+export const consumoDeCompra = (compra?: string | null) => UNIDADES_COMPRA.find((u) => u.value === compra)?.consumo
+
+/** Unidad de compra que corresponde a la categoría: gramos → Bolsa, unidades → Paquete. */
+export const compraDeCategoria = (categoria?: string | null) => {
+  const consumo = CATEGORIAS_INSUMO.find((c) => c.value === categoria)?.unidadConsumo
+  return UNIDADES_COMPRA.find((u) => u.consumo === consumo)?.value
+}
 
 export const ETIQUETA_EQUIVALENCIA = 'Escriba el valor en gramos o unidades que contenga el empaque a despachar'
 export const AYUDA_EQUIVALENCIA = 'Ej: bolsa de café de 1 kg = 1000 · paquete de 50 vasos = 50 · paquete de mezcladores = 1000'

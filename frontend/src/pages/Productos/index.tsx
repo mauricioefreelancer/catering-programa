@@ -23,7 +23,7 @@ import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, MinusCircle
 import ModalDrawer from '../../components/common/ModalDrawer'
 import { usePermissions } from '../../hooks/usePermissions'
 import { get, post, patch, remove } from '../../api/services/api'
-import { AYUDA_EQUIVALENCIA, CATEGORIAS_INSUMO, ETIQUETA_EQUIVALENCIA, UNIDADES_COMPRA, UNIDADES_CONSUMO, unidadConsumoDeCategoria } from '../../constants/productos'
+import { AYUDA_EQUIVALENCIA, CATEGORIAS_INSUMO, ETIQUETA_EQUIVALENCIA, UNIDADES_COMPRA, UNIDADES_CONSUMO, compraDeCategoria, consumoDeCompra } from '../../constants/productos'
 
 const { Title } = Typography
 const { Option } = Select
@@ -78,7 +78,23 @@ const tipoCafeDeCategoria = (categoria?: string | null): 'SOLUBLE' | 'GRANO' | n
   return null
 }
 
-// Categoría de insumo: al elegirla fija la unidad de consumo (g o und) del formulario.
+// Unidad de compra de la materia prima: fija la unidad de consumo que le corresponde.
+function SelectUnidadCompra({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
+  const form = Form.useFormInstance()
+  return (
+    <Select
+      value={value}
+      placeholder="Bolsa o paquete"
+      options={UNIDADES_COMPRA}
+      onChange={(v: string) => {
+        onChange?.(v)
+        form.setFieldsValue({ unidad_consumo: consumoDeCompra(v) })
+      }}
+    />
+  )
+}
+
+// Categoría de insumo: al elegirla fija la unidad de compra y de consumo (g o und) del formulario.
 function SelectCategoriaInsumo({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
   const form = Form.useFormInstance()
   return (
@@ -90,8 +106,8 @@ function SelectCategoriaInsumo({ value, onChange }: { value?: string; onChange?:
       optionLabelProp="label"
       onChange={(c: string) => {
         onChange?.(c)
-        const unidad = unidadConsumoDeCategoria(c)
-        if (unidad) form.setFieldsValue({ unidad_consumo: unidad })
+        const compra = compraDeCategoria(c)
+        if (compra) form.setFieldsValue({ unidad_compra: compra, unidad_consumo: consumoDeCompra(compra) })
       }}
     >
       {CATEGORIAS_INSUMO.map((o) => (
@@ -401,7 +417,7 @@ const Productos = () => {
 
   const initialVals: any = editing
     ? editing
-    : { idProveedor: null, tipo: 'ESTANDAR', unidad_compra: 'Unidad', unidad_consumo: 'Unidad', equivalencia: 1, iva: 0.19, costo_base: 0, stock_actual: 0, stock_min: 0, stock_max: 100 }
+    : { idProveedor: null, tipo: 'ESTANDAR', equivalencia: 1, iva: 0.19, costo_base: 0, stock_actual: 0, stock_min: 0, stock_max: 100 }
 
   return (
     <div>
@@ -500,11 +516,11 @@ const Productos = () => {
                   </Form.Item>}
                   {tipoSel === 'MATERIA_PRIMA' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <Form.Item name="unidad_compra" label="Unidad de compra (empaque)" rules={[{ required: true, message: 'Elige la unidad de compra' }]}>
-                      <Select showSearch placeholder="Seleccione el empaque" options={UNIDADES_COMPRA} />
+                      <SelectUnidadCompra />
                     </Form.Item>
                     <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Elige la unidad de consumo' }]}
-                      extra="Se ajusta sola según la categoría del insumo">
-                      <Select placeholder="Seleccione la fracción" options={UNIDADES_CONSUMO} />
+                      extra="Bolsa se consume en gramos; paquete, por unidades">
+                      <Select disabled options={UNIDADES_CONSUMO} />
                     </Form.Item>
                   </div>}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

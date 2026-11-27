@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductoDto, UpdateProductoDto, CreateRecetaDto, QueryProductoDto } from './dto/producto.dto';
 import { Prisma } from '@prisma/client';
 import { bloquearCostos, recalcularPorMateriasPrimas, recalcularReceta } from '../common/costo-receta';
-import { esCategoriaInsumo, nombreCategoria, tipoCafeDeCategoria } from '../common/receta-cafe';
+import { esCategoriaInsumo, nombreCategoria, tipoCafeDeCategoria, unidadCategoria } from '../common/receta-cafe';
 
 const SIN_EMPAQUE = { categoriaInsumo: null, tipoCafe: null, unidadCompra: 'Unidad', unidadConsumo: 'Unidad', equivalencia: 1 };
 const RECETAS_EN_ESTANDAR = 'Las recetas se configuran en Productos → Recetas estándar (por categoría de insumo)';
@@ -134,6 +134,7 @@ export class ProductsService {
     // Empaque, fracción y equivalencia solo aplican a la materia prima; el resto se maneja por unidades.
     if (data.tipoProducto !== 'MATERIA_PRIMA') Object.assign(data, SIN_EMPAQUE);
     validarMateriaPrima(data.tipoProducto, data.categoriaInsumo, data.equivalencia);
+    if (data.tipoProducto === 'MATERIA_PRIMA') ajustarUnidadesMateriaPrima(data, data.categoriaInsumo);
     return this.prisma.$transaction(async tx => {
       await bloquearCostos(tx);
       const creado = await tx.productos.create({ data });
@@ -162,6 +163,9 @@ export class ProductsService {
       if (tipo !== 'MATERIA_PRIMA') Object.assign(data, SIN_EMPAQUE);
       validarMateriaPrima(tipo, data.categoriaInsumo !== undefined ? data.categoriaInsumo : previo.categoriaInsumo,
         Number(data.equivalencia ?? previo.equivalencia));
+      if (tipo === 'MATERIA_PRIMA') {
+        ajustarUnidadesMateriaPrima(data, data.categoriaInsumo !== undefined ? data.categoriaInsumo : previo.categoriaInsumo);
+      }
       if (previo.tipoProducto === 'MATERIA_PRIMA' && previo.categoriaInsumo && data.categoriaInsumo !== undefined &&
           data.categoriaInsumo !== previo.categoriaInsumo &&
           await tx.mapaMateriaPrima.count({ where: { idProducto: id, maquina: { tipo: { in: ['CAFE', 'COMBINADA'] } } } })) {
@@ -201,6 +205,27 @@ export class ProductsService {
   async removeReceta(_idProducto: number, _idReceta: number): Promise<never> {
     throw new BadRequestException(RECETAS_EN_ESTANDAR);
   }
+}
+
+/**
+ * Materia prima: bolsa se consume en gramos y paquete por unidades; la categoría
+ * define cuál corresponde (la receta la mide en esa unidad). No se manejan líquidos.
+ */
+function unidadesMateriaPrima(categoria: string) {
+  return unidadCategoria(categoria) === 'und'
+    ? { unidadCompra: 'Paquete', unidadConsumo: 'Unidad' }
+    : { unidadCompra: 'Bolsa', unidadConsumo: 'Gramo' };
+}
+
+/** Fija la unidad de compra y de consumo según la categoría; rechaza una unidad de compra que no corresponda. */
+function ajustarUnidadesMateriaPrima(data: any, categoria: string | null | undefined) {
+  if (!categoria) return;
+  const esperadas = unidadesMateriaPrima(categoria);
+  if (data.unidadCompra !== undefined && data.unidadCompra !== esperadas.unidadCompra) {
+    throw new BadRequestException(`${nombreCategoria(categoria)} se compra en ${esperadas.unidadCompra.toLowerCase()} ` +
+      `(se consume en ${esperadas.unidadConsumo === 'Gramo' ? 'gramos' : 'unidades'}). No se manejan líquidos.`);
+  }
+  Object.assign(data, esperadas);
 }
 
 function validarMateriaPrima(tipo: string, categoria: string | null | undefined, equivalencia: number) {

@@ -1,4 +1,4 @@
-import { AYUDA_EQUIVALENCIA, CATEGORIAS_INSUMO, ETIQUETA_EQUIVALENCIA, UNIDADES_COMPRA, UNIDADES_CONSUMO, unidadConsumoDeCategoria } from '../../constants/productos'
+import { AYUDA_EQUIVALENCIA, CATEGORIAS_INSUMO, ETIQUETA_EQUIVALENCIA, UNIDADES_COMPRA, UNIDADES_CONSUMO, compraDeCategoria, consumoDeCompra } from '../../constants/productos'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Form,
@@ -511,7 +511,7 @@ const Ingresos = () => {
         width={680}
         destroyOnClose
       >
-        <Form form={formNuevo} layout="vertical" initialValues={{ tipo: 'ESTANDAR', equivalencia: 1, iva: 0, unidad_compra: 'Unidad', unidad_consumo: 'Unidad' }}>
+        <Form form={formNuevo} layout="vertical" initialValues={{ tipo: 'ESTANDAR', equivalencia: 1, iva: 0 }}>
           <Form.Item name="tipo" label="Clasificación del producto" extra="Se creará con la misma lógica de la sección Productos. Los DOSIFICADOS no se crean desde aquí (vienen parametrizados).">
             <Radio.Group onChange={(e: any) => setTipoNuevo(e.target.value)}>
               <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
@@ -545,8 +545,8 @@ const Ingresos = () => {
               style={{ width: '100%' }}
               optionLabelProp="label"
               onChange={(c: string) => {
-                const unidad = unidadConsumoDeCategoria(c)
-                if (unidad) formNuevo.setFieldsValue({ unidad_consumo: unidad })
+                const compra = compraDeCategoria(c)
+                if (compra) formNuevo.setFieldsValue({ unidad_compra: compra, unidad_consumo: consumoDeCompra(compra) })
               }}
             >
               {CATEGORIAS_INSUMO.map((o) => (
@@ -556,10 +556,12 @@ const Ingresos = () => {
           </Form.Item>}
           {tipoNuevo === 'MATERIA_PRIMA' && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Form.Item name="unidad_compra" label="Unidad de compra (empaque)" rules={[{ required: true, message: 'Requerido' }]}>
-              <Select showSearch placeholder="Seleccione el empaque" options={UNIDADES_COMPRA} />
+              <Select placeholder="Bolsa o paquete" options={UNIDADES_COMPRA}
+                onChange={(v: string) => formNuevo.setFieldsValue({ unidad_consumo: consumoDeCompra(v) })} />
             </Form.Item>
-            <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Requerido' }]}>
-              <Select placeholder="Seleccione la fracción" options={UNIDADES_CONSUMO} />
+            <Form.Item name="unidad_consumo" label="Unidad de consumo (fracción)" rules={[{ required: true, message: 'Requerido' }]}
+              extra="Bolsa se consume en gramos; paquete, por unidades">
+              <Select disabled options={UNIDADES_CONSUMO} />
             </Form.Item>
           </div>}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
