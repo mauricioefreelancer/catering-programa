@@ -5,11 +5,14 @@
  * Conserva solo USUARIOS_SISTEMA, ROLES_PERFILES, PARAMETROS_SISTEMA y el historial
  * de migraciones; vacía todas las demás tablas y reinicia sus secuencias.
  * Crea el perfil y el usuario administrador "Engenitix" con todos los permisos y
- * elimina el usuario demo admin@example.com.
+ * elimina el usuario demo admin@example.com. Recarga el catálogo fijo de productos
+ * terminados de café con su receta estándar.
  *
  * Uso (en la consola o un job de Render):
  *   CONFIRMAR_RESET=BORRAR-DATOS-DE-PRUEBA ADMIN_CLAVE_INICIAL=... node scripts/reset-datos-prueba.js
  */
+const fs = require('fs');
+const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 const { verificarEntorno } = require('./verificar-entorno');
@@ -21,6 +24,14 @@ const MODULOS = [
 ];
 const ADMIN = { rol: 'Engenitix', login: 'Engenitix', nombre: 'Engenitix', email: 'engenitix@erp.local' };
 const DEMO_EMAIL = 'admin@example.com';
+// Catálogo fijo de productos terminados de café: se recarga después de vaciar las tablas.
+const CATALOGO_CAFE = path.join(__dirname, '..', 'prisma', 'migrations',
+  '20261128120000_catalogo_productos_terminados', 'migration.sql');
+
+function sentencias(sql) {
+  return sql.split('\n').filter(l => !l.trim().startsWith('--')).join('\n')
+    .split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
+}
 
 async function main() {
   if (process.env.CONFIRMAR_RESET !== 'BORRAR-DATOS-DE-PRUEBA') {
@@ -47,6 +58,8 @@ async function main() {
       // Sin CASCADE: si una tabla conservada dependiera de una vaciada, falla en vez de borrarla.
       await tx.$executeRawUnsafe(
         `TRUNCATE TABLE ${vaciar.map(t => `"${t.replace(/"/g, '""')}"`).join(', ')} RESTART IDENTITY`);
+
+      for (const sentencia of sentencias(fs.readFileSync(CATALOGO_CAFE, 'utf8'))) await tx.$executeRawUnsafe(sentencia);
 
       const rol = await tx.rolesPerfiles.upsert({
         where: { nombreRol: ADMIN.rol },

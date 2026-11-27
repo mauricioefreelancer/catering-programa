@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, InputNumber, List, Modal, Space, Table, Tabs, Tag, Typography, message } from 'antd'
 import { ExperimentOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons'
-import { Link } from 'react-router-dom'
 import { get, post, put } from '../../api/services/api'
 import { usePermissions } from '../../hooks/usePermissions'
 
@@ -130,7 +129,7 @@ const RecetasEstandar = () => {
         dataSource={productos}
         pagination={false}
         scroll={{ x: 'max-content' }}
-        locale={{ emptyText: <span>No hay productos terminados. Créalos en <Link to="/productos">Productos</Link> con la clasificación «Producto terminado (café)».</span> }}
+        locale={{ emptyText: 'No hay productos terminados cargados. El catálogo se carga por código con su receta.' }}
         columns={[
           {
             title: 'Producto terminado', dataIndex: 'nombreProducto', fixed: 'left', width: 170,

@@ -449,15 +449,14 @@ const Productos = () => {
               children: (
                 <>
                   {editing?.tipo === 'DOSIFICADO' ? (
-                    <Form.Item label="Clasificación del producto" extra="Producto terminado de cafetera. El tipo no se puede cambiar; su receta se edita en Recetas café.">
+                    <Form.Item label="Clasificación del producto" extra="Producto terminado de cafetera (catálogo fijo). Aquí solo se edita nombre, IVA y estado; su receta se ajusta en Recetas café.">
                       <Tag color="orange">🟧 Producto terminado (dosificado)</Tag>
                     </Form.Item>
                   ) : (
-                    <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Estándar: snacks y bebidas en espiral. Materia prima: insumo de cafetera (va en una tolva). Producto terminado: lo que dispensa un botón de la cafetera.">
+                    <Form.Item name="tipo" label="Clasificación del producto" rules={[{ required: true }]} initialValue="ESTANDAR" extra="Estándar: snacks y bebidas en espiral. Materia prima: insumo de cafetera (va en una tolva). Los productos terminados de café son un catálogo fijo con su receta y ya vienen cargados.">
                       <Radio.Group onChange={(e: any) => setTipoSel(e.target.value)}>
                         <Radio.Button value="ESTANDAR">🔵 Estándar</Radio.Button>
                         <Radio.Button value="MATERIA_PRIMA">🟣 Materia prima (insumo)</Radio.Button>
-                        {!editing && <Radio.Button value="DOSIFICADO">🟧 Producto terminado (café)</Radio.Button>}
                       </Radio.Group>
                     </Form.Item>
                   )}

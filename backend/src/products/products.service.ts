@@ -118,6 +118,9 @@ export class ProductsService {
   async create(dto: CreateProductoDto) {
     const data = normalizeProductoInput(dto);
     data.tipoProducto = data.tipoProducto ?? 'ESTANDAR';
+    if (data.tipoProducto === 'DOSIFICADO') {
+      throw new BadRequestException('Los productos terminados de café son un catálogo fijo con su receta: se agregan por código, no desde esta pantalla');
+    }
     if (data.tipoProducto === 'DOSIFICADO' && [data.costoBase, data.costoTotal, data.stockActual].some(v => v != null && Number(v) !== 0)) {
       throw new BadRequestException('El dosificado no maneja stock y su costo se calcula desde la receta');
     }
